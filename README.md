@@ -4,7 +4,7 @@ Automatic collection of Indian vehicle regulations: ARAI AIS standards, MoRTH Ga
 guidelines, e-Gazette and India Code CMVR amendments. Originals are kept write-once, structured data lives in
 PostgreSQL 16 (typed columns + JSONB), clause-level text in pgvector. Refreshes every 6 hours.
 
-Design: `docs/DB_DESIGN.md` (authoritative) and `docs/ETL_SPEC.md`. Phase reports: `reports/`.
+Design: `docs/DB_DESIGN.md` (authoritative) and `docs/ETL_SPEC.md`. Start with `reports/BUILD_SUMMARY.md` (what happened, decisions, what is pending), then `reports/VALIDATION_REPORT.md` and the phase reports in `reports/`.
 
 ## Setup (Windows, PowerShell)
 

@@ -13,7 +13,19 @@ Because Docker was not available, everything that does not need PostgreSQL was w
 well (models, text/OCR, classify/identity, split, extract, mandates parser, link/chunk/runner, crawlers, API, report,
 tests). See "Offline measurements" below — the DB phases will re-measure these from the database.
 
-## `regtrack.cli check` output
+## Update (8 Oct 2026, after Phase 11)
+The C: drive was freed by the user, Docker Desktop was restarted, and Phases 1–11 ran. `regtrack.cli check` now gives:
+```
+[OK ] DB reachable               16.15 (Debian 16.15-1.pgdg12+2)
+[OK ] pgvector installed         0.8.7
+[FAIL] LLM reachable              https://<your-ngrok-id>.ngrok-free.app/v1 -> LLM_BASE_URL not configured
+[FAIL] structured output          skipped (LLM unreachable)
+[FAIL] embedding                  skipped (LLM unreachable)
+```
+The LLM is still not configured; everything that needs it is queued (see `reports/BUILD_SUMMARY.md`).
+The text below is the original Phase 0 record, kept as it was written.
+
+## `regtrack.cli check` output (original, before the DB was available)
 ```
 [FAIL] DB reachable               connection timeout expired
 [FAIL] pgvector installed         skipped (no DB)
