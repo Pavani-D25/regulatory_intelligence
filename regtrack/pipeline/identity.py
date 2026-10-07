@@ -74,7 +74,9 @@ def _date_before(text: str, pos: int, window: int = 600) -> date | None:
 def _year_before(text: str, pos: int, window: int = 300) -> int | None:
     """Fallback when the day is garbled: 'New Delhi, the ~th March, 2014' -> 2014."""
     seg = text[max(0, pos - window):pos]
-    ys = re.findall(r"(?<!\d)(19[5-9]\d|20[0-4]\d)(?!\d)", seg)
+    # skip years that belong to a title ("Central Motor Vehicles Rules, 1989", "Motor Vehicles Act, 1988 (59 of 1988)")
+    ys = [m.group(1) for m in re.finditer(r"(?<!\d)(19[5-9]\d|20[0-4]\d)(?!\d)", seg)
+          if not re.search(r"(?:Rules|Act|of)\s*,?\s*$", seg[max(0, m.start() - 12):m.start()], re.I)]
     return int(ys[-1]) if ys else None
 
 
