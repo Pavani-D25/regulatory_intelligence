@@ -433,6 +433,20 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
     if doc["doc_date"] is None and data.get("date") and re.fullmatch(P.ISO_DATE_RE, str(data["date"])):
         values["doc_date"] = date.fromisoformat(data["date"])
         values["doc_date_precision"] = "day"
+    if not doc.get("issuer"):
+        # no ministry header in the text: the publishing source is the issuer (provenance, not identity)
+        srcs = {r["code"] for r in conn.execute(
+            "SELECT DISTINCT so.code FROM document_file df JOIN file_sighting s ON s.file_id=df.file_id "
+            "JOIN source so ON so.id=s.source_id WHERE df.document_id=%s", (doc["id"],))}
+        folders = {r["f"] for r in conn.execute(
+            "SELECT DISTINCT left(s.listing_raw->>'folder', 2) AS f FROM document_file df JOIN file_sighting s "
+            "ON s.file_id=df.file_id WHERE df.document_id=%s", (doc["id"],))}
+        issuer = ("AISC/ARAI" if srcs & {"ARAI_AIS", "ARAI_TAP"} or folders & {"07", "17", "18"} else
+                  "BIS" if "21" in folders else "MoPNG" if "29" in folders else
+                  "MoRTH" if srcs & {"MORTH_API", "EGAZETTE"} or folders & {"05", "06", "11", "27", "28"} else None)
+        if issuer:
+            values["issuer"] = issuer
+            extraction["confidence"]["issuer"] = 0.5
     # do not let a weaker copy blank existing values
     for k in ("subject", "official_title"):
         if values.get(k) in (None, "") and doc.get(k):

@@ -23,7 +23,8 @@ EXPECTED = [
 REQUIRED = {  # columns that must be >= 95 % filled, per population
     "all": ["canonical_id", "doc_class", "status", "issuer", "relevance", "data"],
     "notification": ["doc_date", "year", "series", "number", "nature", "subject"],
-    "ais": ["doc_date", "family_key", "version_seq", "official_title", "subject"],
+    "ais": ["doc_date", "family_key", "version_seq", "subject"],
+    "ais_standard": ["official_title", "doc_date"],
 }
 COLUMNS = ["canonical_id", "doc_class", "series", "number", "year", "part", "revision", "amendment_no", "family_key",
            "version_seq", "official_title", "subject", "issuer", "status", "doc_date", "doc_date_precision", "nature",
@@ -129,7 +130,8 @@ def write_validation_report(path: Path | None = None) -> str:
         out.append("\n## Required columns (threshold ≥ 95 %)\n")
         rows = []
         pops = {"all": "doc_class <> 'OFF_TOPIC'", "notification": "doc_class LIKE 'NOTIFICATION%' AND canonical_id NOT LIKE 'NOTIF-%'",
-                "ais": "doc_class IN ('AIS_STANDARD','AIS_AMENDMENT','AIS_CORRIGENDUM') AND canonical_id NOT LIKE 'AIS-UNIDENT%'"}
+                "ais": "doc_class IN ('AIS_STANDARD','AIS_AMENDMENT','AIS_CORRIGENDUM') AND canonical_id NOT LIKE 'AIS-UNIDENT%'",
+                "ais_standard": "doc_class = 'AIS_STANDARD' AND canonical_id NOT LIKE 'AIS-UNIDENT%'"}
         for pop, cols in REQUIRED.items():
             rates = {c: (a, b) for c, a, b in fill_rates(conn, pops[pop])}
             for c in cols:
