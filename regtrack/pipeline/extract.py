@@ -117,7 +117,7 @@ def amends_targets(op: str) -> tuple[list[str], list[str]]:
         if not targets:
             targets.append("CMVR")
     for m in re.finditer(r"(?:amendments?|corrections?|corrigendum)\s+(?:in|to)\s+the\s+(?:said\s+)?notification[^.]{0,250}?"
-                         + P.SERIES_RE + r"\s*(\d{1,5})\s*\(?\s*E\s*\)?[,\s]*(?:dated\s+(?:the\s+)?)?([^,;]{0,40}\d{4})?",
+                         + P.SERIES_RE + r"\s*(\d{1,5})\s*\(?\s*E\s*\)?[,\s]*(?:dated\s+(?:the\s+)?)?([^;]{0,40}?\d{4})?",
                          op[:8000], re.I):
         d = P.parse_date(m.group(3) or "")
         y = d.year if d else (int(re.search(r"\d{4}", m.group(3)).group(0)) if m.group(3) else None)

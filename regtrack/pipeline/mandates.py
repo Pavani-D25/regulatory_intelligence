@@ -39,10 +39,12 @@ class Item:
     implementation_date: date | None = None
     categories: list[str] = field(default_factory=list)
     conditions: dict = field(default_factory=dict)
+    model_scope: str = "all"
 
     @property
     def key(self) -> str:
-        return f"{self.table} Sr.{self.serial}" + (f"({self.item})" if self.item else "")
+        k = f"{self.table} Sr.{self.serial}" + (f"({self.item})" if self.item else "")
+        return k + (f" [{self.model_scope}]" if self.model_scope != "all" else "")
 
 
 @dataclass
@@ -53,6 +55,7 @@ class DateSub:
     old: date | None
     new: date
     evidence: str
+    old_text: str | None = None
 
 
 @dataclass
@@ -108,7 +111,7 @@ def parse_items(block: str, table: str, default_serial: str | None) -> list[Item
     text = re.sub(r"\[भाग[^\n]*\n|भारत का[^\n]*\n", "\n", text)
     serial = default_serial
     # serial markers: a quote followed by a number at line start
-    parts = re.split(r"[" + Q_OPEN + r"]\s*(\d{1,3})\s*\n|\n\s*(\d{1,3})\s*\n(?=\s*\([a-z]\))", text)
+    parts = re.split(r"[" + Q_OPEN + r"]\s*(\d{1,3})\.?\s*(?:\n|(?=[A-Z]))|\n\s*(\d{1,3})\s*\n(?=\s*\([a-z]\))", text)
     chunks: list[tuple[str | None, str]] = []
     cur = parts[0]
     chunks.append((serial, cur))
@@ -118,7 +121,7 @@ def parse_items(block: str, table: str, default_serial: str | None) -> list[Item
         body = parts[i + 2] if i + 2 < len(parts) else ""
         chunks.append((s, body))
         i += 3
-    for ser, body in chunks:
+    for idx, (ser, body) in enumerate(chunks):
         if ser is None:
             ser = serial
         if ser is None:
@@ -126,20 +129,41 @@ def parse_items(block: str, table: str, default_serial: str | None) -> list[Item
         serial = ser
         its = list(re.finditer(r"(?:^|\n|[" + Q_OPEN + r"])[ \t]*\(([a-z]{1,2})\)\s*", body))
         if not its:
+            # a row without item letters: '"52 Vehicle Alarm Systems ... AIS-076/2007 ... 12th October, 2017."'
+            if idx > 0 and len(body.strip()) > 20:
+                items += make_items(table, ser, None, body)
             continue
         for k, m in enumerate(its):
             seg = body[m.end(): its[k + 1].start() if k + 1 < len(its) else len(body)]
-            seg = seg.split("”;")[0].split("”.")[0]
-            stds = [r for r in P.find_references(seg, ("AIS", "IS", "UN_R")) if not r.startswith("CMVR")]
-            dates = P.all_dates(seg)
-            subj = re.split(r"\s(?:IS[\s:]*\d|AIS[\s:\-]*\d)", clean(seg))[0].strip(" .;:")
-            dt = re.search(r"(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+,?\s+\d{4}[^()]{0,120}?)(?=\(|$)", clean(seg))
-            it = Item(table=table, serial=ser, item=m.group(1), subject=subj[:300] or None, standards=stds,
-                      date_text=dt.group(1).strip()[:200] if dt else None,
-                      implementation_date=dates[0] if dates else None, categories=categories_from(subj),
-                      conditions=P.find_conditions(subj))
-            items.append(it)
+            items += make_items(table, ser, m.group(1), seg)
     return items
+
+
+SCOPED = re.compile(r"For\s+(new|existing|all)\s+models?\s*[:\-]?\s*(\d{1,2}(?:st|nd|rd|th)?\s*(?:day\s+of\s+)?"
+                    r"[A-Z][a-z]+,?\s*\d{4})", re.I)
+
+
+def make_items(table: str, ser: str, item: str | None, seg: str) -> list[Item]:
+    """One item, or one per model scope when the row has 'For new models: <date>' / 'For existing models: <date>'."""
+    seg = seg.split("”;")[0].split("”.")[0]
+    stds = [r for r in P.find_references(seg, ("AIS", "IS", "UN_R")) if not r.startswith("CMVR")]
+    subj = re.split(r"\s(?:IS[\s:]*\d|AIS[\s:\-]*\d)", clean(seg))[0].strip(" .;:")
+    base = {"table": table, "serial": ser, "item": item, "subject": subj[:300] or None, "standards": stds,
+            "categories": categories_from(subj), "conditions": P.find_conditions(subj)}
+    scoped = [(m.group(1).lower(), P.parse_date(m.group(2)), m.group(0)) for m in SCOPED.finditer(clean(seg))]
+    scoped = [x for x in scoped if x[1]]
+    if scoped:
+        out, seen = [], set()
+        for scope, d, txt in scoped:
+            ms = {"new": "new_models", "existing": "existing_models"}.get(scope, "all")
+            if ms not in seen:
+                seen.add(ms)
+                out.append(Item(**base, date_text=txt[:200], implementation_date=d, model_scope=ms))
+        return out
+    dates = P.all_dates(seg)
+    dt = re.search(r"(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+,?\s+\d{4}[^()]{0,120}?)(?=\(|$)", clean(seg))
+    return [Item(**base, date_text=dt.group(1).strip()[:200] if dt else None,
+                 implementation_date=dates[0] if dates else None)]
 
 
 def clean(s: str) -> str:
@@ -149,7 +173,7 @@ def clean(s: str) -> str:
 SUBST_ROW = re.compile(r"for\s+(?:the\s+)?serial\s+numbers?\s+([\d\s,and]+?)(?:\s*,?\s*(?:and|for)\s+(?:the\s+)?entries|\s+and\s+the\s+entries|\s*,\s*for\s+item)"
                        r"|for\s+item\s+numbers?\s+([\(\)a-z,\s and]+?)\s+and\s+the\s+entries", re.I)
 INSERT_ROW = re.compile(r"after\s+serial\s+number\s+(\d{1,3})[^.]{0,200}?(?:shall\s+be\s+inserted|following\s+serial\s+numbers?)", re.I)
-DATE_SUB = re.compile(r"for\s+the\s+(?:figures|words)[^“\"']{0,60}[“\"']([^”\"']{6,40})[”\"'][^“\"']{0,140}?[“\"']([^”\"']{6,40})[”\"']\s*shall\s+be\s+substituted", re.I)
+DATE_SUB = re.compile(r"for\s+the\s+(?:figures|words)[^“\"']{0,60}[“\"']([^”\"']{6,90})[”\"'][^“\"']{0,140}?[“\"']([^”\"']{6,60})[”\"']\s*shall\s+be\s+substituted", re.I)
 OMIT_ROW = re.compile(r"serial\s+number\s+(\d{1,3})[^.]{0,120}?shall\s+be\s+omitted", re.I)
 
 
@@ -167,9 +191,10 @@ def parse_table_amendments(op: str) -> tuple[list[Item], list[DateSub], list[Omi
             if m:
                 old, new = P.parse_date(m.group(1)), P.parse_date(m.group(2))
                 if new:
-                    sers = _serials(" ".join(re.findall(r"serial\s+numbers?\s+([\d\s,and]+)", clause, re.I)))
-                    its = re.findall(r"item\s+(?:number\s+)?\(([a-z])\)", clause, re.I)
-                    dsubs.append(DateSub(table, sers, its, old, new, clean(clause)[:300]))
+                    sers = _serials(" ".join(re.findall(r"(?:serial\s+numbers?|Sl\.?\s*Nos?\.?)\s+([\d\s,and]+)", clause, re.I)))
+                    im = re.search(r"items?\s+(?:numbers?\s+)?((?:\(\s*[a-z]\s*\)[\s,and&]*)+)", clause, re.I)
+                    its = re.findall(r"\(\s*([a-z])\s*\)", im.group(1)) if im else []
+                    dsubs.append(DateSub(table, sers, its, old, new, clean(clause)[:300], clean(m.group(1))))
         for m in OMIT_ROW.finditer(sec):
             omits.append(Omit(table, m.group(1), []))
         table_cats = categories_from(sec[:160]) if re.search(r"rickshaw|cart|tractor|trailer", sec[:160], re.I) else []
@@ -334,6 +359,22 @@ def mandates_for_document(conn: psycopg.Connection, doc: dict, op: str) -> dict:
                     mx = max(r["implementation_date"] for r in srows)
                     hit += [r for r in srows if r["implementation_date"] == mx and mx < ds.new]
             mismatch = bool(hit)
+        if not rows:
+            # the row was set by a notification not in the corpus (e.g. the 2004 master table): record the new date
+            # for the named row/items from this notification alone (subject from the document, standards unknown)
+            for s_ in ds.serials or ["?"]:
+                for it in ds.items or [None]:
+                    key = f"{ds.table} Sr.{s_}" + (f"({it})" if it else "")
+                    if already_recorded(conn, key, doc["id"]):
+                        continue
+                    v = {**common, "legal_basis": key, "subject": doc.get("subject") or doc.get("official_title"),
+                         "standard_refs": [], "standard_doc_ids": [], "vehicle_categories": doc.get("vehicle_categories") or [],
+                         "conditions": {}, "model_scope": "all", "implementation_date": ds.new,
+                         "implementation_rule": f"substituted for '{ds.old_text}'" if ds.old_text else None}
+                    new_id, closed = supersede(conn, key, v, notified, is_draft)
+                    stats["inserted"] += 1
+                    stats["date_changes"].append({"mandate_id": new_id, "key": key, "old": ds.old_text, "new": str(ds.new),
+                                                  "stated_old": ds.old_text, "old_date_mismatch": False, "row_unknown": True})
         for r in hit:
             if already_recorded(conn, r["mandate_key"], doc["id"]):
                 continue
