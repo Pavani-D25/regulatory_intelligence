@@ -407,8 +407,15 @@ def check_amendment_gaps(conn: psycopg.Connection, family_key: str | None) -> No
     for r in rows:
         gaps = amendment_gaps([x for x in r["nos"] if x is not None])
         base = conn.execute("SELECT id FROM document WHERE canonical_id=%s", (r["target"],)).fetchone()
-        if gaps and base:
-            add_flag(conn, "document", base["id"], FlagRule.AMENDMENT_GAP, {"target": r["target"], "missing": gaps})
+        if not base:
+            continue
+        details = {"target": r["target"], "missing": gaps}
+        # keep exactly one open gap flag per base: resolve flags that describe an older state of the family
+        conn.execute("UPDATE quality_flag SET resolved_at=now() WHERE entity='document' AND entity_id=%s AND rule=%s "
+                     "AND resolved_at IS NULL AND details <> %s::jsonb",
+                     (base["id"], FlagRule.AMENDMENT_GAP.value, json.dumps(details, sort_keys=True)))
+        if gaps:
+            add_flag(conn, "document", base["id"], FlagRule.AMENDMENT_GAP, details)
 
 
 # ---------------------------------------------------------------------- best copy
