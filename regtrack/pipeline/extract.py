@@ -43,8 +43,12 @@ def operative_text(eng: str) -> str:
 
 
 def categories_of(text: str) -> list[str]:
-    counts = P.find_categories(text)
-    cats = P.expand_letters([c for c in counts if c])
+    """Explicit codes ('M1', 'category L') count once; plain words ('truck', 'car') need two mentions in long texts."""
+    codes = P.find_categories(text, synonyms=False)
+    allc = P.find_categories(text)
+    need = 1 if len(text) < 3000 else 2
+    keep = [c for c, n in allc.items() if c in codes or n >= need or c == "ALL"]
+    cats = P.expand_letters(keep)
     order = ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "QUADRICYCLE", "M1", "M2", "M3", "N1", "N2", "N3", "O", "T",
              "CEV", "E_RICKSHAW", "E_CART", "ALL"]
     return [c for c in order if c in cats]
@@ -205,7 +209,7 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
             "references": notification_references(op, doc["canonical_id"]),
         }.items() if v not in (None, [], {})})
         cats = categories_of(op[:30000])
-        cols["subject"] = doc.get("official_title") or subject_line(op)
+        cols["subject"] = doc.get("official_title") or subject_line(op, targets)
         text_for_tags = op
     elif dc in (DocClass.AIS_STANDARD, DocClass.SAFETY_STANDARD_LEGACY):
         scope = scope_section(eng)
@@ -277,10 +281,22 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
     return cols, data, conf
 
 
-def subject_line(op: str) -> str | None:
-    t = clean(op[:3000])
-    m = re.search(r"(?:G\.?S\.?R\.?|S\.?O\.?)\s*\d+\s*\(?E\)?\s*\.?\s*[—–\-]+\s*(.{20,240}?)(?:,\s*namely|:\-|\.\s)", t)
-    return m.group(1).strip()[:240] if m else None
+HEREBY = re.compile(r"hereby\s+(specifies|notifies|exempts|directs|appoints|extends|declares|prescribes|"
+                    r"authori[sz]es|constitutes|rescinds|amends|corrects)\s+(.{15,220}?)(?:[;:]|,\s*namely|\.\s|$)", re.I)
+
+
+def subject_line(op: str, targets: list[str] | None = None) -> str | None:
+    """Deterministic one-liner: the operative 'hereby specifies ...' clause, else the rules it amends."""
+    t = clean(op[:6000])
+    m = HEREBY.search(t)
+    if m and not re.match(r"(?:the\s+)?following\s+(?:rules|amendments)", m.group(2), re.I):
+        return f"{m.group(1).capitalize()} {m.group(2).strip()}"[:240]
+    rules = [x for x in (targets or []) if x.startswith("CMVR Rule")]
+    if rules:
+        return ("Amends " + ", ".join(rules[:6]))[:240]
+    if targets:
+        return ("Amends " + ", ".join(targets[:4]))[:240]
+    return None
 
 
 # ====================================================================== Qwen

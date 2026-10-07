@@ -109,6 +109,15 @@ def link_notification(conn: psycopg.Connection, doc: dict, op: str) -> None:
 def link_ais(conn: psycopg.Connection, doc: dict) -> None:
     data = doc["data"] or {}
     dc = DocClass(doc["doc_class"])
+    if dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and data.get("amends") and not doc["vehicle_categories"]:
+        # an amendment applies to the vehicles of the standard it amends
+        base = conn.execute("SELECT vehicle_categories, in_scope, domains, powertrains FROM document WHERE canonical_id=%s",
+                            (data["amends"],)).fetchone()
+        if base and base["vehicle_categories"]:
+            update_if_changed(conn, "document", {"id": doc["id"]},
+                              {"vehicle_categories": base["vehicle_categories"], "in_scope": base["in_scope"],
+                               "domains": doc["domains"] or base["domains"],
+                               "powertrains": doc["powertrains"] or base["powertrains"]})
     if dc == DocClass.AIS_AMENDMENT and data.get("amends"):
         add_relation(conn, doc["id"], "amends", to_cid=data["amends"], details={"amendment_no": doc["amendment_no"]})
     elif dc == DocClass.AIS_CORRIGENDUM and data.get("amends"):

@@ -31,7 +31,7 @@ COLUMNS = ["canonical_id", "doc_class", "series", "number", "year", "part", "rev
 
 
 def one(conn: psycopg.Connection, sql: str, args=()) -> int:
-    r = conn.execute(sql, args).fetchone()
+    r = conn.execute(sql, args or None).fetchone()
     return list(r.values())[0] if r else 0
 
 
@@ -46,12 +46,12 @@ def regression(conn: psycopg.Connection) -> list[tuple[str, str, str]]:
     corr = one(conn, "SELECT count(DISTINCT df.file_id) FROM document_file df JOIN document d ON d.id=df.document_id "
                      "WHERE d.doc_class='AIS_CORRIGENDUM'")
     kruti = one(conn, "SELECT count(DISTINCT f.id) FROM file_object f JOIN document_file df ON df.file_id=f.id "
-                      "JOIN document d ON d.id=df.document_id WHERE d.doc_class LIKE 'NOTIFICATION%%' "
+                      "JOIN document d ON d.id=df.document_id WHERE d.doc_class LIKE 'NOTIFICATION%' "
                       "AND (f.language_mix->>'hi_legacy_font')::boolean")
     kruti_copies = one(conn, "SELECT count(*) FROM file_sighting s JOIN source so ON so.id=s.source_id "
                              "JOIN file_object f ON f.id=s.file_id WHERE so.code='LOCAL_SEED' AND (f.language_mix->>'hi_legacy_font')::boolean "
                              "AND EXISTS (SELECT 1 FROM document_file df JOIN document d ON d.id=df.document_id "
-                             "WHERE df.file_id=f.id AND d.doc_class LIKE 'NOTIFICATION%%')")
+                             "WHERE df.file_id=f.id AND d.doc_class LIKE 'NOTIFICATION%')")
     fin = conn.execute("SELECT count(DISTINCT from_doc) AS n, count(DISTINCT from_doc) FILTER (WHERE to_doc IS NOT NULL) AS res "
                        "FROM doc_relation WHERE type='finalises' AND method='regex'").fetchone()
     mism = conn.execute("SELECT count(*) FILTER (WHERE details->>'source'='MORTH_API') AS morth, count(*) AS total "
@@ -60,7 +60,7 @@ def regression(conn: psycopg.Connection) -> list[tuple[str, str, str]]:
         """SELECT count(DISTINCT f.id) AS n,
                   count(DISTINCT f.id) FILTER (WHERE d.relevance->>'state' IS NOT NULL) AS state
            FROM file_object f JOIN document_file df ON df.file_id=f.id JOIN document d ON d.id=df.document_id
-           JOIN file_sighting s ON s.file_id=f.id WHERE d.doc_class='OFF_TOPIC' AND s.listing_raw->>'folder' LIKE '02%%'""").fetchone()
+           JOIN file_sighting s ON s.file_id=f.id WHERE d.doc_class='OFF_TOPIC' AND s.listing_raw->>'folder' LIKE '02%'""").fetchone()
     return [
         ("Files / unique by SHA-256", "2,274 / 2,016", f"{files:,} / {uniq:,}"),
         ("Scans (< 100 chars per page)", "251 files, 1,742 pages", f"{scans['n']} files, {scans['p']:,} pages"),
@@ -128,10 +128,10 @@ def write_validation_report(path: Path | None = None) -> str:
                    md_table(["column", "filled", "total", "rate"], [[c, a, b, pct(a, b)] for c, a, b in fr]))
         out.append("\n## Required columns (threshold ≥ 95 %)\n")
         rows = []
-        pops = {"all": "doc_class <> 'OFF_TOPIC'", "notification": "doc_class LIKE 'NOTIFICATION%%' AND canonical_id NOT LIKE 'NOTIF-%%'",
-                "ais": "doc_class IN ('AIS_STANDARD','AIS_AMENDMENT','AIS_CORRIGENDUM') AND canonical_id NOT LIKE 'AIS-UNIDENT%%'"}
+        pops = {"all": "doc_class <> 'OFF_TOPIC'", "notification": "doc_class LIKE 'NOTIFICATION%' AND canonical_id NOT LIKE 'NOTIF-%'",
+                "ais": "doc_class IN ('AIS_STANDARD','AIS_AMENDMENT','AIS_CORRIGENDUM') AND canonical_id NOT LIKE 'AIS-UNIDENT%'"}
         for pop, cols in REQUIRED.items():
-            rates = {c: (a, b) for c, a, b in fill_rates(conn, pops[pop].replace("%%", "%"))}
+            rates = {c: (a, b) for c, a, b in fill_rates(conn, pops[pop])}
             for c in cols:
                 a, b = rates[c]
                 rows.append([pop, c, a, b, pct(a, b), "PASS" if b and a / b >= 0.95 else "FAIL"])
@@ -146,7 +146,7 @@ def write_validation_report(path: Path | None = None) -> str:
             """SELECT d.canonical_id, d.doc_class, count(q.id) AS flags, string_agg(DISTINCT q.rule, ', ') AS rules,
                       coalesce(d.official_title, d.subject, '') AS title
                FROM document d JOIN quality_flag q ON q.entity='document' AND q.entity_id=d.id AND q.resolved_at IS NULL
-               WHERE d.doc_class <> 'OFF_TOPIC' AND (d.in_scope OR d.doc_class LIKE 'AIS%%' OR d.doc_class LIKE 'NOTIF%%')
+               WHERE d.doc_class <> 'OFF_TOPIC' AND (d.in_scope OR d.doc_class LIKE 'AIS%' OR d.doc_class LIKE 'NOTIF%')
                GROUP BY d.id ORDER BY (d.in_scope IS TRUE) DESC, count(q.id) DESC, d.doc_date DESC NULLS LAST LIMIT 20""").fetchall()
         out.append("\n## Top 20 documents that need checking\n\n" + md_table(
             ["canonical_id", "class", "flags", "rules", "title"],
