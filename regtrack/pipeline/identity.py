@@ -150,8 +150,12 @@ def notification_identity(english: str, hindi_text: str | None = None) -> Identi
 
 def title_notification_ids(title: str) -> list[tuple[str, str]]:
     """IDs claimed by a listing title (series, number) - used only for the mismatch check."""
-    return [(P.series_code(m.group(1)), str(int(m.group(2)))) for m in P.NUM_ID.finditer(title or "")
-            if not re.match(r"\s*(cc|kw|km)", title[m.end():m.end() + 4] or "", re.I)]
+    out = [(P.series_code(m.group(1)), str(int(m.group(2)))) for m in P.NUM_ID.finditer(title or "")
+           if not re.match(r"\s*(cc|kw|km)", title[m.end():m.end() + 4] or "", re.I)]
+    # ranges: "S.O. 425(E) to 426(E)"
+    for m in re.finditer(P.SERIES_RE + r"\s*(\d{1,5})\s*\(?E?\)?\s*(?:to|-|–|&|and)\s*(\d{1,5})\s*\(\s*E\s*\)", title or "", re.I):
+        out.append((P.series_code(m.group(1)), str(int(m.group(3)))))
+    return out
 
 
 # ------------------------------------------------------------------ AIS
