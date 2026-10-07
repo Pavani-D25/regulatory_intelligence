@@ -1,0 +1,44 @@
+{
+  "$id": "regtrack/FORM_TEMPLATE",
+  "additionalProperties": false,
+  "properties": {
+    "form_no": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Form No"
+    },
+    "purpose": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Purpose"
+    },
+    "rule_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rule Ref"
+    }
+  },
+  "title": "FORM_TEMPLATE (FormTemplateData)",
+  "type": "object"
+}

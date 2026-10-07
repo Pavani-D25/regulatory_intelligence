@@ -1,0 +1,84 @@
+{
+  "$id": "regtrack/CIRCULAR_OM",
+  "additionalProperties": false,
+  "properties": {
+    "addressees": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Addressees",
+      "type": "array"
+    },
+    "date": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Date"
+    },
+    "directions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Directions",
+      "type": "array"
+    },
+    "file_no": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "File No"
+    },
+    "ref_no": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ref No"
+    },
+    "subject": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Subject"
+    },
+    "valid_until": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Valid Until"
+    }
+  },
+  "title": "CIRCULAR_OM (CircularData)",
+  "type": "object"
+}

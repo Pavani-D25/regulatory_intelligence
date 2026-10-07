@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "BisCatalogueRow": {
+      "additionalProperties": false,
+      "properties": {
+        "amendments": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amendments"
+        },
+        "is_no": {
+          "title": "Is No",
+          "type": "string"
+        },
+        "reaffirmed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reaffirmed"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "is_no"
+      ],
+      "title": "BisCatalogueRow",
+      "type": "object"
+    }
+  },
+  "$id": "regtrack/BIS_CATALOGUE",
+  "additionalProperties": false,
+  "properties": {
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/BisCatalogueRow"
+      },
+      "title": "Rows",
+      "type": "array"
+    }
+  },
+  "title": "BIS_CATALOGUE (BisCatalogueData)",
+  "type": "object"
+}

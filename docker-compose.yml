@@ -1,0 +1,23 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: regtrack-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: regtrack
+      POSTGRES_PASSWORD: regtrack
+      POSTGRES_DB: regtrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - regtrack_pg:/var/lib/postgresql/data
+      - ./db/migrations:/migrations:ro
+      - ./db/seeds:/seeds:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U regtrack -d regtrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  regtrack_pg:

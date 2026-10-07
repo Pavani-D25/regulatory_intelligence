@@ -1,0 +1,247 @@
+{
+  "$defs": {
+    "AnnexEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AnnexEntry",
+      "type": "object"
+    },
+    "Applicability": {
+      "additionalProperties": false,
+      "properties": {
+        "categories": {
+          "description": "Category codes as written, e.g. L, M1, N1",
+          "items": {
+            "type": "string"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Verbatim applicability sentence from the scope clause",
+          "title": "Raw"
+        }
+      },
+      "title": "Applicability",
+      "type": "object"
+    },
+    "ContentsEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "clause": {
+          "title": "Clause",
+          "type": "string"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clause",
+        "title"
+      ],
+      "title": "ContentsEntry",
+      "type": "object"
+    },
+    "StatusChartEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment": {
+          "title": "Amendment",
+          "type": "integer"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        }
+      },
+      "required": [
+        "amendment"
+      ],
+      "title": "StatusChartEntry",
+      "type": "object"
+    }
+  },
+  "$id": "regtrack/AIS_STANDARD",
+  "additionalProperties": false,
+  "properties": {
+    "annexes": {
+      "items": {
+        "$ref": "#/$defs/AnnexEntry"
+      },
+      "title": "Annexes",
+      "type": "array"
+    },
+    "applicability": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Applicability"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "arai_code_raw": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Arai Code Raw"
+    },
+    "based_on": {
+      "description": "e.g. UN R100, ECE R13",
+      "items": {
+        "type": "string"
+      },
+      "title": "Based On",
+      "type": "array"
+    },
+    "contents": {
+      "items": {
+        "$ref": "#/$defs/ContentsEntry"
+      },
+      "title": "Contents",
+      "type": "array"
+    },
+    "cover_month": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Cover date as YYYY-MM",
+      "title": "Cover Month"
+    },
+    "deemed_compliance": {
+      "description": "Older standards this one replaces",
+      "items": {
+        "type": "string"
+      },
+      "title": "Deemed Compliance",
+      "type": "array"
+    },
+    "parts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Parts",
+      "type": "array"
+    },
+    "references": {
+      "description": "Cited AIS/IS/UN R/ISO codes",
+      "items": {
+        "type": "string"
+      },
+      "title": "References",
+      "type": "array"
+    },
+    "scope_text": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Text"
+    },
+    "status_chart": {
+      "items": {
+        "$ref": "#/$defs/StatusChartEntry"
+      },
+      "title": "Status Chart",
+      "type": "array"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title"
+    },
+    "transitional_text": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Transitional Text"
+    }
+  },
+  "title": "AIS_STANDARD (AisStandardData)",
+  "type": "object"
+}

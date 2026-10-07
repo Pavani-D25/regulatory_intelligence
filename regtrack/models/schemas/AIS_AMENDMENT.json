@@ -1,0 +1,166 @@
+{
+  "$defs": {
+    "AmendmentInstruction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "add",
+            "substitute",
+            "delete",
+            "renumber",
+            "correct",
+            "other"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After"
+        },
+        "clause": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clause"
+        },
+        "clauses": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Clauses",
+          "type": "array"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "AmendmentInstruction",
+      "type": "object"
+    }
+  },
+  "$id": "regtrack/AIS_AMENDMENT",
+  "additionalProperties": false,
+  "properties": {
+    "amendment_no": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Amendment No"
+    },
+    "amends": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "canonical_id of the amended standard, e.g. AIS-038(Rev.2)",
+      "title": "Amends"
+    },
+    "corrigendum_no": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Corrigendum No"
+    },
+    "header_format": {
+      "anyOf": [
+        {
+          "enum": [
+            "no_date",
+            "month_year",
+            "full_date"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Header Format"
+    },
+    "instructions": {
+      "items": {
+        "$ref": "#/$defs/AmendmentInstruction"
+      },
+      "title": "Instructions",
+      "type": "array"
+    },
+    "issued": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Issued"
+    },
+    "issued_precision": {
+      "anyOf": [
+        {
+          "enum": [
+            "day",
+            "month",
+            "year"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Issued Precision"
+    }
+  },
+  "title": "AIS_AMENDMENT (AisAmendmentData)",
+  "type": "object"
+}

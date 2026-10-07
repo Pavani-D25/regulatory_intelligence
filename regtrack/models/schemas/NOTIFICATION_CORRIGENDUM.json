@@ -1,0 +1,575 @@
+{
+  "$defs": {
+    "Bound": {
+      "additionalProperties": false,
+      "properties": {
+        "eq": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Eq"
+        },
+        "gt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gt"
+        },
+        "gte": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gte"
+        },
+        "lt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lt"
+        },
+        "lte": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lte"
+        }
+      },
+      "title": "Bound",
+      "type": "object"
+    },
+    "Conditions": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_cc": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gvw_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "power_kw": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "seats": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "speed_kmh": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Conditions",
+      "type": "object"
+    },
+    "DraftRef": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_id": {
+          "title": "Canonical Id",
+          "type": "string"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        }
+      },
+      "required": [
+        "canonical_id"
+      ],
+      "title": "DraftRef",
+      "type": "object"
+    },
+    "GazetteRef": {
+      "additionalProperties": false,
+      "properties": {
+        "gazette_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. CG-DL-E-03092022-238578",
+          "title": "Gazette Id"
+        },
+        "issue_no": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Issue No"
+        },
+        "part": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Part"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "sub_section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sub Section"
+        }
+      },
+      "title": "GazetteRef",
+      "type": "object"
+    },
+    "Implementation": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "model_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "new_models",
+                "existing_models",
+                "all",
+                "registered_vehicles"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Scope"
+        },
+        "rule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Relative rule, e.g. 'twelve months from notification'",
+          "title": "Rule"
+        }
+      },
+      "title": "Implementation",
+      "type": "object"
+    },
+    "Provision": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "insert",
+            "substitute",
+            "omit",
+            "insert_row",
+            "substitute_row",
+            "omit_row",
+            "amend_table_entry",
+            "extend_date",
+            "exempt",
+            "commence",
+            "other"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "categories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "conditions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Conditions"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "implementation": {
+          "items": {
+            "$ref": "#/$defs/Implementation"
+          },
+          "title": "Implementation",
+          "type": "array"
+        },
+        "new_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "New Text"
+        },
+        "old_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Old Text"
+        },
+        "powertrains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Powertrains",
+          "type": "array"
+        },
+        "standards": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Standards",
+          "type": "array"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subject"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. 'Rule 96(4A)' or 'SO-1365(E)-2004 Table Sr.26(b)'",
+          "title": "Target"
+        },
+        "usage": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Usage",
+          "type": "array"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "Provision",
+      "type": "object"
+    }
+  },
+  "$id": "regtrack/NOTIFICATION_CORRIGENDUM",
+  "additionalProperties": false,
+  "properties": {
+    "amends_notification": {
+      "description": "canonical_ids amended/corrected",
+      "items": {
+        "type": "string"
+      },
+      "title": "Amends Notification",
+      "type": "array"
+    },
+    "amends_targets": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Amends Targets",
+      "type": "array"
+    },
+    "commencement": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Commencement"
+    },
+    "comment_period_days": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Comment Period Days"
+    },
+    "date": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Date"
+    },
+    "draft_ref": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DraftRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "file_no": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "File No"
+    },
+    "gazette": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GazetteRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "number": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "e.g. 888(E)",
+      "title": "Number"
+    },
+    "official_title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Official Title"
+    },
+    "other_ids": {
+      "description": "Other G.S.R./S.O. ids in the same file",
+      "items": {
+        "type": "string"
+      },
+      "title": "Other Ids",
+      "type": "array"
+    },
+    "powers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Powers",
+      "type": "array"
+    },
+    "provisions": {
+      "items": {
+        "$ref": "#/$defs/Provision"
+      },
+      "title": "Provisions",
+      "type": "array"
+    },
+    "references": {
+      "items": {
+        "type": "string"
+      },
+      "title": "References",
+      "type": "array"
+    },
+    "series": {
+      "anyOf": [
+        {
+          "enum": [
+            "G.S.R.",
+            "S.O."
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Series"
+    },
+    "signatory": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Signatory"
+    }
+  },
+  "title": "NOTIFICATION_CORRIGENDUM (NotificationData)",
+  "type": "object"
+}

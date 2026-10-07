@@ -1,0 +1,141 @@
+{
+  "$defs": {
+    "TapAmendmentEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "amd": {
+          "title": "Amd",
+          "type": "integer"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "pages": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pages"
+        }
+      },
+      "required": [
+        "amd"
+      ],
+      "title": "TapAmendmentEntry",
+      "type": "object"
+    },
+    "TapPart": {
+      "additionalProperties": false,
+      "properties": {
+        "chapter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chapter"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File"
+        },
+        "part": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Part"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "title": "TapPart",
+      "type": "object"
+    }
+  },
+  "$id": "regtrack/TAP_DOCUMENT",
+  "additionalProperties": false,
+  "properties": {
+    "amendment_record": {
+      "items": {
+        "$ref": "#/$defs/TapAmendmentEntry"
+      },
+      "title": "Amendment Record",
+      "type": "array"
+    },
+    "doc_no": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Doc No"
+    },
+    "issue": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Issue"
+    },
+    "parts": {
+      "items": {
+        "$ref": "#/$defs/TapPart"
+      },
+      "title": "Parts",
+      "type": "array"
+    }
+  },
+  "title": "TAP_DOCUMENT (TapDocumentData)",
+  "type": "object"
+}

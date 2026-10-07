@@ -1,0 +1,233 @@
+"""Link stage: 'parsed' -> 'linked'. doc_relation rows, family versions, mandates.
+
+Relation sources (deterministic first):
+  finalises     final -> draft: "draft ... published vide G.S.R. X dated Y" (regex) or equal file_no (file_no)
+  amends/corrects/extends_date/exempts  notification -> notification it changes
+  inserts_row / substitutes_row / omits_row  S.O. 1365(E) / Rule 124(4) table changes (details.rows)
+  amends / corrects / revises  AIS amendment, corrigendum, new revision (revises => requires_reapproval)
+  annex_of      AIS-007 table -> AIS-007(Rev.5);  interprets: interpretation manual -> standard
+  supersedes    "deemed to comply with AIS-xxx"
+  references    cited AIS / IS / UN R / other notifications
+Unknown targets keep to_doc NULL and to_ref = canonical id; resolve_refs() fills them when the target arrives.
+"""
+
+from __future__ import annotations
+
+import re
+
+import psycopg
+
+from regtrack.db import Jsonb
+from regtrack.models.enums import DocClass, FlagRule
+from regtrack.pipeline import mandates as M
+from regtrack.pipeline import patterns as P
+from regtrack.pipeline.dbutil import add_flag, set_stage, update_if_changed
+from regtrack.pipeline.extract import operative_text
+from regtrack.pipeline.text import english_text, load_pages
+
+
+def doc_by_cid(conn: psycopg.Connection, cid: str) -> dict | None:
+    return conn.execute("SELECT id, doc_date, status, doc_class FROM document WHERE canonical_id=%s", (cid,)).fetchone()
+
+
+def add_relation(conn: psycopg.Connection, from_doc: int, rtype: str, to_cid: str | None = None, to_doc: int | None = None,
+                 details: dict | None = None, evidence: str | None = None, method: str = "regex",
+                 confidence: float = 0.9, requires_reapproval: bool | None = None, page: int | None = None) -> bool:
+    """Insert unless an identical (from, type, target) relation exists. Returns True if inserted."""
+    if to_doc is None and to_cid:
+        t = doc_by_cid(conn, to_cid)
+        to_doc = t["id"] if t else None
+    if to_doc == from_doc:
+        return False
+    ref = to_cid if to_doc is None else (to_cid or None)
+    hit = conn.execute(
+        "SELECT 1 FROM doc_relation WHERE from_doc=%s AND type=%s AND coalesce(to_doc,0)=coalesce(%s,0) "
+        "AND coalesce(to_ref,'')=coalesce(%s,'') AND coalesce(details,'{}'::jsonb)=%s::jsonb",
+        (from_doc, rtype, to_doc, ref, Jsonb(details or {}))).fetchone()
+    if hit:
+        return False
+    if to_doc is None and not ref:
+        return False
+    conn.execute(
+        """INSERT INTO doc_relation (from_doc, to_doc, to_ref, type, requires_reapproval, details, evidence, page,
+                                     confidence, method) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (from_doc, to_doc, ref, rtype, requires_reapproval, Jsonb(details) if details else None,
+         (evidence or "")[:500] or None, page, confidence, method))
+    return True
+
+
+# ---------------------------------------------------------------------- per class
+def link_notification(conn: psycopg.Connection, doc: dict, op: str) -> None:
+    data = doc["data"] or {}
+    dc = DocClass(doc["doc_class"])
+    # final -> draft
+    dref = data.get("draft_ref")
+    if dref and doc["status"] == "final":
+        add_relation(conn, doc["id"], "finalises", to_cid=dref["canonical_id"], details={"draft_date": dref.get("date")},
+                     evidence=f"draft published vide {dref['canonical_id']}", method="regex")
+        t = doc_by_cid(conn, dref["canonical_id"])
+        if t is None:
+            add_flag(conn, "document", doc["id"], FlagRule.UNRESOLVED_REFERENCE, {"draft": dref["canonical_id"]})
+        elif dref.get("date") and t["doc_date"] and str(t["doc_date"]) != dref["date"]:
+            add_flag(conn, "document", doc["id"], FlagRule.DRAFT_FINAL_DATE_MISMATCH,
+                     {"cited": dref["date"], "draft_doc_date": str(t["doc_date"]), "draft": dref["canonical_id"]})
+    elif doc["status"] == "final" and data.get("file_no"):
+        for d in conn.execute("SELECT id, canonical_id FROM document WHERE status='draft' AND data->>'file_no'=%s "
+                              "AND doc_class='NOTIFICATION_DRAFT' AND (doc_date IS NULL OR doc_date <= %s)",
+                              (data["file_no"], doc["doc_date"])):
+            add_relation(conn, doc["id"], "finalises", to_doc=d["id"], to_cid=d["canonical_id"],
+                         evidence=f"same file no {data['file_no']}", method="file_no", confidence=0.7)
+    # changes to other notifications
+    rtype = {"NOTIFICATION_CORRIGENDUM": "corrects", "NOTIFICATION_EXTENSION": "extends_date",
+             "NOTIFICATION_EXEMPTION": "exempts"}.get(dc.value, "amends")
+    for cid in data.get("amends_notification") or []:
+        add_relation(conn, doc["id"], rtype, to_cid=cid, evidence=f"{rtype} {cid}")
+    # table rows (S.O. 1365(E) / Rule 124(4))
+    items, dsubs, omits = M.parse_table_amendments(op)
+    base = M.base_table(op)
+    if base:
+        target = "SO-1365(E)-2004" if base.startswith("SO-1365") else None
+        tref = target or base
+        if items:
+            rows = sorted({f"{i.table.replace(base, '').strip() or 'Table'} {i.serial}({i.item})" for i in items})
+            kind = "inserts_row" if re.search(r"shall\s+be\s+inserted", op, re.I) and not re.search(r"shall\s+be\s+substituted", op, re.I) else "substitutes_row"
+            add_relation(conn, doc["id"], kind, to_cid=tref, details={"rows": rows[:60]})
+        for ds in dsubs:
+            add_relation(conn, doc["id"], "extends_date", to_cid=tref,
+                         details={"table": ds.table, "rows": ds.serials, "old_date": str(ds.old) if ds.old else None,
+                                  "new_date": str(ds.new)}, evidence=ds.evidence)
+        for om in omits:
+            add_relation(conn, doc["id"], "omits_row", to_cid=tref, details={"table": om.table, "rows": [om.serial]})
+    # references
+    for r in (data.get("references") or [])[:40]:
+        add_relation(conn, doc["id"], "references", to_cid=r, method="regex", confidence=0.8)
+    for cid in (data.get("other_ids") or [])[:20]:
+        if cid not in (data.get("amends_notification") or []) and (not dref or cid != dref["canonical_id"]):
+            add_relation(conn, doc["id"], "references", to_cid=cid, method="regex", confidence=0.6)
+
+
+def link_ais(conn: psycopg.Connection, doc: dict) -> None:
+    data = doc["data"] or {}
+    dc = DocClass(doc["doc_class"])
+    if dc == DocClass.AIS_AMENDMENT and data.get("amends"):
+        add_relation(conn, doc["id"], "amends", to_cid=data["amends"], details={"amendment_no": doc["amendment_no"]})
+    elif dc == DocClass.AIS_CORRIGENDUM and data.get("amends"):
+        add_relation(conn, doc["id"], "corrects", to_cid=data["amends"], details={"corrigendum_no": doc["corrigendum_no"]})
+    elif dc == DocClass.AIS_STANDARD and doc["revision"]:
+        p = P.parse_canonical_ais(doc["canonical_id"])
+        if p:
+            prev = P.ais_canonical(p["code"], p["part"], (p["rev"] - 1) or None)
+            add_relation(conn, doc["id"], "revises", to_cid=prev, requires_reapproval=True,
+                         details={"revision": p["rev"]})
+    elif dc == DocClass.AIS_FORM_TABLE and data.get("annex_of"):
+        add_relation(conn, doc["id"], "annex_of", to_cid=data["annex_of"], details={"table": data.get("table_ref")})
+    elif dc == DocClass.AIS_INTERPRETATION and data.get("interprets"):
+        add_relation(conn, doc["id"], "interprets", to_cid=data["interprets"])
+    for d in data.get("deemed_compliance") or []:
+        add_relation(conn, doc["id"], "supersedes", to_cid=d, details={"basis": "deemed to comply"}, confidence=0.8)
+    for r in (data.get("references") or [])[:40]:
+        add_relation(conn, doc["id"], "references", to_cid=r, method="regex", confidence=0.8)
+
+
+# ---------------------------------------------------------------------- versions
+def notification_family(doc: dict) -> str | None:
+    data = doc["data"] or {}
+    if doc["canonical_id"] == "SO-1365(E)-2004" or "SO-1365(E)-2004 Table" in (data.get("amends_targets") or []):
+        return "SO-1365-MASTER"
+    if any(t.startswith("CMVR Rule 124") for t in data.get("amends_targets") or []):
+        return "CMVR-Rule-124"
+    return None
+
+
+def recompute_family(conn: psycopg.Connection, family_key: str) -> None:
+    """version_seq in order, exactly one is_current per family (drafts excluded)."""
+    rows = conn.execute(
+        """SELECT id, canonical_id, doc_class, status, revision, amendment_no, corrigendum_no, doc_date, version_seq,
+                  is_current FROM document WHERE family_key=%s""", (family_key,)).fetchall()
+    if not rows:
+        return
+    versioned = [r for r in rows if r["doc_class"] not in ("AIS_DRAFT", "NOTIFICATION_DRAFT") and r["status"] != "draft"]
+    if family_key.startswith(("SO-1365", "CMVR-Rule")):
+        key = lambda r: (r["doc_date"] or P.date(1900, 1, 1), r["id"])  # noqa: E731
+    else:
+        key = lambda r: (r["revision"] or 0, r["amendment_no"] or 0, r["corrigendum_no"] or 0,  # noqa: E731
+                         r["doc_class"] != "AIS_STANDARD", r["id"])
+    versioned.sort(key=key)
+    current_id = None
+    if family_key.startswith(("SO-1365", "CMVR-Rule")):
+        current_id = versioned[-1]["id"] if versioned else None
+    else:
+        bases = [r for r in versioned if r["doc_class"] in ("AIS_STANDARD", "SAFETY_STANDARD_LEGACY", "TAP_DOCUMENT",
+                                                             "AIS_FORM_TABLE", "FORM_TEMPLATE")]
+        top_rev = max((r["revision"] or 0) for r in versioned) if versioned else 0
+        cur = [r for r in bases if (r["revision"] or 0) == top_rev] or bases or versioned
+        current_id = cur[-1]["id"] if cur else None
+    # clear the old current first (partial unique index)
+    for r in rows:
+        if r["is_current"] and r["id"] != current_id:
+            conn.execute("UPDATE document SET is_current=false WHERE id=%s", (r["id"],))
+    seq = {r["id"]: i + 1 for i, r in enumerate(versioned)}
+    top_rev = max((r["revision"] or 0) for r in versioned) if versioned else 0
+    for r in rows:
+        status = r["status"]
+        if (r["doc_class"] == "AIS_STANDARD" and (r["revision"] or 0) < top_rev and status == "final"
+                and not family_key.startswith(("SO-1365", "CMVR-Rule"))):
+            status = "superseded"
+        update_if_changed(conn, "document", {"id": r["id"]},
+                          {"version_seq": seq.get(r["id"]), "is_current": r["id"] == current_id, "status": status})
+
+
+# ---------------------------------------------------------------------- stage
+def stage_link(conn: psycopg.Connection, f: dict) -> str:
+    pages = load_pages(f["sha256"])
+    families: set[str] = set()
+    for df in conn.execute("SELECT * FROM document_file WHERE file_id=%s AND (is_best_copy OR role='consolidated_segment')",
+                           (f["id"],)).fetchall():
+        doc = conn.execute("SELECT * FROM document WHERE id=%s", (df["document_id"],)).fetchone()
+        dc = DocClass(doc["doc_class"])
+        if dc == DocClass.OFF_TOPIC:
+            continue
+        if dc.is_notification:
+            op = operative_text(english_text(pages, df["page_from"], df["page_to"]))
+            link_notification(conn, doc, op)
+            fam = notification_family(doc)
+            if fam:
+                update_if_changed(conn, "document", {"id": doc["id"]}, {"family_key": fam})
+                families.add(fam)
+            if doc["status"] == "final" or dc == DocClass.NOTIFICATION_DRAFT:
+                stats = M.mandates_for_document(conn, doc, op)
+                record_date_changes(conn, doc, stats)
+                for rel in conn.execute("SELECT to_doc FROM doc_relation WHERE from_doc=%s AND type='finalises' "
+                                        "AND to_doc IS NOT NULL", (doc["id"],)):
+                    M.finalise_drafts(conn, doc["id"], rel["to_doc"], doc["doc_date"])
+        elif dc.is_ais:
+            link_ais(conn, doc)
+        if doc["family_key"]:
+            families.add(doc["family_key"])
+    for fam in families:
+        recompute_family(conn, fam)
+    set_stage(conn, f["id"], "linked")
+    return "linked"
+
+
+def record_date_changes(conn: psycopg.Connection, doc: dict, stats: dict) -> None:
+    for ch in stats.get("date_changes", []):
+        if ch.get("old_date_mismatch"):
+            add_flag(conn, "mandate", ch["mandate_id"], "old_date_mismatch",
+                     {"key": ch["key"], "stated_old": ch["stated_old"], "replaced": ch["old"],
+                      "note": "an intermediate amendment is probably missing from the corpus"})
+        if doc["doc_date"] and ch["new"] and ch["new"] < str(doc["doc_date"]):
+            add_flag(conn, "mandate", ch["mandate_id"], FlagRule.IMPLEMENTATION_BEFORE_NOTIFICATION, ch)
+
+
+def resolve_refs(conn: psycopg.Connection) -> int:
+    """Fill to_doc for relations whose target has arrived since."""
+    cur = conn.execute("""UPDATE doc_relation r SET to_doc=d.id FROM document d
+                          WHERE r.to_doc IS NULL AND r.to_ref=d.canonical_id AND d.id<>r.from_doc""")
+    n = cur.rowcount
+    if n:
+        conn.execute("""UPDATE quality_flag q SET resolved_at=now() FROM doc_relation r, document d
+                        WHERE q.rule='unresolved_reference' AND q.resolved_at IS NULL AND q.entity='document'
+                          AND q.entity_id=r.from_doc AND r.type='finalises' AND r.to_doc=d.id
+                          AND q.details->>'draft'=d.canonical_id""")
+    return n
