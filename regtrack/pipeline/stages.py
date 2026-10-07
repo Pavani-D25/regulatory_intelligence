@@ -44,6 +44,8 @@ def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str
     """Extract page text (cached by sha), OCR scanned pages, fill file_object. Returns the new stage."""
     path = Path(f["storage_path"])
     meta = extract_cached(f["sha256"], path, f["ext"])
+    # PostgreSQL JSONB rejects NUL characters (seen in 'Adobe PSL ... for Canon\x00' producers)
+    meta["pdf_meta"] = {k: v.replace("\x00", "") if isinstance(v, str) else v for k, v in (meta["pdf_meta"] or {}).items()}
     pages = load_pages(f["sha256"])
     engine, conf = f.get("ocr_engine"), f.get("ocr_confidence")
     if meta["error"]:
@@ -123,6 +125,8 @@ def file_ctx(conn: psycopg.Connection, f: dict, pages: list[PageText] | None = N
 
 def ready_for_classify(f: dict) -> bool:
     """Scans wait at 'text' until OCR has run (or no OCR engine exists on this machine)."""
+    if not f["page_count"]:
+        return True  # empty or broken file: nothing to OCR
     return not (f["ext"] == "pdf" and f["text_layer"] is False and not f["ocr_engine"])
 
 
