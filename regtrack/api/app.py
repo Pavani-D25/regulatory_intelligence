@@ -38,10 +38,10 @@ def health() -> dict:
 
 # ---------------------------------------------------------------- vehicle view
 COND_SQL = """
-  AND (m.conditions->'{k}'->>'lte' IS NULL OR %s IS NULL OR (m.conditions->'{k}'->>'lte')::numeric >= %s)
-  AND (m.conditions->'{k}'->>'lt'  IS NULL OR %s IS NULL OR (m.conditions->'{k}'->>'lt')::numeric  >  %s)
-  AND (m.conditions->'{k}'->>'gte' IS NULL OR %s IS NULL OR (m.conditions->'{k}'->>'gte')::numeric <= %s)
-  AND (m.conditions->'{k}'->>'gt'  IS NULL OR %s IS NULL OR (m.conditions->'{k}'->>'gt')::numeric  <  %s)"""
+  AND (m.conditions->'{k}'->>'lte' IS NULL OR %s::numeric IS NULL OR (m.conditions->'{k}'->>'lte')::numeric >= %s::numeric)
+  AND (m.conditions->'{k}'->>'lt'  IS NULL OR %s::numeric IS NULL OR (m.conditions->'{k}'->>'lt')::numeric  >  %s::numeric)
+  AND (m.conditions->'{k}'->>'gte' IS NULL OR %s::numeric IS NULL OR (m.conditions->'{k}'->>'gte')::numeric <= %s::numeric)
+  AND (m.conditions->'{k}'->>'gt'  IS NULL OR %s::numeric IS NULL OR (m.conditions->'{k}'->>'gt')::numeric  <  %s::numeric)"""
 
 
 @app.get("/vehicles/applicable")

@@ -32,8 +32,15 @@ def _pace(url: str) -> None:
 
 
 def client() -> httpx.Client:
+    # Windows certificate store (truststore): fills in missing intermediate certificates the way browsers do
+    # (egazette.gov.in serves an incomplete chain); verification stays on.
+    import ssl
+
+    import truststore
+
     return httpx.Client(headers={"User-Agent": get_settings().user_agent, "Accept": "application/json, */*"},
-                        timeout=httpx.Timeout(60.0, connect=20.0), follow_redirects=True)
+                        timeout=httpx.Timeout(60.0, connect=20.0), follow_redirects=True,
+                        verify=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
 
 
 def _retryable(e: BaseException) -> bool:

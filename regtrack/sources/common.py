@@ -58,6 +58,7 @@ def start_run(conn: psycopg.Connection, code: str) -> int:
 
 
 def finish_run(conn: psycopg.Connection, code: str, run_id: int, status: str, stats: RunStats, log_text: str = "") -> None:
+    conn.rollback()  # never inherit an aborted transaction
     conn.execute("UPDATE crawl_run SET finished_at=now(), status=%s, stats=%s, log=%s WHERE id=%s",
                  (status, Jsonb(stats.as_dict()), log_text[:20000] or None, run_id))
     conn.execute("UPDATE source SET last_run_at=now(), last_status=%s WHERE code=%s", (status, code))
@@ -79,6 +80,17 @@ def ext_from(content: bytes, url: str, ctype: str | None) -> str:
 
 
 def record_listing(conn: psycopg.Connection, c: httpx.Client, code: str, run_id: int, lst: Listing, stats: RunStats) -> None:
+    """One listing row in its own transaction: a bad row is logged and rolled back, never aborts the run."""
+    try:
+        _record_listing(conn, c, code, run_id, lst, stats)
+        conn.commit()
+    except psycopg.Error as e:
+        conn.rollback()
+        stats.errors += 1
+        stats.notes.append(f"{lst.item_id}: {type(e).__name__}: {str(e).splitlines()[0]}"[:300])
+
+
+def _record_listing(conn: psycopg.Connection, c: httpx.Client, code: str, run_id: int, lst: Listing, stats: RunStats) -> None:
     """Sighting for a listing row; download only when the row is new (new/changed files only)."""
     sid = source_id(conn, code)
     stats.seen += 1
@@ -97,7 +109,7 @@ def record_listing(conn: psycopg.Connection, c: httpx.Client, code: str, run_id:
     # the seed import already holds this listing (from the _logs CSV): link it instead of downloading again
     seed = conn.execute(
         """SELECT file_id FROM file_sighting WHERE source_id=%s AND source_item_id LIKE '%%log.csv:%%'
-           AND listing_title IS NOT DISTINCT FROM %s AND (listing_date IS NOT DISTINCT FROM %s OR %s IS NULL)""",
+           AND listing_title IS NOT DISTINCT FROM %s::text AND (listing_date IS NOT DISTINCT FROM %s::date OR %s::date IS NULL)""",
         (sid, lst.title, lst.listing_date, lst.listing_date)).fetchall()
     if len(seed) == 1:
         conn.execute(

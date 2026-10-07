@@ -118,6 +118,31 @@ def read_doc(path: Path) -> list[str]:
     return [txt.replace("\r", "\n")]
 
 
+def read_xlsx(path: Path) -> list[str]:
+    """Spreadsheet text: shared strings + inline cell values, one 'page' per sheet."""
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        shared = []
+        if "xl/sharedStrings.xml" in names:
+            x = z.read("xl/sharedStrings.xml").decode("utf-8", "ignore")
+            shared = [html.unescape(re.sub(r"<[^>]+>", "", si)) for si in re.findall(r"<si>(.*?)</si>", x, re.S)]
+        pages = []
+        for n in sorted(x for x in names if re.match(r"xl/worksheets/sheet\d+\.xml$", x)):
+            x = z.read(n).decode("utf-8", "ignore")
+            rows = []
+            for row in re.findall(r"<row[^>]*>(.*?)</row>", x, re.S):
+                cells = []
+                for attrs, v in re.findall(r"<c([^>]*)>(?:.*?<v>(.*?)</v>)?", row, re.S):
+                    if 't="s"' in attrs and v.isdigit() and int(v) < len(shared):
+                        cells.append(shared[int(v)])
+                    elif v:
+                        cells.append(html.unescape(v))
+                if cells:
+                    rows.append(" | ".join(cells))
+            pages.append("\n".join(rows))
+    return pages or ["\n".join(shared)]
+
+
 def read_html(path: Path) -> list[str]:
     t = path.read_text(encoding="utf-8", errors="ignore")
     t = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", t)
@@ -147,6 +172,8 @@ def extract(path: Path, ext: str) -> TextResult:
             texts = read_docx(path)
         elif ext == "doc":
             texts = read_doc(path)
+        elif ext in ("xlsx", "xlsm"):
+            texts = read_xlsx(path)
         elif ext in ("htm", "html"):
             texts = read_html(path)
         elif ext in ("csv", "txt", "md", "json"):
