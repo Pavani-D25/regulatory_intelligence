@@ -73,6 +73,30 @@ sources (MoRTH JSON API, ARAI page via Playwright, e-Gazette via Playwright, Ind
   `extraction.llm_pending=true` and the Qwen pass runs on a later run; chunks wait at stage `chunked` until the
   embedding endpoint is back.
 
+## Dashboard (React + Vite + Tailwind, `dashboard/`)
+
+Two terminals (PowerShell), from the project folder:
+
+```powershell
+# 1) the read API (port 8000) - the dashboard calls it from the browser (CORS allows localhost:5173/4173)
+.venv\Scripts\python -m regtrack.cli api
+
+# 2) the dashboard (first time: npm install)
+cd dashboard
+npm install
+npm run dev            # open http://localhost:5173
+```
+
+Production-style: `npm run build` then `npm run preview` (http://localhost:4173). The API address comes from
+`VITE_API_URL` (`dashboard/.env`, default `http://127.0.0.1:8000`; see `dashboard/.env.example`).
+
+Pages: **Vehicle check** (category L1/L2/M1/N1, engine cc, powertrain, usage, date → regulations in force and coming
+later, with standard, implementation date, legal basis, source document, and a *Download share pack* button for the
+selection) · **Browse** (year, category, topic, type, in-scope) · **Versions** (family timeline: base → revisions →
+amendments, current marked) · **Changes** (change_event feed) · **Search** · **Document** (metadata, relations,
+mandates, quality flags, open/download the original). Values the Qwen pass has not filled yet are marked
+"✦ AI fields pending".
+
 ## Read API
 
 | Endpoint | Purpose |
@@ -83,7 +107,9 @@ sources (MoRTH JSON API, ARAI page via Playwright, e-Gazette via Playwright, Ind
 | `/families/{family_key}/versions` | version view (e.g. `AIS-038`, `SO-1365-MASTER`) |
 | `/changes?since=` | change events from live crawls |
 | `/search?q=&category=` | filtered vector search (text fallback when embeddings are down) |
-| `/share-pack?category=L2` | zip of best-copy originals + `manifest.csv` |
+| `/share-pack?category=L2&engine_cc=110&powertrain=petrol` | zip of best-copy originals + `manifest.csv` for a vehicle selection |
+| `/files/{sha256}[?download=true]` | the original file (inline or download) |
+| `/families?q=` · `/meta` | family list; filter options and headline numbers (dashboard) |
 
 ## Rules this code keeps
 

@@ -181,3 +181,28 @@ the CLAUDE.md regression table measured vs expected, and the top 20 documents th
 Thresholds: required columns >= 95% filled, >= 90% agreement on identity/status/date fields,
 no unexplained validator failures.
 ```
+
+
+## for dashboardWhile we wait for the LM Studio credentials, continue building without the LLM:
+
+1. Dashboard: React + Vite + Tailwind in a /dashboard folder, calling the existing FastAPI
+   (enable CORS for localhost:5173 in the API). Pages:
+   - Vehicle check: pick category (L1/L2/M1/N1), engine cc, powertrain, usage, date -> applicable
+     regulations with standard, implementation date, legal basis, link to the source document.
+   - Browse: filter documents by year, category, topic, type; in-scope toggle.
+   - Versions: a family timeline (e.g. AIS-038 base -> revisions -> amendments, current marked).
+   - Changes: recent change_event feed.
+   - Search box.
+   - Document detail: metadata, relations, mandates, open/download the original PDF.
+   - "Download share pack" button for the current vehicle selection.
+   Clean, simple design; show "AI fields pending" where Qwen data is not yet filled.
+
+2. Optional MinIO object storage: docker-compose service, STORAGE_BACKEND=local|s3 in .env, same sha256
+   keys and write-once rule, one-time upload command. Keep local as default.
+
+3. Resolve the non-LLM quality flags you can (amendment_gap, title_file_mismatch, doubtful years) and
+   update VALIDATION_REPORT.md.
+
+4. Add `python -m regtrack.cli llm-smoke` that runs Qwen extraction + embeddings on 10 documents only.
+
+Commit after each part, update README with how to run the dashboard, and tell me the URL.

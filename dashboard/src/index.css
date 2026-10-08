@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #1f5fbf;
+  --color-brand-soft: #e8f0fc;
+}
+
+/* base element styles live in the base layer so utilities (e.g. text-white on a button-link) win */
+@layer base {
+  body { @apply bg-stone-50 text-zinc-900 antialiased; }
+  a { @apply text-brand hover:underline; }
+  input, select { @apply rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20; }
+  label { @apply text-xs font-medium text-zinc-500; }
+}

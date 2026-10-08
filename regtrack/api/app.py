@@ -9,21 +9,28 @@ import csv
 import io
 import zipfile
 from datetime import date, datetime
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
 
 from regtrack.db import connect
 from regtrack.models.enums import IN_SCOPE_CATEGORIES
 from regtrack.pipeline.search import search as chunk_search
+from regtrack.storage import open_local
 
 app = FastAPI(title="RegTrack India", version="0.1.0",
               description="Indian vehicle regulations (ARAI AIS, MoRTH Gazette, e-Gazette, India Code) - read only")
+# the dashboard (Vite dev server / preview) calls this API from the browser
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
+                                                  "http://localhost:4173", "http://127.0.0.1:4173"],
+                   allow_methods=["GET"], allow_headers=["*"], expose_headers=["Content-Disposition"])
 
-DOC_COLS = ("id, canonical_id, doc_class, series, number, year, part, revision, amendment_no, corrigendum_no, family_key, "
-            "version_seq, is_current, official_title, subject, issuer, status, doc_date, doc_date_precision, nature, "
-            "vehicle_categories, usage, powertrains, domains, in_scope")
+DOC_COLS_BASE = ("id, canonical_id, doc_class, series, number, year, part, revision, amendment_no, corrigendum_no, "
+                 "family_key, version_seq, is_current, official_title, subject, issuer, status, doc_date, "
+                 "doc_date_precision, nature, vehicle_categories, usage, powertrains, domains, in_scope")
+# ai_pending: the Qwen pass has not run yet for this document (deterministic fields only)
+DOC_COLS = DOC_COLS_BASE + ", coalesce((extraction->>'llm_pending')::boolean, false) AS ai_pending"
 
 
 def _rows(sql: str, args: list | tuple = ()) -> list[dict]:
@@ -152,6 +159,7 @@ def document(canonical_id: str) -> dict:
         flags = conn.execute("SELECT rule, details, created_at FROM quality_flag WHERE entity='document' AND entity_id=%s "
                              "AND resolved_at IS NULL", (d["id"],)).fetchall()
     out = dict(d)
+    out["ai_pending"] = bool((d["extraction"] or {}).get("llm_pending"))
     out.update(files=[dict(f) for f in files], relations_out=[dict(r) for r in rel_out],
                relations_in=[dict(r) for r in rel_in], mandates=[dict(m) for m in mandates],
                quality_flags=[dict(f) for f in flags])
@@ -182,36 +190,36 @@ def changes(since: datetime | None = None, limit: int = Query(200, le=2000)) -> 
 
 
 @app.get("/search")
-def search(q: str, category: str | None = None, in_scope: bool | None = True, is_current: bool | None = None,
+def search(q: str, category: str | None = None, in_scope: bool | None = None, is_current: bool | None = None,
            doc_class: str | None = None, limit: int = Query(10, le=50)) -> dict:
     with connect() as conn:
         return chunk_search(conn, q, category, in_scope, is_current, doc_class, limit)
 
 
 # ---------------------------------------------------------------- vendor share pack
-def share_pack_documents(conn, category: str, on: date, technical_only: bool = True) -> list[dict]:
+def share_pack_documents(conn, category: str, on: date, technical_only: bool = True, engine_cc: float | None = None,
+                         powertrain: str | None = None, usage: str | None = None) -> list[dict]:
+    """Documents behind the vehicle's mandates (in force on `on` or upcoming) + current AIS standards for the category."""
+    sel = vehicles_applicable(category=category, engine_cc=engine_cc, power_kw=None, gvw_kg=None, seats=None,
+                              powertrain=powertrain, usage=usage, on=on, include_drafts=False, include_future=True)
+    ids = {m["source_doc_id"] for m in sel["mandates"]} | {i for m in sel["mandates"] for i in (m["standard_doc_ids"] or [])}
     cats = [category.upper(), "ALL"]
     return [dict(r) for r in conn.execute(
-        f"""WITH m AS (
-              SELECT DISTINCT source_doc_id AS id FROM mandate WHERE NOT is_draft AND vehicle_categories && %s
-                AND (valid_to IS NULL OR valid_to > %s)
-              UNION SELECT DISTINCT unnest(standard_doc_ids) FROM mandate WHERE NOT is_draft AND vehicle_categories && %s
-                AND (valid_to IS NULL OR valid_to > %s)
-              UNION SELECT id FROM document WHERE vehicle_categories && %s AND is_current AND doc_class LIKE 'AIS_%%'
-            )
-            SELECT {', '.join('d.' + c.strip() for c in DOC_COLS.split(','))}
-            FROM document d JOIN m ON m.id=d.id
-            WHERE d.doc_class <> 'OFF_TOPIC' {"AND (d.nature='technical' OR d.nature IS NULL)" if technical_only else ""}
-            ORDER BY d.doc_class, d.canonical_id""", (cats, on, cats, on, cats)).fetchall()]
+        f"""SELECT {', '.join('d.' + c.strip() for c in DOC_COLS_BASE.split(','))}
+            FROM document d
+            WHERE (d.id = ANY(%s) OR (d.vehicle_categories && %s AND d.is_current AND d.doc_class LIKE 'AIS_%%'))
+              AND d.doc_class <> 'OFF_TOPIC' {"AND (d.nature='technical' OR d.nature IS NULL)" if technical_only else ""}
+            ORDER BY d.doc_class, d.canonical_id""", (list(ids), cats)).fetchall()]
 
 
 @app.get("/share-pack")
-def share_pack(category: str, on: date | None = None, technical_only: bool = True) -> StreamingResponse:
-    """Zip of best-copy originals + manifest.csv for a vehicle category."""
+def share_pack(category: str, on: date | None = None, engine_cc: float | None = None, powertrain: str | None = None,
+               usage: str | None = None, technical_only: bool = True) -> StreamingResponse:
+    """Zip of best-copy originals + manifest.csv for a vehicle selection (category [+ cc, powertrain, usage])."""
     on = on or date.today()
     buf = io.BytesIO()
     with connect() as conn:
-        docs = share_pack_documents(conn, category, on, technical_only)
+        docs = share_pack_documents(conn, category, on, technical_only, engine_cc, powertrain, usage)
         if not docs:
             raise HTTPException(404, f"no documents for category {category}")
         manifest = io.StringIO()
@@ -228,8 +236,9 @@ def share_pack(category: str, on: date | None = None, technical_only: bool = Tru
                            WHERE df.document_id=%s AND df.is_best_copy""", (d["id"],)):
                     safe = "".join(ch if ch.isalnum() or ch in "-_.()" else "_" for ch in d["canonical_id"])
                     name = f"{d['doc_class']}/{safe}__{f['sha256'][:12]}.{f['ext']}"
-                    if f["sha256"] not in added and Path(f["storage_path"]).exists():
-                        z.write(f["storage_path"], name)
+                    local = open_local(f["storage_path"])
+                    if f["sha256"] not in added and local.exists():
+                        z.write(local, name)
                         added.add(f["sha256"])
                     w.writerow([d["canonical_id"], d["doc_class"], d["official_title"] or d["subject"], d["doc_date"],
                                 d["status"], d["family_key"], d["version_seq"], d["is_current"],
@@ -237,5 +246,63 @@ def share_pack(category: str, on: date | None = None, technical_only: bool = Tru
                                 f"{f['page_from']}-{f['page_to']}", f["role"], f["urls"]])
             z.writestr("manifest.csv", manifest.getvalue())
     buf.seek(0)
-    fname = f"regtrack_share_pack_{category.upper()}_{on.isoformat()}.zip"
+    parts = [category.upper()] + ([f"{int(engine_cc)}cc"] if engine_cc else []) + ([powertrain] if powertrain else []) \
+        + ([usage] if usage else [])
+    fname = f"regtrack_share_pack_{'_'.join(parts)}_{on.isoformat()}.zip"
     return StreamingResponse(buf, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+# ---------------------------------------------------------------- dashboard helpers
+@app.get("/files/{sha256}")
+def original_file(sha256: str, download: bool = False) -> FileResponse:
+    """The original file exactly as stored (write-once); inline by default, ?download=true to save it."""
+    rows = _rows("SELECT sha256, ext, mime, storage_path FROM file_object WHERE sha256=%s", (sha256,))
+    if not rows:
+        raise HTTPException(404, "unknown file")
+    f = rows[0]
+    p = open_local(f["storage_path"])
+    if not p.exists():
+        raise HTTPException(410, "original not in storage")
+    media = {"pdf": "application/pdf", "htm": "text/html", "csv": "text/csv",
+             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}.get(f["ext"]) \
+        or f["mime"] or "application/octet-stream"
+    return FileResponse(p, media_type=media, filename=f"{sha256[:16]}.{f['ext']}",
+                        content_disposition_type="attachment" if download else "inline")
+
+
+@app.get("/families")
+def families(q: str | None = None, limit: int = Query(200, le=1000)) -> dict:
+    """Version families (AIS code, S.O. 1365 master table, TAP, ...) with their current version."""
+    rows = _rows(
+        """SELECT family_key, count(*) AS versions, max(doc_date) AS latest,
+                  max(canonical_id) FILTER (WHERE is_current) AS current,
+                  max(coalesce(official_title, subject)) FILTER (WHERE is_current) AS title,
+                  bool_or(in_scope) AS in_scope
+           FROM document WHERE family_key IS NOT NULL
+             AND (%s::text IS NULL OR family_key ILIKE %s OR coalesce(official_title, subject, '') ILIKE %s)
+           GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT %s""", (q, f"%{q}%", f"%{q}%", limit))
+    return {"count": len(rows), "families": rows}
+
+
+@app.get("/meta")
+def meta() -> dict:
+    """Filter options and headline numbers for the dashboard."""
+    with connect() as conn:
+        stats = dict(conn.execute(
+            """SELECT (SELECT count(*) FROM document WHERE doc_class<>'OFF_TOPIC') AS documents,
+                      (SELECT count(*) FROM document WHERE in_scope) AS in_scope,
+                      (SELECT count(*) FROM mandate WHERE valid_to IS NULL AND NOT is_draft) AS open_mandates,
+                      (SELECT count(*) FROM change_event WHERE detected_at > now() - interval '30 days') AS changes_30d,
+                      (SELECT count(*) FROM document WHERE (extraction->>'llm_pending')::boolean) AS ai_pending,
+                      (SELECT max(finished_at) FROM crawl_run WHERE status IN ('ok','partial')) AS last_crawl""").fetchone())
+        years = [dict(r) for r in conn.execute(
+            "SELECT extract(year FROM doc_date)::int AS year, count(*) AS n FROM document "
+            "WHERE doc_date IS NOT NULL AND doc_class<>'OFF_TOPIC' GROUP BY 1 ORDER BY 1 DESC")]
+        classes = [dict(r) for r in conn.execute("SELECT doc_class, count(*) AS n FROM document GROUP BY 1 ORDER BY 2 DESC")]
+        domains = [dict(r) for r in conn.execute(
+            "SELECT d.code, d.label, (SELECT count(*) FROM document x WHERE d.code = ANY(x.domains)) AS n "
+            "FROM domain d ORDER BY 3 DESC")]
+        cats = [dict(r) for r in conn.execute("SELECT code, label, in_scope FROM vehicle_category ORDER BY code")]
+    return {"stats": stats, "years": years, "doc_classes": classes, "domains": domains, "categories": cats,
+            "powertrains": ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"],
+            "usage": ["private", "transport"]}

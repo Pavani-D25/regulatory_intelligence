@@ -7,3 +7,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.env

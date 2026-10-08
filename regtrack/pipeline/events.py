@@ -69,7 +69,8 @@ def emit_events(conn: psycopg.Connection) -> int:
         etype = CLASS_EVENT.get(d["doc_class"], "new_revision" if d["doc_class"] == "AIS_STANDARD" and d["revision"]
                                 else "new_document")
         n += emit(conn, etype, d, None, {"canonical_id": d["canonical_id"], "doc_class": d["doc_class"]},
-                  f"{d['canonical_id']}: {title}"[:300], f"{d['canonical_id']} ({d['doc_class']}) {title}")
+                  (f"{d['canonical_id']}: {title}" if title else f"{d['canonical_id']} ({d['doc_class']})")[:300],
+                  f"{d['canonical_id']} ({d['doc_class']}) {title}")
         for r in conn.execute("SELECT r.*, t.canonical_id AS target FROM doc_relation r LEFT JOIN document t ON t.id=r.to_doc "
                               "WHERE r.from_doc=%s AND r.type='finalises'", (d["id"],)):
             n += emit(conn, "draft_finalised", d, None, {"draft": r["target"] or r["to_ref"]},

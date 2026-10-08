@@ -93,3 +93,8 @@ def _finalise(tmp: Path, dst: Path) -> None:
         os.chmod(dst, 0o444)  # read-only marks write-once on Windows too
     except OSError:
         pass
+
+
+def open_local(storage_path: str) -> Path:
+    """A local filesystem path for a stored object (local backend: the path itself)."""
+    return Path(storage_path)
