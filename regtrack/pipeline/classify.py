@@ -239,7 +239,8 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
         if code_raw.strip().lower() == "list" or re.search(r"list\s+of\s+(?:published\s+)?AIS", head[:600], re.I):
             return res(DocClass.OTHER, why="list of published AIS", iss="AISC/ARAI")
         draft_marks = re.search(r"\bFinali[sz]ed\s+Draft\b|\bDRAFT\b(?!\s+(?:rules|notification))|Last\s+date\s+for\s+comments",
-                                head[:2500])
+                                head[:2500]) or \
+            re.search(r"\bDraft\s*/?\s*AIS[\s\-]*\d{3}[^\n]{0,40}?/\s*D(?:F\d?|\d)\b", head[:4000], re.I)  # "Draft AIS-221/D0/Dec. 2025"
         if draft_marks or re.search(r"\bdraft\b|\bDF[_\s]", names):
             return res(DocClass.AIS_DRAFT, "draft", why="draft AIS", iss="AISC/ARAI")
         if ais_identity is None and ctx.text_layer is False:

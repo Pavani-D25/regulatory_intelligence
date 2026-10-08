@@ -74,15 +74,79 @@ def clean(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+# lines on AIS / notification covers that are never a title
+JUNK_TITLE = re.compile(r"^\W*(date\s+of\s+hosting|last\s+date|page\s*(no\.?\s*)?\d|\d+\s*\|\s*p\s*a\s*g\s*e|registered\s+no|"
+                        r"government\s+of\s+india|the\s+gazette|ministry\s+of|extraordinary|finalised\s+draft\s*$|check\s*list|"
+                        r"duration|comments|printed\s+by|status\s+chart|\(\d+\)|replace\s+clause|substitute|c\s+o\s+n\s+t|"
+                        r"\d+(\.\d+)?\s|\w+\s+highlighted|automotive\s+industry\s+standards?\s*$|s?\s*committee\b|the\s+government\s+of\s+india\s+felt|"
+                        r"\d{1,2}(st|nd|rd|th)?\s+\w+,?\s+\d{4}\s*$|amends\s+cmvr\s*$)", re.I)
+ID_WORDS = {"draft", "part", "revision", "rev", "amendment", "amendments", "amd", "corrigendum", "corri", "and", "with",
+            "jan", "feb", "march", "april", "may", "june", "july", "aug", "sept", "oct", "nov", "dec"}
+
+
+def is_junk_title(t: str | None) -> bool:
+    """No title, a cover-page line (hosting date, page number, Gazette header ...), or mostly OCR garbage."""
+    if not t or len(t.strip()) < 12:
+        return True
+    t = t.strip()
+    if PLACEHOLDER.search(t):  # a draft's unfilled blanks: "(………Amendment) Rules"
+        return True
+    garbage = sum(not (c.isascii() and (c.isalnum() or c in " .,:;()[]-–/&'\"%+")) for c in t)
+    if re.match(r"^\W*(draft\W*)?ais\W*\d{3}", t, re.I):  # "AIS-137 (Part 5)", "Draft AIS-221/D0/Dec. 2025": an id, not a title
+        words = [w for w in re.findall(r"[A-Za-z]{3,}", t) if w.lower() not in ID_WORDS and w.upper() != "AIS"]
+        if len(words) < 2:
+            return True
+    return bool(JUNK_TITLE.match(t)) or garbage > 0.25 * len(t) or "hosting on" in t.lower()
+
+
+AIS_DRAFT_COVER = re.compile(r"((?:Revised\s+)?Draft\s+(?:Amendment|Corrigendum)\s+No\.?\s*\d+)[^A-Za-z]{0,30}?\bto\s+"
+                             r"(AIS[\s\-:]*\d{3}(?:\s*\((?:Part|PART)\s*\d+\))?(?:\s*\(Rev\.?\s*\d+\))?)\s*[:\-–]?\s*"
+                             r"(.{10,200}?)(?=\s+(?:Part\s+[A-Z]\b|\d{1,2}\.\d?\s|Page\b|SR\.|1/\d|Sr\.|$))", re.I)
+
+
+AIS_DRAFT_COVER_TITLE = re.compile(r"(?:Revised\s+)?Draft\s+(?:Amendment|Corrigendum)\s+No", re.I)
+
+
 def ais_title(eng: str) -> str | None:
     head = clean(eng[:2500])
-    m = re.search(r"AUTOMOTIVE\s+INDUSTRY\s+STANDARD\s+(.{10,250}?)\s+(?:AIS[\s\-:]*\d{3}|PRINTED\s+BY|"
+    m = AIS_DRAFT_COVER.search(clean(eng[:4000]))
+    if m:  # "Draft Corrigendum No. 1 (…) To AIS-185 Approval of vehicles ..." -> "Draft Corrigendum No. 1 to AIS-185: Approval ..."
+        std = re.sub(r"[\s:]+", "-", m.group(2).strip(), count=1)
+        return f"{m.group(1)} to {std}: {m.group(3).strip(' :-')}"[:250]
+    m = re.search(r"AUTOMOTIVE\s+INDUSTRY\s+STANDARD(?!S)\s*(?:\(AIS\))?\s*[–\-]?\s*(?:\d{3}\s*)?(?:\(\s*AIS\s*[–\-]\s*\d{3}\s*\)\s*)?"
+                  r"(?:regarding\s+)?(.{10,250}?)\s+(?:AIS[\s\-:]*\d{3}|PRINTED\s+BY|Comments|Duration|"
                   r"Date\s+of\s+hosting|Last\s+date|(?:January|February|March|April|May|June|July|August|September|"
                   r"October|November|December)\s+\d{4})", head, re.I)
-    if m:
-        return m.group(1).strip(" :-")[:250]
-    lines = [ln.strip() for ln in eng[:2000].splitlines() if 15 < len(ln.strip()) < 160]
-    return lines[0] if lines else None
+    if m and not is_junk_title(m.group(1)):
+        return re.sub(r"^\(?AIS[\s\-]*\d{3}[^:]{0,25}:\s*(?:\d{4}\s+)?", "", m.group(1).strip(" :-.")).strip(" ()")[:250]
+    return None
+
+
+def own_ais_title(eng: str, number: int | None) -> str | None:
+    """'TO AIS 123(PART 1): CMVR Type Approval of ...' - the standard's own title as quoted by its amendment pages."""
+    if not number:
+        return None
+    m = re.search(rf"AIS[\s\-]*0*{number}\b(?:\s*\((?:PART|Part)\s*\d+\))?(?:\s*\(Rev\.?\s*\d+\))?\s*:\s*(?!\d{{4}})"
+                  r"(.{15,180}?)(?=\s+(?:\d{1,2}\.\d|Page|Part\s+[A-Z]\b|PRINTED|$))", clean(eng[:80000]))
+    return m.group(1).strip(" :-.") if m and not is_junk_title(m.group(1)) else None
+
+
+# "These rules may be called the Motor Vehicles (Driving) Regulations, 2017."
+CALLED = re.compile(r"(?:rules|regulations|order|scheme|notification)\s*,?\s*may\s+be\s+called\s+(?:as\s+)?the\s+"
+                    r"([A-Z][^.;:]{8,170}?,?\s*(?:19|20)\d\d)", re.I)
+ACT_TITLE = re.compile(r"\b(THE\s+[A-Z][A-Za-z\s\(\)\-']{4,90}?\s+ACT,?\s*(?:19|20)\d\d)")
+
+
+PLACEHOLDER = re.compile(r"[…_]{2,}|\.{3,}|-{3,}|…")  # … = the ellipsis character
+
+
+def called_title(text: str) -> str | None:
+    """Short title; a draft's blank ordinal is dropped: 'Central Motor Vehicles (……Amendment) Rules' -> '(Amendment)'."""
+    m = CALLED.search(clean(text[:15000]))
+    if not m:
+        return None
+    t = re.sub(r"\(\s*(?:(?:[…_.]+|-{2,})\s*)+", "(", m.group(1).strip())
+    return re.sub(r"\s+", " ", PLACEHOLDER.sub(" ", t)).strip()
 
 
 def signatory(eng: str) -> str | None:
@@ -231,7 +295,13 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
             "references": notification_references(op, doc["canonical_id"]),
         }.items() if v not in (None, [], {})})
         cats = categories_of(op[:30000])
-        cols["subject"] = doc.get("official_title") or subject_line(op, targets)
+        named = called_title(op) or called_title(eng)
+        subj = subject_line(op, targets)
+        if not subj or (subj.startswith("Amends ") and "Rule" not in subj and named):
+            subj = named or subj  # "Amends CMVR" says less than "Central Motor Vehicles (Amendment) Rules, 2026"
+        if named and is_junk_title(doc.get("official_title")):
+            cols["official_title"] = named
+        cols["subject"] = subj
         text_for_tags = op
     elif dc in (DocClass.AIS_STANDARD, DocClass.SAFETY_STANDARD_LEGACY):
         scope = scope_section(eng)
@@ -240,6 +310,8 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
                   re.finditer(r"deemed\s+to\s+(?:comply|be\s+in\s+compliance)\s+with\s+(?:the\s+(?:requirements\s+of\s+)?)?(AIS[\s\-:]*\d{3}[^,;.\n]{0,25})", eng, re.I)]
         unr = sorted({f"UN R{int(m.group(1))}" for m in P.REF_PATTERNS["UN_R"].finditer(eng[:20000])})
         title = ais_title(eng)
+        if is_junk_title(title):
+            title = own_ais_title(eng, doc.get("number")) or title
         cats = categories_of(scope) if scope else categories_of(eng[:8000])
         data.update({k: v for k, v in {
             "title": title, "scope_text": scope, "transitional_text": trans,
@@ -250,7 +322,7 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
                            if r != doc["canonical_id"]][:80],
             "cover_month": doc["doc_date"].strftime("%Y-%m") if doc.get("doc_date") else None,
         }.items() if v not in (None, [], {})})
-        cols["official_title"] = doc.get("official_title") or title
+        cols["official_title"] = title if is_junk_title(doc.get("official_title")) else doc["official_title"]
         cols["subject"] = title
         conf.update({"scope_text": 0.8 if scope else 0.0, "title": 0.7 if title else 0.0})
         text_for_tags = (scope or "") + " " + (title or "") + " " + eng[:20000]
@@ -262,7 +334,8 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         cats = []
         text_for_tags = eng[:15000]
     elif dc == DocClass.AIS_DRAFT:
-        data.setdefault("title", ais_title(eng))
+        title = ais_title(eng)
+        data["title"] = title if not is_junk_title(title) else (own_ais_title(eng, doc.get("number")) or title)
         data["scope_text"] = scope_section(eng)
         cats = categories_of(data["scope_text"] or eng[:8000])
         cols["subject"] = data.get("title")
@@ -291,6 +364,14 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         model_keys = set(model_for(dc).model_fields)
         data.update({k: v for k, v in g.items() if v not in (None, [], {}) and k in model_keys})
         cols["subject"] = g.get("title")
+        if dc in (DocClass.ACT, DocClass.CONSOLIDATED_RULES) and is_junk_title(cols["subject"]):
+            listed = [clean_listing(n) for n in names if n]
+            listed = [t for t in listed if not is_junk_title(t) and not re.fullmatch(r"[\w.\-() ]{0,20}", t)]
+            m = ACT_TITLE.search(clean(eng[:4000]))
+            if listed:
+                cols["subject"] = max(listed, key=len)[:240]
+            elif m and motor_vehicle_law(m.group(1), eng[:2000]):
+                cols["subject"] = re.sub(r"\s+", " ", m.group(1)).title()
         cats = categories_of(eng[:20000]) if dc != DocClass.OFF_TOPIC else []
         text_for_tags = eng[:30000]
     if dc != DocClass.OFF_TOPIC:
@@ -419,10 +500,79 @@ def stage_extract(conn: psycopg.Connection, f: dict, use_llm: bool = True) -> st
     return "parsed"
 
 
+LISTING_NOISE = re.compile(r"^\d{4}-\d{2}-\d{2}_|\.pdf$|_[0-9a-f]{8}$|_\d$", re.I)
+LISTING_PREFIX = re.compile(r"^\s*(?:G\.?\s*S\.?\s*R\.?|S\.?\s*O\.?)\s*\d{1,5}\s*\(?\s*E?\s*\)?\s*"
+                            r"(?:dated\s+)?(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\s*)?(?:regarding|-|–|:)?\s*", re.I)
+
+
+def clean_listing(raw: str) -> str:
+    t = LISTING_NOISE.sub("", raw.strip())  # dates / extension / hash suffix first, while the underscores are still there
+    t = LISTING_NOISE.sub("", t).replace("_", " ").strip()
+    t = re.sub(r"\s*\((?:Last\s+date|Date\s+of\s+hosting)[^)]*\)", "", t, flags=re.I)
+    t = re.sub(r"^\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s+\d{4}\s*(?:regarding\s+)?", "", t, flags=re.I)
+    return LISTING_PREFIX.sub("", t).strip(" -–:.")
+
+
+def ais_listing_matches(doc: dict, lr: dict) -> bool:
+    code = lr.get("code") or ""
+    m = re.search(r"AIS[\s\-]*(\d{3})", code)
+    if not m or not doc.get("number") or int(m.group(1)) != int(re.sub(r"\D", "", str(doc["number"])) or 0):
+        return False
+    part = re.search(r"Part\s*(\d+)", code, re.I)
+    if (str(doc.get("part") or "") or None) != (part.group(1) if part else None):
+        return False
+    return (lr.get("tab") == "Draft" or "draft" in code.lower()) == (doc.get("doc_class") == "AIS_DRAFT" or doc.get("status") == "draft")
+
+
+def listing_subject(conn: psycopg.Connection, doc: dict, file_id: int) -> str | None:
+    """A human description from the source listings, used only when the content gives none. Rule 5: listing titles never
+    give identity, and 6 MoRTH titles name the wrong notification - so a title that names any number other than this
+    document's own is skipped."""
+    from regtrack.pipeline.identity import title_notification_ids
+
+    rows = conn.execute("SELECT listing_title, listing_raw FROM file_sighting WHERE file_id=%s", (file_id,)).fetchall()
+    num = re.match(r"\d+", str(doc.get("number") or ""))
+    own = (P.series_code(doc["series"]) if doc.get("series") else None, str(int(num.group(0))) if num else None)
+    numbered = doc.get("series") in ("G.S.R.", "S.O.", "GSR", "SO") and own[1] is not None
+    best = None
+    for r in rows:
+        for raw in (r["listing_title"], (r["listing_raw"] or {}).get("title")):
+            if not raw:
+                continue
+            ids = title_notification_ids(raw)
+            if (ids and own not in ids) or (numbered and own not in ids):
+                continue  # names another notification, or does not name this one
+            lr = r["listing_raw"] or {}
+            if str(doc.get("doc_class", "")).startswith("AIS_"):
+                if not ais_listing_matches(doc, lr):
+                    continue
+                if raw is r["listing_title"]:
+                    continue  # ARAI's listing_title is the code; the description is in listing_raw.title
+            t = clean_listing(raw)
+            if not is_junk_title(t) and not re.fullmatch(r"[\w.\-() ]{0,20}", t) and (best is None or len(t) > len(best)):
+                best = t
+    return best[:240] if best else None
+
+
 def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pages: list[PageText], names: list[str],
                      use_llm: bool = True) -> None:
     dc = DocClass(doc["doc_class"])
     cols, data, conf = deterministic(doc, pages, df, f, names)
+    if dc in (DocClass.AIS_STANDARD, DocClass.AIS_DRAFT, DocClass.SAFETY_STANDARD_LEGACY) and not AIS_DRAFT_COVER_TITLE.match(cols.get("subject") or ""):
+        alt = listing_subject(conn, doc, f["id"])
+        if alt:
+            cols["subject"] = alt
+            data["title"] = alt
+            data["subject_source"] = "ARAI listing (code-matched)"
+            conf["subject"] = 0.8
+            if dc != DocClass.AIS_DRAFT and is_junk_title(doc.get("official_title")):
+                cols["official_title"] = alt
+    if dc not in (DocClass.OFF_TOPIC, DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and is_junk_title(cols.get("subject")):
+        alt = listing_subject(conn, doc, f["id"])
+        if alt:
+            cols["subject"] = alt
+            data["subject_source"] = "listing"
+            conf["subject"] = 0.4
     if dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and not cols.get("vehicle_categories") and data.get("amends"):
         # an amendment applies to the vehicles of the standard it amends (same rule as link.link_ais)
         base = conn.execute("SELECT vehicle_categories, in_scope, domains, powertrains FROM document WHERE canonical_id=%s",

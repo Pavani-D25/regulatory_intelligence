@@ -97,3 +97,57 @@ def test_categories_and_conditions():
 def test_references():
     refs = P.find_references("conforming to IS 14664:2010, AIS-156 and UN R136; see rule 96 (4A)")
     assert "IS 14664:2010" in refs and "AIS-156" in refs and "UN R136" in refs and "CMVR Rule 96(4A)" in refs
+
+
+# ---- titles (rules_v2) --------------------------------------------------------------------------------------------
+def test_junk_titles():
+    from regtrack.pipeline.extract import is_junk_title
+
+    for t in ["Date of hosting on website: 8th September 2026", "AIS-137 (Part 5)", "Draft AIS-221/D0/Dec. 2025",
+              "REGISTERED NO. DL-33004/2001", "Amends CMVR", "FINALISED DRAFT", "Page 38/52, ANNEXURE F, Clause No. 1.0",
+              "Central Motor Vehicles (……Amendment) Rules, 2026", None, ""]:
+        assert is_junk_title(t), t
+    for t in ["AIS-197: Bharat New Car Assessment Programme", "Amends CMVR Rule 102(1), CMVR Rule 104",
+              "Finalised Draft of 67 Proposed Amendments to the Motor Vehicles Act, 1988", "Electronic Stability Control Systems",
+              "Central Motor Vehicles (Tenth Amendment) Rules, 2024"]:
+        assert not is_junk_title(t), t
+
+
+def test_ais_title_from_draft_cover():
+    from regtrack.pipeline.extract import ais_title
+
+    cover = ("Date of hosting on website: 8th September 2026\nLast date for comments: 22nd September 2026\n"
+             "Draft Corrigendum No. 1  (…../2026)\nTo\nAIS-185 Approval of vehicles with regard to the Advanced\n"
+             "Emergency Braking System (AEBS) for M1 and N1 vehicles\n1. Page 18/39, Clause 7.5.1, third paragraph\n")
+    assert ais_title(cover).startswith("Draft Corrigendum No. 1 to AIS-185: Approval of vehicles with regard to the Advanced")
+    std = "AUTOMOTIVE INDUSTRY STANDARD – 164\n(AIS – 164)\nConstructional and Functional Requirements\nfor Insulated Vehicles\nDate of Hosting on website"
+    assert ais_title(std) == "Constructional and Functional Requirements for Insulated Vehicles"
+    back = "PRINTED BY THE ARAI ON BEHALF OF AUTOMOTIVE INDUSTRY STANDARDS COMMITTEE UNDER CENTRAL MOTOR VEHICLE RULES"
+    assert ais_title(back) is None  # "STANDARDS COMMITTEE" is not a title
+
+
+def test_called_title():
+    from regtrack.pipeline.extract import called_title
+
+    assert called_title("(1) These rules may be called as the Motor Vehicles (Third Party Insurance Base Premium and "
+                        "Liability) Rules, 2022.") == "Motor Vehicles (Third Party Insurance Base Premium and Liability) Rules, 2022"
+    assert called_title("These rules may be called the Central Motor Vehicles (………Amendment) Rules, 2021.") == \
+        "Central Motor Vehicles (Amendment) Rules, 2021"
+
+
+def test_ais_listing_match():
+    from regtrack.pipeline.extract import ais_listing_matches
+
+    std = {"doc_class": "AIS_STANDARD", "status": "final", "number": "137", "part": "5"}
+    assert ais_listing_matches(std, {"code": "AIS-137 (Part 5) and Amd 1", "tab": "Published"})
+    assert not ais_listing_matches(std, {"code": "AIS-137 (Part 6)", "tab": "Published"})
+    assert not ais_listing_matches(std, {"code": "Draft AIS-137 (Part 5)/D1", "tab": "Draft"})
+    draft = {"doc_class": "AIS_DRAFT", "status": "draft", "number": "221", "part": None}
+    assert ais_listing_matches(draft, {"code": "Draft AIS-221/D0/Dec. 2025", "tab": "Draft"})
+
+
+def test_draft_ais_running_header():
+    import re
+
+    head = "Draft AIS-221/D0/Dec. 2025\nII\nINTRODUCTION\nThe Government of India felt the need"
+    assert re.search(r"\bDraft\s*/?\s*AIS[\s\-]*\d{3}[^\n]{0,40}?/\s*D(?:F\d?|\d)\b", head, re.I)

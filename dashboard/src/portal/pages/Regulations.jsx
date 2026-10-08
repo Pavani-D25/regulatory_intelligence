@@ -34,13 +34,13 @@ export default function Regulations() {
   const [sp, setSp] = useSearchParams();
   const f = {
     q: sp.get("q") || "", category: sp.get("category") || "", impact: sp.get("impact") || "", status: sp.get("status") || "",
-    month: sp.get("month") || "", history: sp.get("history") === "1",
+    month: sp.get("month") || "", history: sp.get("history") === "1", reference: sp.get("reference") === "1",
   };
   const set = (k, v) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); setSp(n, { replace: true }); };
   const { openReg, meta, version } = usePortal();
   const { data, error, loading } = useLoad(
-    () => portal.regulations({ q: f.q, category: f.category, impact: f.impact, status: f.status, history: f.history }),
-    [f.q, f.category, f.impact, f.status, f.history, version]);
+    () => portal.regulations({ q: f.q, category: f.category, impact: f.impact, status: f.status, history: f.history, reference: f.reference }),
+    [f.q, f.category, f.impact, f.status, f.history, f.reference, version]);
   const [sort, setSort] = useState({ key: "effective", dir: -1 });
   const [page, setPage] = useState(0);
   const cats = [["", "All categories"], ...(meta?.categories || []).map((c) => [c.code, c.label])];
@@ -70,7 +70,7 @@ export default function Regulations() {
         <div className="actions"><button className="btn secondary" disabled={!rows.length} onClick={() => csv(rows)}>Export CSV ({rows.length})</button></div>
       </div>
       <div className="kpis">
-        <Kpi label="Library Records" value={k?.records} small={f.history ? "Including superseded documents" : `In force and drafts · ${k?.superseded ?? 0} superseded hidden`} corner="L" />
+        <Kpi label="Library Records" value={k?.records} small={`In force and drafts${f.history ? " + superseded" : ""}${f.reference ? " + reference" : ""}`} corner="L" />
         <Kpi label="New This Quarter" value={k?.new_quarter} small="Published in the last 90 days" corner="+" tone="green" />
         <Kpi label="Drafts Open" value={k?.drafts} small="Draft rules and draft AIS" corner="D" tone="amber" />
         <Kpi label="High Impact" value={k?.high} small="Rule-based until AI review" corner="!" tone="red" />
@@ -90,6 +90,8 @@ export default function Regulations() {
         <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <label className="sub" style={{ display: "flex", gap: 6, alignItems: "center", margin: 0 }}>
             <input type="checkbox" checked={f.history} onChange={(e) => set("history", e.target.checked ? "1" : "")} /> Show superseded documents ({k?.superseded ?? 0})</label>
+          <label className="sub" style={{ display: "flex", gap: 6, alignItems: "center", margin: 0 }} title="Reports, AIS-007 form tables, lists and unclassified documents">
+            <input type="checkbox" checked={f.reference} onChange={(e) => set("reference", e.target.checked ? "1" : "")} /> Show reference documents ({k?.reference ?? 0})</label>
           {f.month && <span className="sub" style={{ margin: 0 }}>Month {f.month} · <button className="btn ghost" style={{ padding: 0 }} onClick={() => set("month", "")}>remove</button></span>}
         </div>
       </Card>
@@ -102,6 +104,7 @@ export default function Regulations() {
             <tr key={r.canonical_id} className="click" onClick={() => openReg(r.canonical_id)}>
               <td><OfficialId id={r.canonical_id} /></td>
               <td className="wrap"><span className="clamp2" title={r.name}>{r.name}</span>
+                {r.subtitle && <span className="sub" style={{ display: "block", margin: "2px 0 0" }}>{r.subtitle}</span>}
                 {r.doc_status === "superseded" && <Badge v="Superseded" tone="blue" />}</td>
               <td>{r.region || "—"}</td><td>{r.authority}</td><td className="wrap" style={{ minWidth: 120 }}>{r.domain}</td><td>{fmt(r.effective)}</td>
               <td><Badge v={r.impact} /></td><td><Badge v={r.status} /></td>

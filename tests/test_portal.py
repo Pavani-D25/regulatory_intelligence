@@ -154,3 +154,22 @@ def test_motor_vehicle_law_rule():
     assert motor_vehicle_law("THE MOTOR VEHIC ES (AMENDMENT) ACT, 1969", "An Act further to amend the Motor Vehicles Act, 1939.") == "repealed"
     assert motor_vehicle_law("REGISTERED NO. DL-33004/2000", "An Act further to amend the Motor Vehicles Act, 1988.") == "in_force"
     assert motor_vehicle_law("THE CARRIAGE BY ROAD ACT, 2007", "An Act to provide for the regulation of common carriers") is None
+
+
+def test_reference_documents_hidden_unless_asked(client):
+    cur = client.get("/portal/regulations").json()
+    ref = client.get("/portal/regulations", params={"reference": True}).json()
+    assert ref["kpis"]["records"] == cur["kpis"]["records"] + cur["kpis"]["reference"]
+    assert all(r["doc_class"] not in ("REPORT", "OTHER", "AIS_FORM_TABLE") for r in cur["rows"])
+    # the ARAI index page is reference material, not a regulation
+    assert "DOC-47ed5282a0ed3ef6" not in {r["canonical_id"] for r in cur["rows"]}
+
+
+def test_drafts_are_not_published_standards():
+    from regtrack.db import connect
+
+    with connect() as conn:
+        bad = conn.execute("""SELECT count(*) AS n FROM document d JOIN document_file df ON df.document_id=d.id AND df.is_best_copy
+                              JOIN file_sighting fs ON fs.file_id=df.file_id JOIN source s ON s.id=fs.source_id AND s.code='ARAI_AIS'
+                              WHERE d.doc_class='AIS_STANDARD' AND fs.listing_raw->>'code' ILIKE 'Draft%%'""").fetchone()["n"]
+    assert bad == 0

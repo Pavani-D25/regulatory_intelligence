@@ -75,7 +75,8 @@ function Drawer({ id, onClose, toast, openReg }) {
       <div className={`drawer ${id ? "open" : ""}`}>
         <div className="drawerhead">
           <div><small style={{ color: "var(--muted)" }}>REGULATION DETAIL</small>
-            <h2 style={{ margin: "4px 0 0", fontSize: 18 }}>{d ? d.name : id ? "Loading…" : "—"}</h2></div>
+            <h2 style={{ margin: "4px 0 0", fontSize: 18 }}>{d ? d.name : id ? "Loading…" : "—"}</h2>
+            {d?.subtitle && <div className="sub">{d.subtitle}</div>}</div>
           <button className="close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <div className="drawerbody">

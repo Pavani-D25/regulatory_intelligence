@@ -112,3 +112,16 @@ and what is still pending. Details per phase are in `reports/phase_<n>.md`; fina
 New incidents: Docker Desktop was down again at the start (started with `docker desktop start`); the
 "open original" button was unreadable (Tailwind base styles moved to `@layer base`); a resolver ↔ gap-check loop
 re-raised resolved flags on every run (flags are now compared by content, not by resolver notes).
+
+### Portal and data clean-up (8 Oct 2026, evening)
+
+| Part | What | Commit |
+|---|---|---|
+| Portal | Approved design (v2) on our data: 9 views + detail drawer, India L1/L2/M1/N1; workflow tables (migration 0002), chunk full-text index (0003). | `e061360` |
+| No static data | Labels, suggestions, sources, workflow counts from the DB; scheduler heartbeat + working auto-sync switch; settings that did nothing removed (0004). | `d666126` |
+| Sync all | "Sync All Sources" in Admin; ARAI crawl no longer times out on a slow page. | `54e85d8` |
+| Refinements | Drawer with obligations / related documents / versions; live refresh; bell; sortable paged register; in-scope change counts. Motor Vehicles Act + CMVR → ALL; pre-1988 MV law superseded. | `81d72e6` |
+| Titles + drafts | 16 draft AIS (AIS-221…230, AIS-197(Rev.1), AIS-126(Rev.1) …) were stored as published standards: running-header "Draft AIS-nnn/Dn" now classifies them as drafts; the base standards they had "superseded" are in force again. Titles: draft covers, ARAI's own title (code-matched), notification short titles ("may be called the …"), listing titles only when they name the same number; reference documents (reports, AIS-007 tables, lists) kept out of the register by default. Junk library titles 81 → 23. Re-run writes zero document/chunk/relation/mandate rows. | this commit |
+
+Still open: 23 library documents keep a poor title (mostly notifications without a short title or a numbered
+listing, e.g. GSR-793(E)-2026 "Amends CMVR") — the Qwen pass fills `subject` for these.

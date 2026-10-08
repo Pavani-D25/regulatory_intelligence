@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import html
 import io
+import re
 import threading
 from datetime import date, datetime, timedelta
 
@@ -37,6 +38,9 @@ IMPACT_RULE = ("High = technical, with an obligation still to come, a revision n
                "last 12 months; Medium = other technical; Low = administrative (registration, licences, fees)")
 STATUSES = ["Action Required", "Under Review", "Impact Analysis", "Tracked"]
 DRAFTS = ("NOTIFICATION_DRAFT", "AIS_DRAFT")
+# not regulations themselves: reports, AIS-007 form tables, catalogues, lists, unclassified - kept out of the register by default
+REFERENCE_CLASSES = ("REPORT", "OTHER", "AIS_FORM_TABLE", "FORM_TEMPLATE", "BIS_CATALOGUE", "APPROVED_LIST")
+AMENDMENT_RULES = re.compile(r"\((?:[\w-]+\s+)?Amendment\)\s+(?:Rules|Regulations?)", re.I)
 
 
 def _short(label: str) -> str:
@@ -112,8 +116,13 @@ def classify_row(r: dict, today: date | None = None) -> dict:
     else:
         status = "Tracked"
     cats = [c for c in CATEGORIES if c in (r["vehicle_categories"] or [])] or (["ALL"] if "ALL" in (r["vehicle_categories"] or []) else [])
+    formal, subject = (r["official_title"] or "").strip(), (r["subject"] or "").strip()
+    if formal and subject and subject != formal and AMENDMENT_RULES.search(formal) and not AMENDMENT_RULES.search(subject):
+        name, subtitle = subject, formal  # "Amends CMVR Rule 125 ..." tells more than "Central Motor Vehicles (Tenth Amendment) Rules"
+    else:
+        name, subtitle = formal or subject or r["canonical_id"], None
     r.update(
-        name=r["official_title"] or r["subject"] or r["canonical_id"], impact=impact, impact_basis=basis,
+        name=name, subtitle=subtitle, impact=impact, impact_basis=basis,
         status=status, region=", ".join(cats), categories=cats, authority=r["issuer"] or "—",
         domain=DOMAIN_LABEL.get((r["domains"] or [None])[0], "General") if r["domains"] else "General",
         effective=r["next_obligation"] or r["doc_date"],
@@ -122,11 +131,14 @@ def classify_row(r: dict, today: date | None = None) -> dict:
 
 
 def regulations(conn, category: str | None = None, extra_where: str = "", args: tuple = (),
-                history: bool = False) -> list[dict]:
-    """In-scope regulations with impact/status. history=False leaves out superseded and withdrawn documents."""
+                history: bool = False, reference: bool = False) -> list[dict]:
+    """In-scope regulations with impact/status. history=False leaves out superseded and withdrawn documents,
+    reference=False leaves out reports, form tables, catalogues and unclassified documents."""
     load_vocab(conn)
     if not history:
         extra_where = "AND d.status NOT IN ('superseded','withdrawn') " + extra_where
+    if not reference:
+        extra_where = "AND d.doc_class NOT IN ('" + "','".join(REFERENCE_CLASSES) + "') " + extra_where
     cats = [category] if category in CATEGORIES else SCOPE
     if category in CATEGORIES:
         cats = [category, "ALL"]
@@ -217,25 +229,31 @@ def summary() -> dict:
 
 def _reg_out(r: dict) -> dict:
     keys = ("id", "canonical_id", "name", "doc_class", "region", "categories", "authority", "domain", "domains", "effective",
-            "doc_date", "impact", "impact_basis", "status", "ai_pending", "next_obligation", "family_key", "doc_status")
+            "doc_date", "impact", "impact_basis", "status", "ai_pending", "next_obligation", "family_key", "doc_status",
+            "subtitle")
     return {k: r.get(k) for k in keys}
 
 
 # ====================================================================== regulation library
 @router.get("/regulations")
 def regulation_list(q: str | None = None, category: str | None = None, impact: str | None = None,
-                    status: str | None = None, history: bool = False) -> dict:
+                    status: str | None = None, history: bool = False, reference: bool = False) -> dict:
     today = date.today()
     with connect() as conn:
-        regs = regulations(conn, category, history=history)
+        regs = regulations(conn, category, history=history, reference=reference)
+        n_reference = conn.execute("""SELECT count(*) AS n FROM document WHERE vehicle_categories && %s
+                                      AND doc_class = ANY(%s) AND status NOT IN ('superseded','withdrawn')""",
+                                   (SCOPE, list(REFERENCE_CLASSES))).fetchone()["n"]
         superseded = conn.execute("""SELECT count(*) AS n FROM document WHERE doc_class<>'OFF_TOPIC' AND vehicle_categories && %s
                                      AND status IN ('superseded','withdrawn')""", (SCOPE,)).fetchone()["n"]
-        comp = _rows(conn, """SELECT coalesce(issuer,'Unknown') AS name, count(*) AS n FROM document
-                              WHERE doc_class<>'OFF_TOPIC' AND vehicle_categories && %s GROUP BY 1 ORDER BY 2 DESC LIMIT 6""", (SCOPE,))
+    by_issuer: dict[str, int] = {}
+    for r in regs:
+        by_issuer[r["issuer"] or "Unknown"] = by_issuer.get(r["issuer"] or "Unknown", 0) + 1
+    comp = [{"name": k, "n": v} for k, v in sorted(by_issuer.items(), key=lambda kv: -kv[1])[:6]]
     rows = regs
     if q:
         ql = q.lower()
-        rows = [r for r in rows if ql in " ".join(str(r.get(k) or "") for k in ("canonical_id", "name", "authority", "domain")).lower()]
+        rows = [r for r in rows if ql in " ".join(str(r.get(k) or "") for k in ("canonical_id", "name", "subtitle", "authority", "domain")).lower()]
     if impact in ("High", "Medium", "Low"):
         rows = [r for r in rows if r["impact"] == impact]
     if status in STATUSES:
@@ -244,7 +262,7 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
     return {
         "kpis": {"records": len(regs), "new_quarter": sum(1 for r in regs if r["doc_date"] and r["doc_date"] >= today - timedelta(days=90)),
                  "drafts": sum(1 for r in regs if r["doc_class"] in DRAFTS or r["doc_status"] == "draft"),
-                 "high": sum(1 for r in regs if r["impact"] == "High"), "superseded": superseded},
+                 "high": sum(1 for r in regs if r["impact"] == "High"), "superseded": superseded, "reference": n_reference},
         "count": len(rows), "rows": [_reg_out(r) for r in rows], "composition": comp,
     }
 
@@ -252,7 +270,7 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
 @router.get("/regulations/{canonical_id:path}/detail")
 def regulation_detail(canonical_id: str) -> dict:
     with connect() as conn:
-        regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,), history=True)
+        regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,), history=True, reference=True)
         if not regs:
             raise HTTPException(404, "not an in-scope regulation")
         r = regs[0]

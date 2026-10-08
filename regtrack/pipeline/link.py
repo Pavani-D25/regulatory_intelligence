@@ -182,6 +182,9 @@ def recompute_family(conn: psycopg.Connection, family_key: str) -> None:
         if (r["doc_class"] == "AIS_STANDARD" and (r["revision"] or 0) < top_rev and status == "final"
                 and not family_key.startswith(("SO-1365", "CMVR-Rule"))):
             status = "superseded"
+        elif (r["doc_class"] == "AIS_STANDARD" and (r["revision"] or 0) >= top_rev and status == "superseded"
+                and not family_key.startswith(("SO-1365", "CMVR-Rule"))):
+            status = "final"  # the newer revision turned out to be a draft (or was retired): this one is in force again
         update_if_changed(conn, "document", {"id": r["id"]},
                           {"version_seq": seq.get(r["id"]), "is_current": r["id"] == current_id, "status": status})
 
