@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 
 from regtrack.config import get_settings
-from regtrack.storage import normalise_ext, sha256_file, store_file
+from regtrack.storage import normalise_ext, put_file, sha256_file, storage_uri
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def scan(root: Path | None = None) -> list[SeedFile]:
 def copy_to_storage(files: list[SeedFile]) -> int:
     created = 0
     for sf in files:
-        _, _, c = store_file(sf.path, sf.ext)
+        _, _, c = put_file(sf.path, sf.ext)
         created += c
     return created
 
@@ -206,7 +206,6 @@ def mime_of(name: str) -> str:
 def import_seed(limit: int | None = None) -> dict:
     from regtrack.db import Jsonb, transaction
 
-    s = get_settings()
     files = scan()
     if limit:
         files = files[:limit]
@@ -220,7 +219,7 @@ def import_seed(limit: int | None = None) -> dict:
         run = conn.execute("INSERT INTO crawl_run (source_id, status, stats) VALUES (%s,'running','{}') RETURNING id",
                            (src["LOCAL_SEED"],)).fetchone()["id"]
         for i, sf in enumerate(files):
-            spath = s.storage_dir / sf.sha256[:2] / f"{sf.sha256}.{sf.ext}"
+            spath = storage_uri(sf.sha256, sf.ext)
             r = conn.execute(
                 """INSERT INTO file_object (sha256, storage_path, mime, ext, size_bytes, stage)
                    VALUES (%s,%s,%s,%s,%s,'downloaded') ON CONFLICT (sha256) DO NOTHING RETURNING id""",

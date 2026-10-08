@@ -17,6 +17,7 @@ dependencies = [
   "uvicorn>=0.29",
   "apscheduler>=3.10,<4",
   "jsonschema>=4.21",
+  "minio>=7.2",
   "winrt-runtime; sys_platform == 'win32'",
   "winrt-Windows.Media.Ocr; sys_platform == 'win32'",
   "winrt-Windows.Graphics.Imaging; sys_platform == 'win32'",

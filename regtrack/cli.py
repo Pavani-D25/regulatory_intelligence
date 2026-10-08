@@ -9,6 +9,7 @@
   schedule              start the 6-hour scheduler (blocking)
   report                write reports/VALIDATION_REPORT.md
   api                   start the read-only FastAPI server
+  storage-upload [--limit N] [--switch]   one-time upload of local originals to S3/MinIO
 """
 
 from __future__ import annotations
@@ -121,6 +122,15 @@ def cmd_report(_args) -> int:
     return 0
 
 
+def cmd_storage_upload(args) -> int:
+    from regtrack.storage_upload import upload_all
+
+    print(upload_all(limit=args.limit, switch=args.switch))
+    if args.switch:
+        print("storage_path now points to S3 for uploaded objects: set STORAGE_BACKEND=s3 in .env")
+    return 0
+
+
 def cmd_api(args) -> int:
     import uvicorn
 
@@ -150,6 +160,10 @@ def main(argv: list[str] | None = None) -> int:
     sp.set_defaults(fn=cmd_crawl)
     sub.add_parser("schedule").set_defaults(fn=cmd_schedule)
     sub.add_parser("report").set_defaults(fn=cmd_report)
+    sp = sub.add_parser("storage-upload", help="one-time upload of local originals to S3/MinIO")
+    sp.add_argument("--limit", type=int)
+    sp.add_argument("--switch", action="store_true", help="rewrite file_object.storage_path to s3:// URIs")
+    sp.set_defaults(fn=cmd_storage_upload)
     sp = sub.add_parser("api")
     sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=8000)

@@ -26,6 +26,7 @@ from regtrack.models.enums import DocClass, FlagRule
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline.dbutil import add_flag, update_if_changed
 from regtrack.pipeline.text import PageText, english_text, load_pages
+from regtrack.storage import open_local
 from regtrack.validators import in_scope, validate_data
 from regtrack.vocab import find_domains
 
@@ -252,7 +253,7 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         cats = categories_of(eng[:20000])
         text_for_tags = eng[:30000]
     elif dc == DocClass.BIS_CATALOGUE:
-        data["rows"] = bis_catalogue_rows(file_row["storage_path"])
+        data["rows"] = bis_catalogue_rows(str(open_local(file_row["storage_path"])))
         cols["subject"] = f"BIS automotive standards catalogue ({len(data['rows'])} standards)"
         cats, text_for_tags = [], ""
     elif dc == DocClass.TAP_DOCUMENT:

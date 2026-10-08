@@ -13,7 +13,7 @@ import psycopg
 from regtrack.config import get_settings
 from regtrack.db import Jsonb
 from regtrack.sources import http
-from regtrack.storage import normalise_ext, sha256_bytes, store_bytes
+from regtrack.storage import normalise_ext, put_bytes, sha256_bytes
 
 log = logging.getLogger(__name__)
 SEEN_REFRESH = timedelta(hours=20)  # last_seen_at is refreshed at most this often (a rerun writes nothing)
@@ -136,7 +136,7 @@ def _record_listing(conn: psycopg.Connection, c: httpx.Client, code: str, run_id
             return
         content, ctype = r.content, r.headers.get("content-type")
     ext = ext_from(content, lst.url or lst.file_name or "", ctype)
-    sha, path, created = store_bytes(content, ext)
+    sha, path, created = put_bytes(content, ext)
     row = conn.execute(
         """INSERT INTO file_object (sha256, storage_path, mime, ext, size_bytes, stage)
            VALUES (%s,%s,%s,%s,%s,'downloaded') ON CONFLICT (sha256) DO NOTHING RETURNING id""",

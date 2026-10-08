@@ -73,6 +73,25 @@ sources (MoRTH JSON API, ARAI page via Playwright, e-Gazette via Playwright, Ind
   `extraction.llm_pending=true` and the Qwen pass runs on a later run; chunks wait at stage `chunked` until the
   embedding endpoint is back.
 
+## Object storage: local (default) or MinIO / S3
+
+Originals are write-once under the key `<sha[:2]>/<sha>.<ext>` in both backends.
+
+- `STORAGE_BACKEND=local` (default): files in `STORAGE_DIR`; `file_object.storage_path` is the local path.
+- `STORAGE_BACKEND=s3`: files in the bucket `S3_BUCKET` (MinIO or any S3-compatible store);
+  `storage_path` is `s3://<bucket>/<key>`. The bucket is created with object locking and every object gets a legal
+  hold, so it cannot be deleted or overwritten. Parsing and the API read through a local cache (`CACHE_DIR`,
+  default `data/cache`) that is checked against the sha256 in the key.
+
+Switching an existing installation to MinIO:
+
+```powershell
+docker compose --profile s3 up -d minio                  # console http://localhost:9001 (S3_ACCESS_KEY / S3_SECRET_KEY)
+.venv\Scripts\python -m regtrack.cli storage-upload      # upload every original (re-runs upload nothing new)
+.venv\Scripts\python -m regtrack.cli storage-upload --switch   # point file_object.storage_path at s3://
+# then set STORAGE_BACKEND=s3 in .env; local files are kept (never deleted)
+```
+
 ## Dashboard (React + Vite + Tailwind, `dashboard/`)
 
 Two terminals (PowerShell), from the project folder:

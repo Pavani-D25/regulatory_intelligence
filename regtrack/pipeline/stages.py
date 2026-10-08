@@ -12,7 +12,6 @@ import json
 import logging
 import re
 from datetime import date
-from pathlib import Path
 
 import psycopg
 
@@ -34,6 +33,7 @@ from regtrack.pipeline.text import (
     load_pages,
     save_pages,
 )
+from regtrack.storage import open_local
 
 log = logging.getLogger(__name__)
 LOW_OCR = 0.6
@@ -42,7 +42,7 @@ LOW_OCR = 0.6
 # ====================================================================== text
 def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str:
     """Extract page text (cached by sha), OCR scanned pages, fill file_object. Returns the new stage."""
-    path = Path(f["storage_path"])
+    path = open_local(f["storage_path"])
     meta = extract_cached(f["sha256"], path, f["ext"])
     # PostgreSQL JSONB rejects NUL characters (seen in 'Adobe PSL ... for Canon\x00' producers)
     meta["pdf_meta"] = {k: v.replace("\x00", "") if isinstance(v, str) else v for k, v in (meta["pdf_meta"] or {}).items()}
@@ -73,7 +73,7 @@ def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str
 def ocr_pages(f: dict, pages: list[PageText], targets: list[int], engine: str) -> tuple[str | None, float | None]:
     """OCR the target pages in place (page text replaced when OCR gives more text). Saves the page store."""
     confs = []
-    path = Path(f["storage_path"])
+    path = open_local(f["storage_path"])
     for pg in pages:
         if pg.page not in targets or pg.ocr:
             continue

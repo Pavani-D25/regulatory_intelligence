@@ -33,6 +33,13 @@ class Settings:
     llm_api_key: str
     embed_model: str
     embed_dim: int
+    storage_backend: str = "local"          # local | s3 (MinIO or any S3-compatible store)
+    s3_endpoint: str = "localhost:9000"
+    s3_bucket: str = "regtrack-raw"
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_secure: bool = False
+    cache_dir: Path = ROOT / "data" / "cache"  # local copies of s3 objects for parsing/serving
     user_agent: str = "RegTrackIndia/0.1 (research)"
 
     @property
@@ -63,4 +70,11 @@ def get_settings() -> Settings:
         llm_api_key=_clean(os.getenv("LLM_API_KEY")) or "lm-studio",
         embed_model=_clean(os.getenv("EMBED_MODEL")),
         embed_dim=int(_clean(os.getenv("EMBED_DIM")) or 768),
+        storage_backend=(_clean(os.getenv("STORAGE_BACKEND")) or "local").lower(),
+        s3_endpoint=_clean(os.getenv("S3_ENDPOINT")) or "localhost:9000",
+        s3_bucket=_clean(os.getenv("S3_BUCKET")) or "regtrack-raw",
+        s3_access_key=_clean(os.getenv("S3_ACCESS_KEY")),
+        s3_secret_key=_clean(os.getenv("S3_SECRET_KEY")),
+        s3_secure=(_clean(os.getenv("S3_SECURE")) or "false").lower() in ("1", "true", "yes"),
+        cache_dir=Path(_clean(os.getenv("CACHE_DIR")) or storage.parent / "cache"),
     )
