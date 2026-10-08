@@ -39,11 +39,47 @@ def search(conn: psycopg.Connection, q: str, category: str | None = None, in_sco
             [vec_literal(vec), *args, vec_literal(vec), limit]).fetchall()
         mode = "vector"
     except llm.LLMUnavailable as e:
-        terms = [t for t in q.split() if len(t) > 2][:8] or [q]
-        like = " AND ".join(["c.content ILIKE %s"] * len(terms))
-        rows = conn.execute(
-            f"SELECT {cols}, similarity(c.content, %s) AS score FROM chunk c JOIN document d ON d.id=c.document_id "
-            f"WHERE {w} AND {like} ORDER BY score DESC, c.id LIMIT %s",
-            [q, *args, *[f"%{t}%" for t in terms], limit]).fetchall()
+        rows = fulltext(conn, q, cols, w, args, limit)
         mode = f"text (embeddings unavailable: {str(e)[:80]})"
     return {"query": q, "mode": mode, "results": [dict(r) for r in rows]}
+
+
+# domain acronyms -> words used in the regulations (keyword search has no notion of meaning)
+SYNONYMS = {
+    "abs": ["anti-lock braking", "antilock"], "cbs": ["combined braking"], "aeb": ["emergency braking"],
+    "esc": ["electronic stability"], "tpms": ["tyre pressure monitoring"], "ev": ["electric vehicle", "battery operated"],
+    "bev": ["battery electric", "battery operated"], "cng": ["compressed natural gas"], "lpg": ["liquefied petroleum gas"],
+    "hsrp": ["high security registration"], "puc": ["pollution under control"], "vlt": ["vehicle location tracking"],
+    "obd": ["on-board diagnostic"], "drl": ["daytime running"], "seatbelt": ["seat belt"], "bs6": ["bharat stage vi"],
+    "motorcycle": ["motor cycle", "two-wheeler"], "motorcycles": ["motor cycles", "two-wheelers"], "car": ["m1"],
+    "scooter": ["two-wheeler", "motor cycle"],
+}
+STOP = {"for", "the", "and", "of", "in", "on", "to", "a", "an", "is", "are", "what", "which", "show", "me", "about",
+        "with", "from", "by", "do", "does", "my", "all", "any", "vehicles", "vehicle", "rules", "regulation", "regulations"}
+CATEGORY_CODES = {"l1", "l2", "l3", "l5", "m1", "m2", "m3", "n1", "n2", "n3"}
+
+
+def fulltext(conn, q: str, cols: str, w: str, args: list, limit: int) -> list:
+    """Ranked full-text search: each query word is a group of alternatives (acronym expansions) joined with OR,
+    groups joined with AND; falls back to OR across groups when nothing matches all of them."""
+    import re
+
+    words = [t for t in re.findall(r"[A-Za-z0-9\-]+", q.lower()) if t not in STOP and t not in CATEGORY_CODES and len(t) > 1]
+    if not words:
+        words = [q]
+    groups, params = [], []
+    for t in words[:8]:
+        alts = [t] + SYNONYMS.get(t, [])
+        groups.append("(" + " || ".join(["phraseto_tsquery('english', %s)"] * len(alts)) + ")")
+        params += alts
+    rows = []
+    for joiner in (" && ", " || "):
+        tsq = joiner.join(groups)
+        rows = conn.execute(
+            f"SELECT {cols}, ts_rank_cd(to_tsvector('english', c.content), tsq) AS score "
+            f"FROM chunk c JOIN document d ON d.id=c.document_id, ({'SELECT ' + tsq + ' AS tsq'}) qq "
+            f"WHERE {w} AND to_tsvector('english', c.content) @@ qq.tsq ORDER BY score DESC, c.id LIMIT %s",
+            [*params, *args, limit]).fetchall()
+        if rows:
+            break
+    return rows

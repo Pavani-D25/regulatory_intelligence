@@ -125,12 +125,39 @@ npm run dev            # open http://localhost:5173
 Production-style: `npm run build` then `npm run preview` (http://localhost:4173). The API address comes from
 `VITE_API_URL` (`dashboard/.env`, default `http://127.0.0.1:8000`; see `dashboard/.env.example`).
 
-Pages: **Vehicle check** (category L1/L2/M1/N1, engine cc, powertrain, usage, date → regulations in force and coming
-later, with standard, implementation date, legal basis, source document, and a *Download share pack* button for the
-selection) · **Browse** (year, category, topic, type, in-scope) · **Versions** (family timeline: base → revisions →
-amendments, current marked) · **Changes** (change_event feed) · **Search** · **Document** (metadata, relations,
-mandates, quality flags, open/download the original). Values the Qwen pass has not filled yet are marked
-"✦ AI fields pending".
+The dashboard follows the approved design (*Regulatory Intelligence Portal v2*): dark sidebar, KPI cards, cards and
+drawer. Scope is India only, vehicle categories L1 / L2 / M1 / N1 (plus rules for all vehicles). In the design,
+"Region" is the vehicle category, "Authority" is the issuer and "Domain" is the topic.
+
+| View | What it shows (live data) |
+|---|---|
+| **Dashboard** (`/`) | KPIs, 12-month publication trend, severity donut, regulations per category, top topics, latest changes, upcoming / recent implementation dates |
+| **Regulations** | register with search + category / impact / status filters, CSV export, composition by authority; click a row → detail drawer |
+| **Change Monitor** | change events from the crawls (timeline), changes by type, review SLA; *Mark Visible as Reviewed* is saved |
+| **Compliance Matrix** | obligations in force (CMVR rule + standard + categories), editable owner / evidence / status / due date, readiness |
+| **Impact View** | category × topic heatmap (score 1–5), click a cell for its regulations, most-referenced standards |
+| **Ask Regulatory AI** | answers with clause citations; until LM Studio is connected it returns the best-matching clauses (full-text search) |
+| **Reports** | Executive summary, Compliance gap, Change impact — downloadable HTML or CSV, logged under Recent Reports |
+| **Alerts** | alert rules (on/off, new, delete) evaluated against changes and dates; notifications are shown in the portal (no email yet) |
+| **Admin** | sources and their last runs, ingestion jobs, monitoring settings, *Run Source Sync* (one crawl + pipeline in the background) |
+| Tools: **Vehicle Check**, **Versions**, **Document** | the earlier pages: regulations in force for a vehicle + share pack, family timelines, full document record |
+
+**Detail drawer:** ID, authority, category, effective date, impact, status, summary, detected change, recommended
+follow-up; review status and owner can be changed there and are saved.
+
+**Impact and status are rule-based** until the Qwen pass runs (marked "rule-based"):
+- **High** = technical, and either has an obligation still to come, a revision needing re-approval, or was published in the last 12 months.
+- **Medium** = other technical documents. **Low** = administrative (registration, licences, fees).
+- **Status:**
+  - Under Review = an unreviewed change in the last 30 days, or a draft.
+  - Action Required = High with an obligation still to come.
+  - Impact Analysis = other High.
+  - Tracked = the rest.
+  - A status set by the team always wins.
+
+The team's inputs (reviews, compliance matrix, alert rules, settings, report log) live in the tables of
+`db/migrations/0002_portal_workflow.sql`. Pipeline data is never edited from the portal; the one exception is marking
+change events as reviewed. Values the Qwen pass has not filled yet are marked "✦ AI fields pending".
 
 ## Read API
 
@@ -145,6 +172,7 @@ mandates, quality flags, open/download the original). Values the Qwen pass has n
 | `/share-pack?category=L2&engine_cc=110&powertrain=petrol` | zip of best-copy originals + `manifest.csv` for a vehicle selection |
 | `/files/{sha256}[?download=true]` | the original file (inline or download) |
 | `/families?q=` · `/meta` | family list; filter options and headline numbers (dashboard) |
+| `/portal/*` | portal views: `summary`, `regulations` (+ `/{id}/detail`, `/{id}/review`), `changes` (+ `review`), `compliance`, `impact` (+ `cell`), `ask`, `reports/{kind}?fmt=html\|csv`, `alerts`, `admin`, `settings`, `admin/sync` |
 
 ## Rules this code keeps
 

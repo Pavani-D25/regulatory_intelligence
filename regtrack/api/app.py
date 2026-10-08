@@ -24,7 +24,7 @@ app = FastAPI(title="RegTrack India", version="0.1.0",
 # the dashboard (Vite dev server / preview) calls this API from the browser
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
                                                   "http://localhost:4173", "http://127.0.0.1:4173"],
-                   allow_methods=["GET"], allow_headers=["*"], expose_headers=["Content-Disposition"])
+                   allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["*"], expose_headers=["Content-Disposition"])
 
 DOC_COLS_BASE = ("id, canonical_id, doc_class, series, number, year, part, revision, amendment_no, corrigendum_no, "
                  "family_key, version_seq, is_current, official_title, subject, issuer, status, doc_date, "
@@ -306,3 +306,9 @@ def meta() -> dict:
     return {"stats": stats, "years": years, "doc_classes": classes, "domains": domains, "categories": cats,
             "powertrains": ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"],
             "usage": ["private", "transport"]}
+
+
+# approved portal design (v2): dashboard, library, change monitor, compliance, impact, AI, reports, alerts, admin
+from regtrack.api.portal import router as portal_router  # noqa: E402
+
+app.include_router(portal_router)
