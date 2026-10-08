@@ -395,6 +395,14 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
                      use_llm: bool = True) -> None:
     dc = DocClass(doc["doc_class"])
     cols, data, conf = deterministic(doc, pages, df, f, names)
+    if dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and not cols.get("vehicle_categories") and data.get("amends"):
+        # an amendment applies to the vehicles of the standard it amends (same rule as link.link_ais)
+        base = conn.execute("SELECT vehicle_categories, in_scope, domains, powertrains FROM document WHERE canonical_id=%s",
+                            (data["amends"],)).fetchone()
+        if base and base["vehicle_categories"]:
+            cols.update(vehicle_categories=base["vehicle_categories"], in_scope=base["in_scope"],
+                        domains=cols.get("domains") or base["domains"], powertrains=cols.get("powertrains") or base["powertrains"])
+            conf["vehicle_categories"] = 0.6
     extraction = {"model": "rules", "rules": RULES_VERSION, "prompt": None, "confidence": conf, "needs_check": [],
                   "source_file": f["sha256"], "pages": [df["page_from"], df["page_to"]]}
     old = doc["extraction"] or {}
@@ -432,8 +440,15 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
     values = {**{k: v for k, v in cols.items() if v is not None or k == "in_scope"}, "data": Jsonb(data),
               "extraction": Jsonb(extraction)}
     if doc["doc_date"] is None and data.get("date") and re.fullmatch(P.ISO_DATE_RE, str(data["date"])):
-        values["doc_date"] = date.fromisoformat(data["date"])
-        values["doc_date_precision"] = "day"
+        d = date.fromisoformat(data["date"])
+        if d <= date.today():  # a later date in the text is a validity/implementation date, not the document's
+            values["doc_date"] = d
+            values["doc_date_precision"] = "day"
+    final_date = values.get("doc_date") or doc["doc_date"]
+    if final_date and final_date > date.today():
+        extraction["needs_check"] = sorted(set(extraction["needs_check"]) | {"doc_date"})
+        values["extraction"] = Jsonb(extraction)
+        add_flag(conn, "document", doc["id"], FlagRule.DOC_DATE_IN_FUTURE, {"doc_date": str(final_date)})
     if not doc.get("issuer"):
         # no ministry header in the text: the publishing source is the issuer (provenance, not identity)
         srcs = {r["code"] for r in conn.execute(

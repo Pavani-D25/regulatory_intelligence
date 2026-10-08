@@ -183,3 +183,51 @@ def test_categories_from_text():
 def test_fixtures_extract(name):
     r = extract(FX / name, "pdf")
     assert r.page_count >= 1 and r.error is None
+
+
+def test_split_header_followed_by_contents_instruction():
+    """'Contents' inside an amendment's own instructions must not hide its header (AIS-186 Amd 1, AIS-025 Amd 4)."""
+    pages = [PageText(1, "AMENDMENT NO. 2 (06/2026)\nTo\nAIS-186 Approval of Motor Vehicles\n1. Clause 5 substitute").analyse(),
+             PageText(2, "1/ 9\n\nAMENDMENT NO. 1 (05/2026)\nTo\nAIS-186 Approval of Motor Vehicles\n"
+                         "1. Page II, Contents, Annexes\nRenumber existing Annexes").analyse(),
+             PageText(3, "Amendment No 10 (11/2021)\nTo\nAIS-37: Standard Procedure for Type Approval").analyse(),
+             PageText(4, "STATUS CHART OF THE STANDARD\nAmendment No. 1 to AIS-186 dated May 2026").analyse()]
+    segs = split_ais(pages)
+    assert [(s.kind, s.number, s.page_from) for s in segs] == [("amendment", 2, 1), ("amendment", 1, 2), ("amendment", 10, 3)]
+
+
+def test_year_from_short_title_then_file_no():
+    from regtrack.pipeline.analysis import FileAnalysis, fix_year_from_file_no
+    from regtrack.pipeline.classify import ClassResult
+    from regtrack.pipeline.identity import Identity
+
+    def fa(title, file_no, year):
+        ident = Identity(kind="notification", canonical_id=f"GSR-212(E)-{year}", series="G.S.R.", number="212(E)",
+                         year=year, doc_date=None)
+        f = FileAnalysis(ctx=None, cls=ClassResult(DocClass.NOTIFICATION_FINAL), identity=ident)
+        f.official_title, f.file_no = title, file_no
+        fix_year_from_file_no(f)
+        return f
+
+    # OCR'd heading date '20 IS' gave a wrong nearby year; the notification's own short title wins
+    f = fa("Central Motor Vehicles (Fourth Amendment) Rules, 2015", "RT-11042/13/2008-MVL", 2005)
+    assert f.identity.canonical_id == "GSR-212(E)-2015" and f.year_note["from"] == "GSR-212(E)-2005"
+    # no short title: a notification cannot predate its file
+    assert fa(None, "RT-11042/20/2005-MVL", 1989).identity.canonical_id == "GSR-212(E)-2005"
+    # nothing better: unchanged, no note
+    g = fa(None, "RT-11042/20/1988-MVL", 1989)
+    assert g.identity.canonical_id == "GSR-212(E)-1989" and g.year_note is None
+
+
+def test_identity_from_amendment_headers():
+    from regtrack.pipeline.identity import Identity
+    from regtrack.pipeline.split import Segment
+    from regtrack.pipeline.stages import identity_from_headers
+
+    cover = Identity(kind="ais", canonical_id="AIS-007", number="007", family_key="AIS-007")
+    segs = [Segment("amendment", 1, 2, 2, target_raw="AIS-071(Part 2):2009"), Segment("base", 3, 3),
+            Segment("amendment", 4, 21, 1, target_raw="AIS-071(Part 2):2009")]
+    i = identity_from_headers(cover, segs)
+    assert i.canonical_id == "AIS-071(Part2)" and i.family_key == "AIS-071(Part2)"
+    same = [Segment("amendment", 1, 1, 1, target_raw="AIS-007 (Rev.5)")]
+    assert identity_from_headers(cover, same) is cover

@@ -1,18 +1,17 @@
 # RegTrack India — Validation report
 
-Generated 2026-10-08 04:18.
+Generated 2026-10-08 14:51.
 
 | files | docs | rels | mandates | chunks | emb | events |
 |---|---|---|---|---|---|---|
-| 2142 | 2048 | 5263 | 178 | 147272 | 0 | 123 |
+| 2142 | 2064 | 5398 | 178 | 148323 | 0 | 123 |
 
 
 ## Files by stage
 
 | stage | files |
 |---|---|
-| chunked | 1619 |
-| done | 523 |
+| chunked | 2142 |
 
 
 ## Regression table (CLAUDE.md) — measured vs expected
@@ -33,55 +32,55 @@ Generated 2026-10-08 04:18.
 
 | column | filled | total | rate |
 |---|---|---|---|
-| canonical_id | 1848 | 1848 | 100.0% |
-| doc_class | 1848 | 1848 | 100.0% |
-| series | 870 | 1848 | 47.1% |
-| number | 1391 | 1848 | 75.3% |
-| year | 1181 | 1848 | 63.9% |
-| part | 185 | 1848 | 10.0% |
-| revision | 171 | 1848 | 9.3% |
-| amendment_no | 328 | 1848 | 17.7% |
-| family_key | 822 | 1848 | 44.5% |
-| version_seq | 816 | 1848 | 44.2% |
-| official_title | 509 | 1848 | 27.5% |
-| subject | 1666 | 1848 | 90.2% |
-| issuer | 1813 | 1848 | 98.1% |
-| status | 1848 | 1848 | 100.0% |
-| doc_date | 1323 | 1848 | 71.6% |
-| doc_date_precision | 1348 | 1848 | 72.9% |
-| nature | 1657 | 1848 | 89.7% |
-| vehicle_categories | 1038 | 1848 | 56.2% |
-| usage | 247 | 1848 | 13.4% |
-| powertrains | 328 | 1848 | 17.7% |
-| domains | 1353 | 1848 | 73.2% |
-| in_scope | 1848 | 1848 | 100.0% |
-| relevance | 1848 | 1848 | 100.0% |
-| data | 1806 | 1848 | 97.7% |
-| extraction | 1848 | 1848 | 100.0% |
+| canonical_id | 1864 | 1864 | 100.0% |
+| doc_class | 1864 | 1864 | 100.0% |
+| series | 878 | 1864 | 47.1% |
+| number | 1404 | 1864 | 75.3% |
+| year | 1190 | 1864 | 63.8% |
+| part | 186 | 1864 | 10.0% |
+| revision | 176 | 1864 | 9.4% |
+| amendment_no | 337 | 1864 | 18.1% |
+| family_key | 836 | 1864 | 44.8% |
+| version_seq | 830 | 1864 | 44.5% |
+| official_title | 511 | 1864 | 27.4% |
+| subject | 1682 | 1864 | 90.2% |
+| issuer | 1827 | 1864 | 98.0% |
+| status | 1864 | 1864 | 100.0% |
+| doc_date | 1334 | 1864 | 71.6% |
+| doc_date_precision | 1357 | 1864 | 72.8% |
+| nature | 1673 | 1864 | 89.8% |
+| vehicle_categories | 1043 | 1864 | 56.0% |
+| usage | 251 | 1864 | 13.5% |
+| powertrains | 333 | 1864 | 17.9% |
+| domains | 1369 | 1864 | 73.4% |
+| in_scope | 1864 | 1864 | 100.0% |
+| relevance | 1864 | 1864 | 100.0% |
+| data | 1822 | 1864 | 97.7% |
+| extraction | 1864 | 1864 | 100.0% |
 
 
 ## Required columns (threshold ≥ 95 %)
 
 | population | column | filled | total | rate | ≥95% |
 |---|---|---|---|---|---|
-| all | canonical_id | 1848 | 1848 | 100.0% | PASS |
-| all | doc_class | 1848 | 1848 | 100.0% | PASS |
-| all | status | 1848 | 1848 | 100.0% | PASS |
-| all | issuer | 1813 | 1848 | 98.1% | PASS |
-| all | relevance | 1848 | 1848 | 100.0% | PASS |
-| all | data | 1806 | 1848 | 97.7% | PASS |
-| notification | doc_date | 504 | 529 | 95.3% | PASS |
-| notification | year | 529 | 529 | 100.0% | PASS |
-| notification | series | 529 | 529 | 100.0% | PASS |
-| notification | number | 529 | 529 | 100.0% | PASS |
-| notification | nature | 415 | 529 | 78.4% | FAIL |
-| notification | subject | 421 | 529 | 79.6% | FAIL |
-| ais | doc_date | 528 | 629 | 83.9% | FAIL |
-| ais | family_key | 629 | 629 | 100.0% | PASS |
-| ais | version_seq | 629 | 629 | 100.0% | PASS |
-| ais | subject | 629 | 629 | 100.0% | PASS |
-| ais_standard | official_title | 291 | 291 | 100.0% | PASS |
-| ais_standard | doc_date | 261 | 291 | 89.7% | FAIL |
+| all | canonical_id | 1864 | 1864 | 100.0% | PASS |
+| all | doc_class | 1864 | 1864 | 100.0% | PASS |
+| all | status | 1864 | 1864 | 100.0% | PASS |
+| all | issuer | 1827 | 1864 | 98.0% | PASS |
+| all | relevance | 1864 | 1864 | 100.0% | PASS |
+| all | data | 1822 | 1864 | 97.7% | PASS |
+| notification | doc_date | 504 | 527 | 95.6% | PASS |
+| notification | year | 527 | 527 | 100.0% | PASS |
+| notification | series | 527 | 527 | 100.0% | PASS |
+| notification | number | 527 | 527 | 100.0% | PASS |
+| notification | nature | 413 | 527 | 78.4% | FAIL |
+| notification | subject | 419 | 527 | 79.5% | FAIL |
+| ais | doc_date | 537 | 643 | 83.5% | FAIL |
+| ais | family_key | 643 | 643 | 100.0% | PASS |
+| ais | version_seq | 643 | 643 | 100.0% | PASS |
+| ais | subject | 643 | 643 | 100.0% | PASS |
+| ais_standard | official_title | 295 | 295 | 100.0% | PASS |
+| ais_standard | doc_date | 266 | 295 | 90.2% | FAIL |
 
 
 ## Qwen double-extraction agreement (identity / status / date, threshold ≥ 90 %)
@@ -97,17 +96,31 @@ Generated 2026-10-08 04:18.
 
 | rule | entity | open |
 |---|---|---|
-| no_vehicle_category | document | 377 |
+| no_vehicle_category | document | 380 |
 | off_topic | document | 200 |
 | identity_not_found | document | 116 |
 | unresolved_reference | document | 113 |
-| placeholder_listing_date | file_object | 45 |
+| placeholder_listing_date | file_object | 25 |
 | low_ocr_confidence | file_object | 22 |
-| amendment_gap | document | 21 |
-| title_file_mismatch | file_object | 16 |
 | old_date_mismatch | mandate | 9 |
-| duplicate_identity_diff_header | document | 5 |
+| duplicate_identity_diff_header | document | 6 |
 | draft_final_date_mismatch | document | 1 |
+
+
+## Resolved flags by rule and resolution (`regtrack/pipeline/resolve.py`)
+
+Flags settled by evidence keep the evidence in `quality_flag.details`; 'superseded' = the flag described an older state (e.g. before a re-split) and was replaced; 'document retired' = the document was re-identified. Re-raised duplicates of resolved flags are excluded.
+
+| rule | resolution | flags | example evidence |
+|---|---|---|---|
+| amendment_gap | every missing amendment is accounted for | 22 | {"1": "incorporated per cover: 'Incorporating  Amendment  No. 1/September 1999 & Amendment  No. 2/September 2000)'", "2": "incorporated per cover: 'In |
+| amendment_gap | superseded: the amendment list of this standard changed | 11 |  |
+| amendment_gap | document retired after re-classification | 1 |  |
+| identity_year_inferred | file-number year confirmed by the listing date | 3 | {"listing_years": [2005]} |
+| identity_year_inferred | document retired after re-classification | 1 |  |
+| no_vehicle_category | document retired after re-classification | 1 |  |
+| placeholder_listing_date | content date used; listing placeholder ignored | 22 | {"content_date": "2000-12-27", "listing_date": "2000-01-01"} |
+| title_file_mismatch | listing title wrong; identity from content confirmed | 16 | {"content_id": "SO-2412(E)-2015", "gazette_sub_section": "not read (scan)", "claimed_absent_from_file": ["SO-728"]} |
 
 
 ## Top 20 documents that need checking
@@ -115,11 +128,9 @@ Generated 2026-10-08 04:18.
 | canonical_id | class | flags | rules | title |
 |---|---|---|---|---|
 | GSR-291(E)-2014 | NOTIFICATION_FINAL | 3 | duplicate_identity_diff_header, unresolved_reference | Amends CMVR Rule 2, CMVR Rule 126, CMVR Rule 35(1), CMVR Rule 39, CMVR Rule 101, |
-| AIS-039(Rev.1) | AIS_STANDARD | 2 | amendment_gap, no_vehicle_category | AIS-039(Rev.1):2015 |
-| NOTIF-33bd3cc437e950bc | NOTIFICATION_FINAL | 2 | identity_not_found, unresolved_reference | Central Motor Vehicles (Third Amendment) Rules, 2002 |
 | NOTIF-4689ed122764b5d0 | NOTIFICATION_FINAL | 2 | identity_not_found, unresolved_reference | Central Motor Vehicles (First Amendment) Rules, 2004 |
-| AIS-213 | AIS_STANDARD | 1 | amendment_gap | 115 km/h ≤ Vmax < 130 |
-| AIS-052 | AIS_STANDARD | 1 | amendment_gap | Requirements for Approval of Vehicles of Categories M2, M3, N and T with Regard  |
+| NOTIF-33bd3cc437e950bc | NOTIFICATION_FINAL | 2 | identity_not_found, unresolved_reference | Central Motor Vehicles (Third Amendment) Rules, 2002 |
+| AIS-009(Rev.3) | AIS_STANDARD | 1 | no_vehicle_category | Uniform Provisions Concerning The Approval Of Light Signaling Devices And System |
 | GSR-850(E)-2025 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Fifth Amendment) Rules, 2025 |
 | GSR-514(E)-2024 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Tenth Amendment) Rules, 2024 |
 | GSR-195(E)-2024 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Seventh Amendment) Rules, 2024 |
@@ -127,51 +138,49 @@ Generated 2026-10-08 04:18.
 | GSR-698(E)-2023 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Sixth Amendment) Rules, 2023 |
 | GSR-226(E)-2023 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Second Amendment) Rules, 2023 |
 | GSR-863(E)-2022 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Twenty-Second Amendment) Rules, 2022 |
-| AIS-009 | AIS_STANDARD | 1 | amendment_gap | Automotive Vehicles - Installation Requirements of Lighting and Light-Signalling |
 | GSR-394(E)-2022 | NOTIFICATION_FINAL | 1 | unresolved_reference |  |
 | GSR-596(E)-2021 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Eighteenth Amendment) Rules, 2021 |
 | GSR-410(E)-2021 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Thirteenth Amendment) Rules, 2021 |
 | GSR-394(E)-2021 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Eleventh Amendment) Rules, 2021 |
 | GSR-240(E)-2021 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Sixth Amendment) Rules, 2021 |
 | GSR-628(E)-2020 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Fourteenth Amendment) Rules, 2020 |
+| AIS-038(Rev.2) | AIS_STANDARD | 1 | no_vehicle_category | AIS-038 (Rev. 2) |
+| GSR-414(E)-2020 | NOTIFICATION_FINAL | 1 | unresolved_reference | Central Motor Vehicles (Sixth Amendment) Rules, 2020 |
+| GSR-337(E)-2020 | NOTIFICATION_FINAL | 1 | unresolved_reference | Amends CMVR Rule 2, CMVR Rule 126 |
 
 
 ## LLM status
 
-Documents waiting for the Qwen pass (llm_pending): 1642.
-Chunks without embedding: 147272.
+Documents waiting for the Qwen pass (llm_pending): 1658.
+Chunks without embedding: 148323.
 
-## Assessment against the thresholds
+## Assessment against the thresholds (updated 8 Oct 2026, after the non-LLM flag pass)
 
-**Required columns ≥ 95 %: 15 of 19 pass.** The four below the line, and why:
+**Required columns ≥ 95 %: 14 of 18 pass.** The four below the line need Qwen or are genuinely absent:
+notification `subject` (79.5 %) and `nature` (78.4 %) — Qwen pass; AIS `doc_date` (83.5 %) — 106 amendments
+use the header format with no date at all; AIS_STANDARD `doc_date` (90.2 %) — covers without a month/year
+(scans, consolidated reprints).
 
-| Column | Rate | Reason | What closes it |
+**Qwen agreement ≥ 90 %: not measurable yet** (LM Studio URL not set). `python -m regtrack.cli llm-smoke` checks the
+connection on 10 documents; `python -m regtrack.cli run` then processes all pending documents and the 10 % sample.
+
+**Non-LLM flags resolved in this pass** (`regtrack/pipeline/resolve.py`, evidence stored in each flag):
+
+| Flag | Before | Now open | How |
 |---|---|---|---|
-| notification `subject` | 79.6 % | deterministic subjects exist only for short titles, "hereby specifies/exempts …" clauses or amended rules | Qwen `subject` (110 notifications are `llm_pending`) |
-| notification `nature` | 78.4 % | keyword rules find no technical/administrative/procedural cue in older or OCR'd notices | Qwen pass |
-| AIS `doc_date` | 83.9 % | 101 amendments use the header format with **no date** (`AMENDMENT NO. 1 TO AIS-037`) — the date is genuinely absent from the document | status-chart dates via Qwen; otherwise stays empty (correct) |
-| AIS_STANDARD `doc_date` | 89.7 % | 30 covers have no month/year (scans, consolidated reprints) | Qwen on cover pages |
+| `title_file_mismatch` | 16 open | **0** | all 16 verified: the listing's claimed ID never occurs in the file and the Gazette sub-section agrees with the content's series (the 6 known MoRTH cases, 6 "S.O." listings of G.S.R. scans, S.O. 1407→1450, G.S.R. 07→26 (the ETL_SPEC example), 2 India Code). The measured count (14 MoRTH / 16 all) stays in the regression table — the discrepancies are real, the identities are confirmed. |
+| `amendment_gap` | 21 open | **0** | 3 header misses fixed in the splitter ("Contents"/"Amendment Record" inside an amendment's own instructions hid its header; two-digit "AIS-37") → 5 new amendment documents; a file whose headers all name AIS-071(Part 2) was re-identified (cover misread as AIS-007); every remaining gap is accounted for: the ARAI listing says the file incorporates it ("AIS-156 and Amd. 1 to 5"), the cover says so ("Incorporating Amendment No. 1 …"), or the amendment is stored under a sibling ID. These amendments are not available as separate documents — only inside consolidated texts. |
+| doubtful years | 2 | **0** | "SO-701(E)-1989" was `cmvr-1989.pdf`, the 332-page consolidated CMVR text → now `CONSOLIDATED_RULES` (Acts and consolidated texts no longer take an embedded notification's ID). "SO-1668(E)-1989" → **SO-1668(E)-2005**: unreadable heading date, file no. RT-11042/20/2005 (a notification cannot predate its file), confirmed by the listing date. Same rule fixed **GSR-212(E)-2015** (its own short title "Fourth Amendment Rules, 2015"). |
+| dates in the future | 5 | **0** | AIS cover dates must not be later than today (later dates on a cover are implementation dates); generic document dates likewise; any remaining future date raises `doc_date_in_future`. |
+| `placeholder_listing_date` | 47 | 25 | resolved where the document has its own content date (22); the 25 open ones are files without a readable content date (mostly yearbooks). |
 
-**Qwen agreement ≥ 90 %: not measurable.** LM Studio was never reachable during the build (`LLM_BASE_URL` is the
-placeholder `https://<your-ngrok-id>.ngrok-free.app/v1`). The 10 % double-extraction sample is wired into
-`extract.py` and runs automatically on the first pipeline run after the URL is set
-(`python -m regtrack.cli run`), followed by `python -m regtrack.cli report`.
+Still open and expected: `no_vehicle_category` 380 (fees/licence/permit notifications and AIS scopes without a
+category word — Qwen's implicit scope), `off_topic` 200, `identity_not_found` 116 (scans without a readable heading
+→ Qwen vision OCR), `unresolved_reference` 113 (drafts not collected), `low_ocr_confidence` 22, `old_date_mismatch` 9
+(an intermediate S.O. 1365(E) amendment is missing from the corpus), `duplicate_identity_diff_header` 6,
+`draft_final_date_mismatch` 1.
 
-**Validator failures: none unexplained.** No `schema_violation` flags. Every open flag rule is explained:
-- `no_vehicle_category` (377): fees/licence/permit notifications and AIS files whose Scope clause did not parse; DB_DESIGN expects ≈ 385 notifications with no category word.
-- `off_topic` (200): 47 non-automotive + 91 state-level documents in folder 02, plus e-waste rules, highway and other non-vehicle files.
-- `identity_not_found` (116): mostly scans whose Windows-OCR text has no readable G.S.R./S.O. heading → Qwen vision OCR.
-- `unresolved_reference` (113): drafts cited by finals but not collected yet (DB_DESIGN: 104 missing).
-- `placeholder_listing_date` (45): MoRTH listings dated 1 January (31 are yearbooks/reports).
-- `low_ocr_confidence` (22), `amendment_gap` (21, checked: amendments not present as separate headers), `old_date_mismatch` (9: an intermediate S.O. 1365(E) amendment such as S.O. 2914(E)-2021 is missing from the corpus).
-- `title_file_mismatch` (16): the 6 known MoRTH cases + 6 "listing says S.O., OCR'd content says G.S.R. (same number)" + S.O. 1407→1450 + 1 extra MoRTH + 2 India Code.
-- `duplicate_identity_diff_header` (5), `draft_final_date_mismatch` (1).
-
-**Regression table:** every measure is within the expected range or the difference is explained in the phase
-reports — unique-file counting (2,018 vs 2,016; scans 248 vs 251; AIS amendments 181 unique files vs ≈ 210 incl.
-copies; Kruti Dev 232 unique vs ≈ 300 incl. copies), the State Government split of folder 02 (47 + 91), and the
-7 extra title mismatches that only became visible after OCR.
-
-**Not done because no LLM / embedding endpoint was available:** embeddings (147,272 chunks waiting at `chunked`),
-Qwen extraction of provisions, Qwen summaries for change events, Qwen vision OCR. All are queued and run without
-manual work once `LLM_BASE_URL` and `EMBED_MODEL` are set.
+**Idempotency re-checked:** after these changes a full re-run of all AIS and notification files writes zero rows
+(PostgreSQL write counters: 0 inserts / 0 updates / 0 deletes on document, document_file, doc_relation, chunk,
+mandate, quality_flag). Flags settled by evidence are not raised again (33 re-raised copies from an intermediate run
+are marked "duplicate of flag N", nothing deleted).

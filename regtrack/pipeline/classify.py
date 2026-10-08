@@ -54,6 +54,7 @@ STATE_HDR = re.compile(r"GOVERNMENT\s+OF\s+(?:THE\s+)?(?:NATIONAL\s+CAPITAL\s+TE
                        r"(" + STATES + r")\s+(?:GAZETTE|Government)", re.I)
 STATE_TITLE = re.compile(r"\b(" + STATES + r")\s+Motor\s+Vehicles?|\b(" + STATES + r")\s+(?:\w+\s+){0,3}(?:Tax|Taxation|GST|"
                          r"Goods\s+and\s+Services)", re.I)
+CONSOLIDATED_RE = re.compile(r"CHAPTER\s+I\b.{0,80}?PRELIMINARY.{0,200}?Short\s+title\s+(?:and|,)\s+commencement", re.I | re.S)
 BEE_RE = re.compile(r"Bureau\s+of\s+Energy\s+Efficiency|Energy\s+Conservation\s+Act|fuel\s+consumption\s+standards|"
                     r"Corporate\s+Average\s+Fuel", re.I)
 FUEL_RE = re.compile(r"Motor\s+Spirit\s+and\s+High\s+Speed\s+Diesel|Naphtha|Solvent,?\s+Raffinate|Slop|"
@@ -256,6 +257,11 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
     # ---- non-automotive noise and State Government documents (outside central regulation)
     if not rel["automotive"] or rel.get("state"):
         return res(DocClass.OFF_TOPIC, why=rel["reason"], iss="State Government" if rel.get("state") else None)
+
+    # ---- consolidated rule texts (e.g. cmvr-1989.pdf) reproduce many notifications inside them; the first
+    #      G.S.R./S.O. heading found in them is not the identity of the file
+    if ctx.page_count > 60 and CONSOLIDATED_RE.search(head[:3000]) and not ACT_RE.search(head[:3000]):
+        return res(DocClass.CONSOLIDATED_RULES, why="consolidated rules text (Chapter I, short title)")
 
     # ---- notifications
     if notif_identity is not None:

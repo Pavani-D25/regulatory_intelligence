@@ -166,7 +166,11 @@ def upsert_document(conn: psycopg.Connection, canonical_id: str, values: dict) -
         cur = row[k]
         empty = cur is None or cur == [] or cur == {}
         if k == "data" and isinstance(cur, dict) and isinstance(v, dict):
-            merged = {**v, **{kk: vv for kk, vv in cur.items() if vv not in (None, [], {})}}
+            # keep every existing key (later stages own them); only fill keys that are missing or empty
+            merged = dict(cur)
+            for kk, vv in v.items():
+                if vv not in (None, [], {}) and cur.get(kk) in (None, [], {}):
+                    merged[kk] = vv
             if merged != cur:
                 fill[k] = Jsonb(merged)
         elif empty and v not in (None, [], {}):
@@ -185,7 +189,14 @@ def attach(conn: psycopg.Connection, doc_id: int, file_id: int, page_from: int =
     conn.execute(
         """INSERT INTO document_file (document_id, file_id, page_from, page_to, english_page_from, english_page_to,
                                       part_label, role)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (document_id, file_id, page_from) DO NOTHING""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (document_id, file_id, page_from) DO UPDATE
+             SET page_to=EXCLUDED.page_to, english_page_from=EXCLUDED.english_page_from,
+                 english_page_to=EXCLUDED.english_page_to, part_label=EXCLUDED.part_label, role=EXCLUDED.role
+             WHERE (document_file.page_to, document_file.english_page_from, document_file.english_page_to,
+                    document_file.part_label, document_file.role)
+                   IS DISTINCT FROM (EXCLUDED.page_to, EXCLUDED.english_page_from, EXCLUDED.english_page_to,
+                                     EXCLUDED.part_label, EXCLUDED.role)""",
         (doc_id, file_id, page_from, page_to, eng[0], eng[1], part_label, role))
 
 
@@ -277,11 +288,38 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
         add_flag(conn, "file_object", f["id"], FlagRule.TITLE_FILE_MISMATCH, m)
     for m in fa.placeholder_dates:
         add_flag(conn, "file_object", f["id"], FlagRule.PLACEHOLDER_LISTING_DATE, m)
+    if fa.year_note:
+        flags.append((FlagRule.IDENTITY_YEAR_INFERRED, fa.year_note))
     for rule, details in flags:
         for did in doc_ids[:1]:
             add_flag(conn, "document", did, rule, details)
+    unlink_other_documents(conn, f["id"], doc_ids)
     recompute_best_copies(conn, doc_ids)
     return doc_ids
+
+
+def unlink_other_documents(conn: psycopg.Connection, file_id: int, doc_ids: list[int]) -> int:
+    """A re-classified file keeps only the documents it produces now; a document left without any file is retired
+    (relations to it fall back to their text reference, its flags are resolved as superseded)."""
+    stale = conn.execute("SELECT DISTINCT document_id FROM document_file WHERE file_id=%s AND NOT (document_id = ANY(%s))",
+                         (file_id, doc_ids)).fetchall()
+    n = 0
+    for r in stale:
+        did = r["document_id"]
+        conn.execute("DELETE FROM chunk WHERE document_id=%s AND file_id=%s", (did, file_id))
+        conn.execute("DELETE FROM document_file WHERE document_id=%s AND file_id=%s", (did, file_id))
+        n += 1
+        still = conn.execute("SELECT 1 FROM document_file WHERE document_id=%s LIMIT 1", (did,)).fetchone()
+        used = conn.execute("SELECT 1 FROM mandate WHERE source_doc_id=%s LIMIT 1", (did,)).fetchone()
+        if not still and not used:
+            conn.execute("UPDATE doc_relation SET to_doc=NULL, to_ref=coalesce(to_ref, (SELECT canonical_id FROM document "
+                         "WHERE id=%s)) WHERE to_doc=%s", (did, did))
+            conn.execute("UPDATE quality_flag SET resolved_at=now(), details=coalesce(details,'{}'::jsonb) || "
+                         "'{\"resolution\": \"document retired after re-classification\"}'::jsonb "
+                         "WHERE entity='document' AND entity_id=%s AND resolved_at IS NULL", (did,))
+            conn.execute("UPDATE change_event SET document_id=NULL WHERE document_id=%s", (did,))
+            conn.execute("DELETE FROM document WHERE id=%s", (did,))
+    return n
 
 
 def _valid(dc: DocClass, data: dict) -> dict:
@@ -336,8 +374,9 @@ def write_ais(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAnalysis)
         attach(conn, did, f["id"], 1, n, eng=_eng_range(pages, 1, n))
         add_flag(conn, "document", did, FlagRule.IDENTITY_NOT_FOUND, {"reason": "no AIS code on cover", "file": ctx.sha})
         return [did]
-    base_cid = ident.canonical_id
     segs = split_ais(pages) if fa.cls.doc_class != DocClass.SAFETY_STANDARD_LEGACY else []
+    ident = identity_from_headers(ident, segs)
+    base_cid = ident.canonical_id
     ids: list[int] = []
     multi = len(segs) > 1
     has_base = any(s.kind == "base" for s in segs)
@@ -393,8 +432,49 @@ def write_ais(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAnalysis)
         did, _ = upsert_document(conn, base_cid, {**base_values(fa, fa.cls.doc_class, ident)})
         attach(conn, did, f["id"], 1, n, eng=_eng_range(pages, 1, n))
         ids.append(did)
+    drop_stale_segments(conn, f["id"], {s.page_from for s in segs} or {1})
     check_amendment_gaps(conn, ident.family_key)
     return ids
+
+
+def drop_stale_segments(conn: psycopg.Connection, file_id: int, starts: set[int]) -> int:
+    """After a re-split, remove this file's segment rows whose start page is no longer a segment start
+    (their chunks go with them; the pages now belong to a new segment document)."""
+    rows = conn.execute("SELECT document_id, page_from FROM document_file WHERE file_id=%s", (file_id,)).fetchall()
+    n = 0
+    for r in rows:
+        if r["page_from"] not in starts:
+            conn.execute("DELETE FROM chunk WHERE document_id=%s AND file_id=%s", (r["document_id"], file_id))
+            conn.execute("DELETE FROM document_file WHERE document_id=%s AND file_id=%s AND page_from=%s",
+                         (r["document_id"], file_id, r["page_from"]))
+            n += 1
+    return n
+
+
+def identity_from_headers(ident: Identity, segs: list) -> Identity:
+    """Every amendment/corrigendum header in the file names the same other standard ('TO AIS-071(Part 2):2009')
+    while the cover read gave a different code: the headers are the better evidence of what the file is."""
+    named = set()
+    for s in segs:
+        if s.kind != "base" and s.target_raw:
+            p = P.parse_ais_code(s.target_raw)
+            if p:
+                named.add((p["code"], p["part"]))
+    if len(named) != 1:
+        return ident
+    code, part = named.pop()
+    if code == int(ident.number) and (part is None or str(part) == (ident.part or str(part))):
+        return ident
+    rev = None
+    for s in segs:  # a revision printed in a header ('TO AIS-038 (Rev.2)') is kept
+        p = P.parse_ais_code(s.target_raw or "")
+        if p and p["rev"]:
+            rev = p["rev"]
+    return Identity(kind="ais", canonical_id=P.ais_canonical(code, part, rev), number=f"{code:03d}",
+                    part=str(part) if part else None, revision=rev, year=ident.year,
+                    family_key=P.ais_family(code, part), doc_date=ident.doc_date,
+                    doc_date_precision=ident.doc_date_precision,
+                    evidence=f"amendment headers name AIS-{code:03d}; cover read gave {ident.canonical_id}")
 
 
 def check_amendment_gaps(conn: psycopg.Connection, family_key: str | None) -> None:
@@ -409,13 +489,22 @@ def check_amendment_gaps(conn: psycopg.Connection, family_key: str | None) -> No
         base = conn.execute("SELECT id FROM document WHERE canonical_id=%s", (r["target"],)).fetchone()
         if not base:
             continue
-        details = {"target": r["target"], "missing": gaps}
-        # keep exactly one open gap flag per base: resolve flags that describe an older state of the family
-        conn.execute("UPDATE quality_flag SET resolved_at=now() WHERE entity='document' AND entity_id=%s AND rule=%s "
-                     "AND resolved_at IS NULL AND details <> %s::jsonb",
-                     (base["id"], FlagRule.AMENDMENT_GAP.value, json.dumps(details, sort_keys=True)))
-        if gaps:
-            add_flag(conn, "document", base["id"], FlagRule.AMENDMENT_GAP, details)
+        # a gap flag is identified by (target, missing); notes added later (explained / evidence) do not change it
+        same = "details->'target' = %s::jsonb AND details->'missing' = %s::jsonb"
+        args = (json.dumps(r["target"]), json.dumps(gaps))
+        # close open flags that describe an older state of the family, with the reason
+        conn.execute(f"UPDATE quality_flag SET resolved_at=now(), details = details || "
+                     f"'{{\"resolution\": \"superseded: the amendment list of this standard changed\"}}'::jsonb "
+                     f"WHERE entity='document' AND entity_id=%s AND rule=%s AND resolved_at IS NULL AND NOT ({same})",
+                     (base["id"], FlagRule.AMENDMENT_GAP.value, *args))
+        if not gaps:
+            continue
+        # raise once: not while an equal flag is open, nor after an equal flag was resolved with evidence
+        known = conn.execute(f"SELECT 1 FROM quality_flag WHERE entity='document' AND entity_id=%s AND rule=%s AND {same} "
+                             f"AND (resolved_at IS NULL OR details ? 'evidence') LIMIT 1",
+                             (base["id"], FlagRule.AMENDMENT_GAP.value, *args)).fetchone()
+        if not known:
+            add_flag(conn, "document", base["id"], FlagRule.AMENDMENT_GAP, {"target": r["target"], "missing": gaps})
 
 
 # ---------------------------------------------------------------------- best copy

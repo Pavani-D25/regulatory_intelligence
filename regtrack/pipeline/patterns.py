@@ -168,12 +168,12 @@ def parse_canonical_ais(cid: str) -> dict | None:
 AMD_HEADER = re.compile(
     r"AMENDMENT\s*No\.?\s*(\d{1,2})\b"                       # AMENDMENT NO. 2
     r"(?P<mid>[^\n]{0,60}?(?:\n[^\n]{0,60}?){0,2}?)"        # optional date (same / next lines)
-    r"\s*\bTO\b\s*(?P<code>AIS\s*[\-:–]?\s*\d{3}[^\n]{0,40})",
+    r"\s*\bTO\b\s*(?P<code>AIS\s*[\-:–]?\s*\d{2,3}\b[^\n]{0,40})",  # 'AIS-37' also occurs
     re.I)
 CORR_HEADER = re.compile(
     r"CORRIGENDUM\s*(?:No\.?\s*(\d{1,2}))?\b"
     r"(?P<mid>[^\n]{0,60}?(?:\n[^\n]{0,60}?){0,2}?)"
-    r"\s*\bTO\b\s*(?P<code>AIS\s*[\-:–]?\s*\d{3}[^\n]{0,40})",
+    r"\s*\bTO\b\s*(?P<code>AIS\s*[\-:–]?\s*\d{2,3}\b[^\n]{0,40})",  # 'AIS-37' also occurs
     re.I)
 AIS_COVER = re.compile(r"AUTOMOTIVE\s+INDUSTRY\s+STANDARD", re.I)
 

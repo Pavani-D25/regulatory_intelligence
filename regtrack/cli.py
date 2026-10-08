@@ -122,6 +122,22 @@ def cmd_report(_args) -> int:
     return 0
 
 
+def cmd_llm_smoke(args) -> int:
+    from regtrack.llm_smoke import run
+
+    return run(n=args.n, dry_run=args.dry_run)
+
+
+def cmd_resolve_flags(_args) -> int:
+    from regtrack.db import connect
+    from regtrack.pipeline.resolve import resolve_all
+
+    with connect() as conn:
+        print(resolve_all(conn))
+        conn.commit()
+    return 0
+
+
 def cmd_storage_upload(args) -> int:
     from regtrack.storage_upload import upload_all
 
@@ -160,6 +176,12 @@ def main(argv: list[str] | None = None) -> int:
     sp.set_defaults(fn=cmd_crawl)
     sub.add_parser("schedule").set_defaults(fn=cmd_schedule)
     sub.add_parser("report").set_defaults(fn=cmd_report)
+    sp = sub.add_parser("llm-smoke", help="Qwen extraction + embeddings on 10 documents (test LM Studio)")
+    sp.add_argument("--n", type=int, default=10)
+    sp.add_argument("--dry-run", action="store_true", help="call the LLM but write nothing")
+    sp.set_defaults(fn=cmd_llm_smoke)
+    sub.add_parser("resolve-flags", help="resolve quality flags whose evidence settles them").set_defaults(
+        fn=cmd_resolve_flags)
     sp = sub.add_parser("storage-upload", help="one-time upload of local originals to S3/MinIO")
     sp.add_argument("--limit", type=int)
     sp.add_argument("--switch", action="store_true", help="rewrite file_object.storage_path to s3:// URIs")

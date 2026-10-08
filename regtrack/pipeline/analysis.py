@@ -36,6 +36,7 @@ class FileAnalysis:
     title_mismatch: list[dict] = field(default_factory=list)
     placeholder_dates: list[dict] = field(default_factory=list)
     kruti: bool = False
+    year_note: dict | None = None  # identity year corrected from the file number (flagged)
 
     @property
     def canonical_id(self) -> str | None:
@@ -91,6 +92,34 @@ def draft_reference(text: str) -> dict | None:
     return {"canonical_id": P.notification_canonical(series, num, d.year), "date": d.isoformat()}
 
 
+def fix_year_from_file_no(fa: FileAnalysis) -> None:
+    """When the heading had no readable date (the year came from nearby text, often OCR noise), use stronger
+    evidence from the same notification and flag the document for checking:
+      1. its own short title 'Central Motor Vehicles (Fourth Amendment) Rules, 2015' -> 2015;
+      2. its file number: a notification cannot be issued before its file was opened ('RT-11042/20/2005-MVL')."""
+    ident = fa.identity
+    if not (ident and ident.kind == "notification" and ident.doc_date is None):
+        return
+    this_year = date.today().year
+    new, reason = None, None
+    ty = re.search(r"\b((?:19|20)\d{2})\s*$", fa.official_title or "")
+    if ty and int(ty.group(1)) != ident.year and int(ty.group(1)) <= this_year:
+        new, reason = int(ty.group(1)), "heading date unreadable; year taken from the notification's short title"
+    elif fa.file_no:
+        m = re.search(r"/((?:19|20)\d{2})(?:\s*-|\s*$|/)", fa.file_no)
+        fy = int(m.group(1)) if m else None
+        if fy and ident.year and ident.year < fy <= this_year:
+            new, reason = fy, "heading date unreadable; year taken from the file number"
+    if new:
+        old = ident.canonical_id
+        ident.year = new
+        ident.canonical_id = P.notification_canonical(P.series_code(ident.series), re.sub(r"\D", "", ident.number), new,
+                                                      "(E)" in (ident.number or ""))
+        ident.doc_date_precision = "year"
+        fa.year_note = {"from": old, "to": ident.canonical_id, "file_no": fa.file_no,
+                        "short_title": fa.official_title, "reason": reason}
+
+
 def identify(ctx: FileCtx) -> FileAnalysis:
     eng = ctx.english
     allt = full_text(ctx.pages)
@@ -110,14 +139,15 @@ def identify(ctx: FileCtx) -> FileAnalysis:
     elif dc == DocClass.FORM_TEMPLATE:
         ident = form_identity(eng, ctx.name)
     elif dc in (DocClass.ENERGY_STANDARD, DocClass.FUEL_ORDER, DocClass.CIRCULAR_OM, DocClass.GUIDELINE_POLICY,
-                DocClass.BIS_REGULATION, DocClass.ACT, DocClass.CONSOLIDATED_RULES) and n_ident:
-        ident = n_ident
+                DocClass.BIS_REGULATION) and n_ident:
+        ident = n_ident  # (Acts and consolidated rule texts reproduce other notifications: no notification identity)
     fa = FileAnalysis(ctx=ctx, cls=cls, identity=ident)
     fa.kruti = any(p.kruti >= 1 for p in ctx.pages)
     if dc.is_notification or ident and ident.kind == "notification":
         fa.gazette = gazette_fields(allt)
         fa.file_no = file_number(eng)
         fa.official_title = short_title(eng)
+        fix_year_from_file_no(fa)
         fa.draft_ref = draft_reference(eng) if cls.status == "final" else None
     # listing checks (claims vs content)
     if ident and ident.kind == "notification":

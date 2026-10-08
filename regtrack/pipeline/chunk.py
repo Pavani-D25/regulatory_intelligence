@@ -113,6 +113,11 @@ def stage_chunk(conn: psycopg.Connection, f: dict) -> str:
         a, b = df["page_from"] or 1, df["page_to"] or (pages[-1].page if pages else 1)
         sel = [p for p in pages if a <= p.page <= b]
         chunks = chunk_pages(sel, notification=doc["doc_class"].startswith("NOTIFICATION"))
+        old = [r["content"] for r in conn.execute(
+            "SELECT content FROM chunk WHERE document_id=%s AND file_id=%s ORDER BY chunk_index", (doc["id"], f["id"]))]
+        if old and old != [c.content for c in chunks]:
+            # the document's page range changed (e.g. a re-split found another amendment): rebuild its chunks
+            conn.execute("DELETE FROM chunk WHERE document_id=%s AND file_id=%s", (doc["id"], f["id"]))
         write_chunks(conn, doc, f["id"], chunks, offset_for(conn, doc["id"], f["id"]))
     set_stage(conn, f["id"], "chunked")
     return "chunked"

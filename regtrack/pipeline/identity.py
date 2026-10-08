@@ -161,6 +161,22 @@ def title_notification_ids(title: str) -> list[tuple[str, str]]:
 
 
 # ------------------------------------------------------------------ AIS
+def cover_month(text: str, today: date | None = None) -> tuple[int, int] | None:
+    """The cover's month/year: the first one that is not in the future (later dates on a cover page are
+    implementation dates such as 'w.e.f. October 2027', not the publication month)."""
+    today = today or date.today()
+    for m in P.DATE_MONTH_YEAR.finditer(text):
+        mo = P.month_num(m.group(1))
+        y = int(m.group(2))
+        if mo and 1950 <= y and (y, mo) <= (today.year, today.month):
+            return y, mo
+    for m in re.finditer(r"\b(\d{1,2})\s*/\s*(\d{4})\b", text):
+        mo, y = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12 and 1950 <= y and (y, mo) <= (today.year, today.month):
+            return y, mo
+    return None
+
+
 def ais_identity(cover: str) -> Identity | None:
     """AIS code/Part/Rev from the cover (first ~2 pages)."""
     head = cover[:5000]
@@ -186,7 +202,7 @@ def ais_identity(cover: str) -> Identity | None:
         if r:
             p["part"] = P._part_num(r.group(1))
     cid = P.ais_canonical(p["code"], p["part"], p["rev"])
-    ym = P.parse_month_year(head[best.end():best.end() + 1500])
+    ym = cover_month(head[best.end():best.end() + 1500])
     return Identity(kind="ais", canonical_id=cid, number=f"{p['code']:03d}",
                     part=str(p["part"]) if p["part"] else None, revision=p["rev"],
                     year=ym[0] if ym else p.get("year"), family_key=P.ais_family(p["code"], p["part"]),
@@ -195,7 +211,8 @@ def ais_identity(cover: str) -> Identity | None:
 
 
 # ------------------------------------------------------------------ ARAI listing code strings
-ARAI_AMD = re.compile(r"Amd\.?\s*(?:No\.?\s*)?(\d{1,2})(?:\s*(?:to|-|–)\s*(\d{1,2}))?", re.I)
+# 'Amd. 1 to 4', 'Amds. 1 to 13', 'Amendments 1 to 9', 'Amendment No. 1' (not 'Corrigendum 1 to Amd. 5')
+ARAI_AMD = re.compile(r"(?<!to )\bAm(?:en)?d(?:ment)?s?\.?\s*(?:No\.?\s*)?(\d{1,2})(?:\s*(?:to|-|–)\s*(\d{1,2}))?", re.I)
 
 
 def parse_arai_code(code: str) -> dict:

@@ -208,3 +208,5 @@ class FlagRule(StrEnum):
     IDENTITY_NOT_FOUND = "identity_not_found"
     LLM_DISAGREEMENT = "llm_disagreement"
     OCR_PENDING = "ocr_pending"
+    DOC_DATE_IN_FUTURE = "doc_date_in_future"
+    IDENTITY_YEAR_INFERRED = "identity_year_inferred"

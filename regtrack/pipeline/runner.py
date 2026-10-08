@@ -16,6 +16,7 @@ from regtrack.pipeline import chunk as C
 from regtrack.pipeline import events as E
 from regtrack.pipeline import extract as X
 from regtrack.pipeline import link as L
+from regtrack.pipeline import resolve as R
 from regtrack.pipeline import stages as S
 
 log = logging.getLogger(__name__)
@@ -88,6 +89,7 @@ def post_run() -> dict:
         out = {"refs_resolved": L.resolve_refs(conn)}
         S.tap_best_copies(conn)
         out["chunk_filters_synced"] = C.sync_chunk_filters(conn)
+        out["flags_resolved"] = R.resolve_all(conn)
         conn.commit()
         out["llm_enriched"] = X.enrich_pending(conn)
         conn.commit()

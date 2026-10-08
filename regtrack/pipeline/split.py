@@ -37,14 +37,19 @@ class Segment:
 
 def _header_on_page(p: PageText) -> Segment | None:
     zone = p.text[:HEADER_ZONE]
-    if STATUS_PAGE.search(zone[:200]):
-        return None
+    # a status chart / contents page starts with that heading; the same words inside an amendment's own
+    # instructions ("1. Page II, Contents, Annexes ...", "Replace existing Amendment Record") come after its header
+    status = STATUS_PAGE.search(zone[:200])
+
+    def before_status(m) -> bool:
+        return status is None or m.start() < status.start()
+
     m = P.AMD_HEADER.search(zone)
-    if m and m.start() < HEADER_ZONE - 100:
+    if m and m.start() < HEADER_ZONE - 100 and before_status(m):
         iso, prec, fmt = P.header_date(m.group("mid"))
         return Segment("amendment", p.page, p.page, int(m.group(1)), iso, prec, fmt, m.group("code").strip())
     m = P.CORR_HEADER.search(zone)
-    if m and m.start() < HEADER_ZONE - 100:
+    if m and m.start() < HEADER_ZONE - 100 and before_status(m):
         iso, prec, fmt = P.header_date(m.group("mid"))
         return Segment("corrigendum", p.page, p.page, int(m.group(1)) if m.group(1) else None, iso, prec, fmt,
                        m.group("code").strip())

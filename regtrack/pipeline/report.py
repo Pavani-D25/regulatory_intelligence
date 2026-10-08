@@ -56,7 +56,7 @@ def regression(conn: psycopg.Connection) -> list[tuple[str, str, str]]:
     fin = conn.execute("SELECT count(DISTINCT from_doc) AS n, count(DISTINCT from_doc) FILTER (WHERE to_doc IS NOT NULL) AS res "
                        "FROM doc_relation WHERE type='finalises' AND method='regex'").fetchone()
     mism = conn.execute("SELECT count(*) FILTER (WHERE details->>'source'='MORTH_API') AS morth, count(*) AS total "
-                        "FROM quality_flag WHERE rule='title_file_mismatch'").fetchone()
+                        "FROM quality_flag WHERE rule='title_file_mismatch' AND coalesce(details->>'resolution','') NOT LIKE 'duplicate of flag%'").fetchone()
     off02 = conn.execute(
         """SELECT count(DISTINCT f.id) AS n,
                   count(DISTINCT f.id) FILTER (WHERE d.relevance->>'state' IS NOT NULL) AS state
@@ -144,6 +144,18 @@ def write_validation_report(path: Path | None = None) -> str:
         flags = conn.execute("SELECT rule, entity, count(*) AS n FROM quality_flag WHERE resolved_at IS NULL "
                              "GROUP BY 1,2 ORDER BY 3 DESC").fetchall()
         out.append("\n## Open quality flags by rule\n\n" + md_table(["rule", "entity", "open"], [[r["rule"], r["entity"], r["n"]] for r in flags]))
+        res = conn.execute(
+            """SELECT rule, details->>'resolution' AS how, count(*) AS n,
+                      (array_agg(left((details->'evidence')::text, 150) ORDER BY id))[1] AS example
+               FROM quality_flag
+               WHERE resolved_at IS NOT NULL AND coalesce(details->>'resolution','') NOT LIKE 'duplicate of flag%'
+               GROUP BY 1, 2 ORDER BY 1, 3 DESC""").fetchall()
+        out.append("\n## Resolved flags by rule and resolution (`regtrack/pipeline/resolve.py`)\n\n"
+                   "Flags settled by evidence keep the evidence in `quality_flag.details`; 'superseded' = the flag "
+                   "described an older state (e.g. before a re-split) and was replaced; 'document retired' = the "
+                   "document was re-identified. Re-raised duplicates of resolved flags are excluded.\n\n" + md_table(
+            ["rule", "resolution", "flags", "example evidence"],
+            [[r["rule"], r["how"] or "(no reason recorded)", r["n"], (r["example"] or "").replace("|", "/")] for r in res]))
         top = conn.execute(
             """SELECT d.canonical_id, d.doc_class, count(q.id) AS flags, string_agg(DISTINCT q.rule, ', ') AS rules,
                       coalesce(d.official_title, d.subject, '') AS title

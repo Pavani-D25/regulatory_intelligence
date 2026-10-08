@@ -42,12 +42,18 @@ def update_if_changed(conn: psycopg.Connection, table: str, key: dict, values: d
     return True
 
 
+FLAG_NOTES = ("resolution", "evidence", "explained")  # added by resolvers; not part of what the flag says
+
+
 def add_flag(conn: psycopg.Connection, entity: str, entity_id: int, rule: str, details: dict | None = None) -> bool:
-    """Insert an open quality_flag unless the same open flag already exists."""
+    """Insert an open quality_flag unless the same flag exists - open, or already resolved with a recorded resolution
+    (a flag settled by evidence is not raised again on the next run). Resolver notes are ignored in the comparison."""
     d = json.dumps(details or {}, sort_keys=True, default=str)
+    notes = "".join(f" - '{k}'" for k in FLAG_NOTES)
     hit = conn.execute(
-        "SELECT 1 FROM quality_flag WHERE entity=%s AND entity_id=%s AND rule=%s AND resolved_at IS NULL "
-        "AND coalesce(details,'{}'::jsonb)=%s::jsonb", (entity, entity_id, rule, d)).fetchone()
+        f"SELECT 1 FROM quality_flag WHERE entity=%s AND entity_id=%s AND rule=%s "
+        f"AND (coalesce(details,'{{}}'::jsonb){notes}) = %s::jsonb "
+        f"AND (resolved_at IS NULL OR details ? 'resolution') LIMIT 1", (entity, entity_id, rule, d)).fetchone()
     if hit:
         return False
     conn.execute("INSERT INTO quality_flag (entity, entity_id, rule, details) VALUES (%s,%s,%s,%s::jsonb)",
