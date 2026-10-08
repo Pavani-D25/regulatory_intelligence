@@ -1,0 +1,4 @@
+# keep shell scripts runnable on every OS (Git for Windows would otherwise check them out with CRLF)
+*.sh  text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf

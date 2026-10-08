@@ -54,7 +54,7 @@ CREATE TABLE app_setting (
 INSERT INTO app_setting (key, value) VALUES
   ('default_owner', 'Regulatory Affairs Team'),
   ('review_sla_days', '2'),
-  ('high_impact_rule', 'technical, with an obligation still to come, a revision needing re-approval, or published in the last 12 months'),
+  ('high_impact_rule', 'in-scope technical with an upcoming or changed obligation'),
   ('auto_sync', 'true'),
   ('auto_compliance_task', 'true')
 ON CONFLICT (key) DO NOTHING;

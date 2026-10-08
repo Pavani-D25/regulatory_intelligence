@@ -83,10 +83,9 @@ def scrape(months: int = 2, download: bool = True, max_pages: int = 30,
     listings: list[Listing] = []
     notes: list[str] = []
     with sync_playwright() as p:
-        try:
-            b = p.chromium.launch(channel="chrome", headless=True)
-        except Exception:  # noqa: BLE001
-            b = p.chromium.launch(headless=True)
+        from regtrack.sources.browser import launch
+
+        b = launch(p)
         # ASP.NET WebForms only emits its postback scripts (paging, radio buttons) for browsers it recognises, so the
         # real browser UA is sent with our identifier appended: "... Chrome/x Safari/537.36 RegTrackIndia/0.1 (research)"
         probe = b.new_page()

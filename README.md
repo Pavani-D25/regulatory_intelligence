@@ -6,7 +6,53 @@ PostgreSQL 16 (typed columns + JSONB), clause-level text in pgvector. Refreshes 
 
 Design: `docs/DB_DESIGN.md` (authoritative) and `docs/ETL_SPEC.md`. Start with `reports/BUILD_SUMMARY.md` (what happened, decisions, what is pending), then `reports/VALIDATION_REPORT.md` and the phase reports in `reports/`.
 
-## Setup (Windows, PowerShell)
+## Quick start (new collaborators start here)
+
+You need **Python 3.11+**, **Docker Desktop** and **Node.js 18+**. Then one command sets everything up and starts it:
+
+| Windows | macOS / Linux / Git Bash |
+|---|---|
+| double-click **`start.bat`** (or `.\start.ps1` in PowerShell) | `./start.sh` |
+
+The first run takes a few minutes. The script:
+
+1. checks the tools and starts Docker if needed;
+2. creates `.env` from `.env.example`;
+3. creates `.venv` and installs the Python packages;
+4. starts the database and applies the migrations;
+5. asks where the data should come from, if the database is empty: a **snapshot from a teammate** (about a minute), the **seed corpus** folder (about 45 minutes), or a **live download** from the four sources (about an hour);
+6. installs the portal packages;
+7. starts the **API**, the **6-hour auto-sync** and the **portal**, then opens http://localhost:5173.
+
+| Command | What it does |
+|---|---|
+| `start.bat` · `./start.sh` | set up (first time) and start everything |
+| `.\start.ps1 -Snapshot regtrack_2026-10-08.dump` · `./start.sh --snapshot …` | load a teammate's database snapshot, then start |
+| `.\start.ps1 -Files regtrack_files_….zip` · `./start.sh --files …` | also add the original PDFs ("Open original PDF") |
+| `.\start.ps1 -Stop` · `./start.sh --stop` | stop the API, auto-sync and portal (the database keeps running) |
+| `.\start.ps1 -NoSchedule` · `./start.sh --no-schedule` | start without the auto-sync |
+
+On Windows each service runs in its own minimized window titled "RegTrack - …". On macOS/Linux they run in the
+background and log to `data/logs/`. Running the script again is safe: it skips what is already done.
+
+AI features (written answers, summaries, AI impact review, semantic search) stay off until `LLM_BASE_URL` and
+`EMBED_MODEL` in `.env` point at LM Studio (see "When the LM Studio URL arrives").
+
+### Sharing data with a teammate
+
+Rebuilding the database takes up to an hour, and the seed corpus is not in git. Share a snapshot instead:
+
+```powershell
+.venv\Scripts\python -m regtrack.cli snapshot-export               # data\snapshots\regtrack_<date>.dump (~22 MB)
+.venv\Scripts\python -m regtrack.cli snapshot-export --with-files  # + regtrack_files_<date>.zip (originals + page text, ~3 GB)
+```
+
+Send the `.dump` (and, if they need to open the original PDFs, the `.zip`) through a shared drive. They run
+`start.bat` and choose option 1, or `.\start.ps1 -Snapshot <file>`. Loading a snapshot replaces their local
+database. Files from the zip are only added, never overwritten. Stored file paths from another machine are found
+again by their sha256 name, so the snapshot works in any folder.
+
+## Manual setup (Windows, PowerShell)
 
 ```powershell
 py -3.13 -m venv .venv
@@ -33,6 +79,8 @@ python -m regtrack.cli report                # reports/VALIDATION_REPORT.md
 python -m regtrack.cli llm-smoke             # test LM Studio on 10 documents (Qwen extraction + embeddings); --dry-run writes nothing
 python -m regtrack.cli resolve-flags         # resolve quality flags whose evidence settles them (also runs after every pipeline run)
 python -m regtrack.cli storage-upload        # one-time copy of the originals to MinIO/S3 (see below)
+python -m regtrack.cli snapshot-export       # database dump to share (--with-files adds the originals zip)
+python -m regtrack.cli snapshot-import FILE --yes   # load a teammate's .dump (replaces the database) or files .zip
 python scripts/prepare_corpus.py             # offline: hash + store + extract text (no DB needed)
 python scripts/profile_offline.py            # offline: classification/identity profile vs regression numbers
 ```

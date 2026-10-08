@@ -17,6 +17,8 @@ def _clean(v: str | None) -> str:
     if v is None:
         return ""
     v = v.strip()
+    if v.startswith("#"):  # "KEY=   # note" means empty
+        return ""
     if " #" in v:
         v = v.split(" #", 1)[0].rstrip()
     return v.strip().strip('"').strip("'")

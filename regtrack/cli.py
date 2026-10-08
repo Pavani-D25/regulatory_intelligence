@@ -10,6 +10,8 @@
   report                write reports/VALIDATION_REPORT.md
   api                   start the read-only FastAPI server
   storage-upload [--limit N] [--switch]   one-time upload of local originals to S3/MinIO
+  snapshot-export [--with-files]          database dump (+ files zip) to share with a collaborator
+  snapshot-import FILE --yes              load a .dump (replaces the database) or a files .zip
 """
 
 from __future__ import annotations
@@ -147,6 +149,30 @@ def cmd_storage_upload(args) -> int:
     return 0
 
 
+def cmd_snapshot_export(args) -> int:
+    from regtrack.snapshot import export
+
+    for path in export(with_files=args.with_files):
+        print(f"{path}  ({path.stat().st_size / 1e6:,.0f} MB)")
+    return 0
+
+
+def cmd_snapshot_import(args) -> int:
+    from pathlib import Path
+
+    from regtrack.snapshot import import_
+
+    path = Path(args.file)
+    if not path.exists():
+        print(f"not found: {path}")
+        return 1
+    if path.suffix.lower() != ".zip" and not args.yes:
+        print("This replaces everything in the local database with the snapshot. Run again with --yes to continue.")
+        return 1
+    print(import_(path))
+    return 0
+
+
 def cmd_api(args) -> int:
     import uvicorn
 
@@ -186,6 +212,13 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--limit", type=int)
     sp.add_argument("--switch", action="store_true", help="rewrite file_object.storage_path to s3:// URIs")
     sp.set_defaults(fn=cmd_storage_upload)
+    sp = sub.add_parser("snapshot-export", help="database dump (+ files zip) to share with a collaborator")
+    sp.add_argument("--with-files", action="store_true", help="also zip the stored originals and page text")
+    sp.set_defaults(fn=cmd_snapshot_export)
+    sp = sub.add_parser("snapshot-import", help="load a snapshot .dump (replaces the database) or files .zip")
+    sp.add_argument("file")
+    sp.add_argument("--yes", action="store_true", help="confirm replacing the database")
+    sp.set_defaults(fn=cmd_snapshot_import)
     sp = sub.add_parser("api")
     sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=8000)

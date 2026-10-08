@@ -6,7 +6,7 @@ import hashlib
 import os
 import shutil
 import tempfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from regtrack.config import get_settings
 
@@ -207,7 +207,13 @@ def open_local(storage_path: str) -> Path:
     """A local filesystem path for a stored object. Local backend: the path itself. S3: a verified copy in
     CACHE_DIR (downloaded once; the sha256 in the key is checked, so a corrupted copy is never used)."""
     if not is_s3_uri(storage_path):
-        return Path(storage_path)
+        p = Path(storage_path)
+        if p.exists():
+            return p
+        # the database came from another machine or folder (snapshot): same sha256 name under this STORAGE_DIR
+        name = PureWindowsPath(storage_path).name if "\\" in str(storage_path) else Path(storage_path).name
+        moved = get_settings().storage_dir / name[:2] / name
+        return moved if moved.exists() else p
     bucket, key = split_s3_uri(storage_path)
     dst = get_settings().cache_dir / key
     if dst.exists():

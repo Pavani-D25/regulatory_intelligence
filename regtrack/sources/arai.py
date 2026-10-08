@@ -24,10 +24,9 @@ TABS = ["Published", "Draft"]
 
 
 def _launch(p):
-    try:
-        return p.chromium.launch(channel="chrome", headless=True)  # the installed Chrome: no browser download
-    except Exception:  # noqa: BLE001
-        return p.chromium.launch(headless=True)
+    from regtrack.sources.browser import launch
+
+    return launch(p)
 
 
 def read_rows(page) -> list[dict]:

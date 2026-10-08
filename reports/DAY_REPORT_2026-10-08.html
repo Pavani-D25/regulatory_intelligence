@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RegTrack Day Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --bg:#f4f6f9; --surface:#ffffff; --surface2:#eef2f7; --line:#dbe2ec; --ink:#17202f; --muted:#5a6678;
+  --accent:#1d5fbf; --accentSoft:#e3edfb; --ok:#13723d; --okSoft:#e0f3e8; --warn:#9a5208; --warnSoft:#fbefdc;
+  --bad:#b42318; --badSoft:#fde7e5; --code:#0f3d7a;
+  --sans:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,"Courier New",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0f141c; --surface:#161d28; --surface2:#1c2533; --line:#2a3546; --ink:#e6ebf2; --muted:#9aa7b8;
+    --accent:#7fb0f5; --accentSoft:#1b2c45; --ok:#6fd39b; --okSoft:#14301f; --warn:#f0b76a; --warnSoft:#33260f;
+    --bad:#f28b82; --badSoft:#3a1916; --code:#a9c9f7;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0f141c; --surface:#161d28; --surface2:#1c2533; --line:#2a3546; --ink:#e6ebf2; --muted:#9aa7b8;
+  --accent:#7fb0f5; --accentSoft:#1b2c45; --ok:#6fd39b; --okSoft:#14301f; --warn:#f0b76a; --warnSoft:#33260f;
+  --bad:#f28b82; --badSoft:#3a1916; --code:#a9c9f7;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15.5px;line-height:1.6;padding-inline:16px;padding-block:28px 64px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 20px);align-self:start;font-size:13px}
+nav.toc p{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:600}
+nav.toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--line)}
+nav.toc a{display:block;padding:4px 0 4px 12px;color:var(--muted);text-decoration:none;margin-left:-2px;border-left:2px solid transparent}
+nav.toc a:hover,nav.toc a:focus-visible{color:var(--ink);border-left-color:var(--accent);outline:none}
+main{min-width:0;max-width:860px}
+header.doc{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:28px}
+.eyebrow{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 8px}
+h1{font-size:34px;line-height:1.15;margin:0 0 10px;font-weight:800;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:22px;line-height:1.25;margin:44px 0 12px;font-weight:700;text-wrap:balance;scroll-margin-top:20px}
+h3{font-size:16.5px;margin:26px 0 8px;font-weight:700}
+p{margin:0 0 12px;max-width:68ch}
+.lede{font-size:17px;color:var(--ink);max-width:66ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:13px;margin-top:12px}
+ul,ol.plain{margin:0 0 14px;padding-left:20px;max-width:70ch}
+li{margin:3px 0}
+code,.id{font-family:var(--mono);font-size:.88em;color:var(--code);background:var(--surface2);padding:1px 5px;border-radius:4px;white-space:nowrap}
+pre{font-family:var(--mono);font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;line-height:1.55;margin:0 0 14px}
+.figures{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:18px 0 6px}
+.figures div{background:var(--surface);padding:12px 14px}
+.figures b{display:block;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
+.figures span{font-size:12px;color:var(--muted)}
+.tw{overflow-x:auto;margin:10px 0 18px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;line-height:1.5}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface2);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.t{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--muted);font-family:var(--mono);font-size:12.5px}
+td.n{font-variant-numeric:tabular-nums;color:var(--muted)}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.tag.night{background:var(--accentSoft);color:var(--accent)}
+.tag.day{background:var(--warnSoft);color:var(--warn)}
+.tag.eve{background:var(--okSoft);color:var(--ok)}
+.tag.bad{background:var(--badSoft);color:var(--bad)}
+.tag.ok{background:var(--okSoft);color:var(--ok)}
+.note{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0 18px;max-width:72ch}
+.note.warn{border-left-color:var(--warn)}
+.note p:last-child{margin-bottom:0}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0 16px;font-size:13px}
+.flow span{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 10px}
+.flow i{color:var(--muted);font-style:normal}
+.part{display:flex;align-items:baseline;gap:10px}
+.part small{font-size:12px;color:var(--muted);font-weight:500}
+footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:960px){
+  .wrap{grid-template-columns:1fr;gap:0}
+  nav.toc{position:static;margin-bottom:24px}
+  nav.toc ol{flex-direction:row;flex-wrap:wrap;border-left:0;gap:6px}
+  nav.toc a{border:1px solid var(--line);border-radius:99px;padding:3px 10px;margin:0;background:var(--surface)}
+  h1{font-size:27px}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+html{scroll-behavior:smooth}
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <ol>
+    <li><a href="#summary">Summary</a></li>
+    <li><a href="#what">What RegTrack is</a></li>
+    <li><a href="#timeline">Timeline</a></li>
+    <li><a href="#build">1 · Building the system</a></li>
+    <li><a href="#afternoon">2 · Dashboard, storage, checks</a></li>
+    <li><a href="#portal">3 · Approved portal design</a></li>
+    <li><a href="#live">4 · Making it fully live</a></li>
+    <li><a href="#refine">5 · Refinements</a></li>
+    <li><a href="#cleanup">6 · Data clean-up</a></li>
+    <li><a href="#easystart">7 · Easy start for teammates</a></li>
+    <li><a href="#errors">Errors and fixes</a></li>
+    <li><a href="#decisions">Decisions to confirm</a></li>
+    <li><a href="#status">Where we stand</a></li>
+    <li><a href="#run">How to run it</a></li>
+    <li><a href="#commits">All commits</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="doc">
+  <p class="eyebrow">RegTrack India · Work log</p>
+  <h1>What we built on 7–8 October 2026, what went wrong, and how we fixed it</h1>
+  <p class="lede">In one working day RegTrack India went from an empty folder to a working system. It collects Indian vehicle regulations from four government sources, reads and organises them, and shows them in a portal built to the approved design. Everything shown comes from real downloaded documents.</p>
+  <div class="meta"><span>Project: <code>D:\regulatory_intelligence</code></span><span>Repository: Pavani-D25/regulatory_intelligence (private)</span><span>Scope: India · vehicle categories L1, L2, M1, N1</span></div>
+</header>
+
+<section id="summary">
+<h2>Summary</h2>
+<p>We worked in three blocks: a night block building the data pipeline, an afternoon block adding a first dashboard and quality fixes, and an evening block rebuilding the dashboard in the approved portal design and cleaning the data. The AI model (Qwen in LM Studio) was never available because we did not get its web address, so everything was built to work without it. AI features are switched on automatically once the address is added.</p>
+<div class="figures" role="list">
+  <div role="listitem"><b>2,274</b><span>files in the seed corpus</span></div>
+  <div role="listitem"><b>2,142</b><span>unique files stored</span></div>
+  <div role="listitem"><b>2,064</b><span>documents identified</span></div>
+  <div role="listitem"><b>148,323</b><span>searchable clauses</span></div>
+  <div role="listitem"><b>5,169</b><span>links between documents</span></div>
+  <div role="listitem"><b>178</b><span>dated obligations</span></div>
+  <div role="listitem"><b>22</b><span>commits, all pushed</span></div>
+  <div role="listitem"><b>65</b><span>automated tests passing</span></div>
+</div>
+<p style="font-size:13px;color:var(--muted)">Figures are from the database at the end of the day. "Documents" is lower than "files" because some PDFs are copies of the same regulation, and higher in places because one PDF can hold several standards.</p>
+</section>
+
+<section id="what">
+<h2>What RegTrack is</h2>
+<p>RegTrack watches the official sources for Indian vehicle regulations and keeps an organised, searchable record of them.</p>
+<div class="flow" aria-label="How data flows">
+  <span>MoRTH · ARAI · e-Gazette · India Code</span><i>→</i><span>Download every 6 hours</span><i>→</i><span>Read and identify each document</span><i>→</i><span>PostgreSQL database</span><i>→</i><span>Portal at localhost:5173</span>
+</div>
+<ul>
+  <li><b>Sources:</b> MoRTH (notifications, orders, guidelines), ARAI (AIS standards), e-Gazette of India, India Code (Motor Vehicles Act and Central Motor Vehicles Rules).</li>
+  <li><b>Original files</b> are stored once and never changed, named by their SHA-256 fingerprint.</li>
+  <li><b>Identity comes from the document's own text</b>, never from the website's title. For example <code>GSR-659(E)-2022</code> or <code>AIS-038(Rev.2)</code>.</li>
+  <li><b>Scope:</b> two-wheelers (L1, L2), cars (M1) and light goods vehicles (N1). Everything else is stored but marked out of scope.</li>
+</ul>
+</section>
+
+<section id="timeline">
+<h2>Timeline</h2>
+<div class="tw"><table>
+<thead><tr><th>When</th><th>Block</th><th>What happened</th></tr></thead>
+<tbody>
+<tr><td class="t">7 Oct eve</td><td><span class="tag night">Night</span></td><td>Read the project rules and design documents; inspected the 2,274-file corpus. C: drive had only 40 MB free and Docker would not start, so all database-independent code was written first.</td></tr>
+<tr><td class="t">8 Oct 00:40</td><td><span class="tag night">Night</span></td><td>Phase 0 committed. Asked for C: to be freed and for the AI address.</td></tr>
+<tr><td class="t">~01:30</td><td><span class="tag night">Night</span></td><td>C: freed (19.6 GB). Docker Desktop hung and was restarted by hand. Database came up.</td></tr>
+<tr><td class="t">01:51–02:25</td><td><span class="tag night">Night</span></td><td>Phases 1–8: database, corpus import, text and OCR, classification, splitting, extraction, links, clause chunks.</td></tr>
+<tr><td class="t">02:30–04:24</td><td><span class="tag night">Night</span></td><td>Phases 9–11: live crawlers for all four sources, 6-hour scheduler, read API, validation report, build summary.</td></tr>
+<tr><td class="t">13:40</td><td><span class="tag day">Afternoon</span></td><td>First dashboard (React + Vite + Tailwind).</td></tr>
+<tr><td class="t">13:42</td><td><span class="tag day">Afternoon</span></td><td>Optional MinIO object storage.</td></tr>
+<tr><td class="t">14:51</td><td><span class="tag day">Afternoon</span></td><td>Quality flags resolved without the AI; <code>llm-smoke</code> test command for when the AI address arrives.</td></tr>
+<tr><td class="t">20:52</td><td><span class="tag eve">Evening</span></td><td>Portal rebuilt to the approved design, on our India data.</td></tr>
+<tr><td class="t">21:16</td><td><span class="tag eve">Evening</span></td><td>All static values removed; auto-sync started and made visible.</td></tr>
+<tr><td class="t">21:29</td><td><span class="tag eve">Evening</span></td><td>"Sync All Sources" button; ARAI download timeout fixed.</td></tr>
+<tr><td class="t">22:12</td><td><span class="tag eve">Evening</span></td><td>Portal refinements; Motor Vehicles Act categories corrected.</td></tr>
+<tr><td class="t">22:57</td><td><span class="tag eve">Evening</span></td><td>Data clean-up: 16 drafts that were stored as published standards, bad titles, reference documents.</td></tr>
+<tr><td class="t">late</td><td><span class="tag eve">Evening</span></td><td>One-command start scripts and database snapshots so a teammate can run the project in minutes.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="build">
+<h2 class="part">1 · Building the system <small>night, phases 0–11</small></h2>
+<p>The work followed the twelve phases in <code>PROMPTS.md</code>. Each phase was checked against the expected numbers in <code>CLAUDE.md</code> and committed separately.</p>
+<div class="tw"><table>
+<thead><tr><th>Phase</th><th>What was built</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td class="n">0</td><td>Project setup, configuration, data models, all pipeline code, crawlers, API, tests</td><td>Built before the database existed, tested offline against the corpus</td></tr>
+<tr><td class="n">1</td><td>PostgreSQL 16 + pgvector 0.8.7 in Docker, migrations</td><td>Migrations apply cleanly twice</td></tr>
+<tr><td class="n">2</td><td>Seed corpus import</td><td>2,274 files → 2,018 unique; re-running adds nothing</td></tr>
+<tr><td class="n">3</td><td>Text extraction, language detection, OCR for scans</td><td>246 scanned files read with Windows OCR (~25 min)</td></tr>
+<tr><td class="n">4</td><td>Classification and identity from the document text</td><td>Title-vs-content mismatch check included</td></tr>
+<tr><td class="n">5</td><td>Splitting AIS files into standards, amendments, corrigenda; best copy</td><td>Missing amendments detected</td></tr>
+<tr><td class="n">6</td><td>Rule-based field extraction for every document</td><td>AI pass queued for when the model is reachable</td></tr>
+<tr><td class="n">7</td><td>Links between documents, versions, dated obligations</td><td>Wheel-rim date chain verified end to end</td></tr>
+<tr><td class="n">8</td><td>Clause-level chunks and filtered search</td><td>136k chunks at the time; text search used until embeddings exist</td></tr>
+<tr><td class="n">9–10</td><td>Live crawlers for MoRTH, ARAI, India Code, e-Gazette; scheduler; read API</td><td>105 new files found live; second crawl writes 0 rows</td></tr>
+<tr><td class="n">11</td><td>Validation report</td><td>15 of 19 required columns at 95% or more; the rest need the AI</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="afternoon">
+<h2 class="part">2 · Dashboard, storage and quality checks <small>afternoon</small></h2>
+<ul>
+  <li><b>First dashboard</b> with vehicle check (pick L1/L2/M1/N1, engine size, fuel, date → regulations that apply, with a downloadable share pack), browse, version timelines, change feed, search and document detail. Values waiting for the AI are marked "✦ AI fields pending".</li>
+  <li><b>Optional MinIO storage</b> (<code>STORAGE_BACKEND=local|s3</code>). Same write-once rule. Local disk stays the default; MinIO holds only test files so far.</li>
+  <li><b>Quality flags resolved by rules:</b> title mismatches 16 → 0 open, amendment gaps 21 → 0 open (5 new amendment documents found), doubtful years corrected, no future dates left.</li>
+  <li><b><code>llm-smoke</code> command</b> to test the AI on 10 documents the moment the LM Studio address arrives.</li>
+</ul>
+</section>
+
+<section id="portal">
+<h2 class="part">3 · The approved portal design <small>evening</small></h2>
+<p>We were given an approved HTML design: a static mock-up with made-up numbers. We rebuilt it with the same look and all of its views, connected to our real data, for India and our four vehicle categories only.</p>
+<div class="tw"><table>
+<thead><tr><th>In the design</th><th>In our portal</th></tr></thead>
+<tbody>
+<tr><td>Region</td><td>Vehicle category (L1, L2, M1, N1)</td></tr>
+<tr><td>Authority</td><td>Issuer (MoRTH, AISC/ARAI, Law Ministry …)</td></tr>
+<tr><td>Domain</td><td>Topic (braking, lighting, EV, type approval …)</td></tr>
+<tr><td>Impact (High/Medium/Low)</td><td>Rule-based score until the AI reviews each document</td></tr>
+<tr><td>Status</td><td>Worked out from the data; the team can override it and the choice is saved</td></tr>
+</tbody></table></div>
+<p>The nine views: <b>Dashboard</b>, <b>Regulations</b>, <b>Change Monitor</b>, <b>Compliance Matrix</b>, <b>Impact View</b>, <b>Ask Regulatory AI</b>, <b>Reports</b>, <b>Alerts</b> and <b>Admin</b>, plus a detail drawer for any regulation. Team inputs (reviews, compliance owners and evidence, alert rules, settings, report history) are stored in new database tables. The earlier vehicle check and version pages stay available under "Tools".</p>
+</section>
+
+<section id="live">
+<h2 class="part">4 · Making it fully live <small>evening</small></h2>
+<p>A check for anything static found a few problems:</p>
+<ul>
+  <li>"Scheduled Reports: 0" was a fixed number. Replaced with the time of the last real report.</li>
+  <li>Two Admin switches did nothing. "Automatic source sync" now really pauses and resumes downloads; the other was removed.</li>
+  <li>Category names, topic names, sync sources, AI suggested questions and workflow steps were typed into the code. They now come from the database.</li>
+  <li><b>The 6-hour auto-download was not running.</b> We started it, added a heartbeat every 5 minutes, and the sidebar now shows "Auto-sync running / not running / paused".</li>
+  <li>Added a <b>"Sync All Sources"</b> button that downloads from all four sites one after another; a failing site does not stop the others.</li>
+</ul>
+</section>
+
+<section id="refine">
+<h2 class="part">5 · Refinements <small>evening</small></h2>
+<ul>
+  <li><b>Detail drawer</b> now shows obligations with dates, related documents (both directions) and version history.</li>
+  <li><b>Live refresh:</b> pages reload by themselves when a sync brings new data. A notification bell shows new alerts.</li>
+  <li><b>Regulations list:</b> full width, sortable columns, 50 per page, superseded documents hidden unless asked.</li>
+  <li><b>Change Monitor:</b> filters by change type, a review button per change, and both dates shown (when we found it, and the document's own date).</li>
+  <li><b>Counts made consistent:</b> every change count now covers only our four categories.</li>
+</ul>
+</section>
+
+<section id="cleanup">
+<h2 class="part">6 · Data clean-up <small>evening</small></h2>
+<h3>Motor Vehicles laws</h3>
+<p>The Motor Vehicles Act 1988 was tagged only for L2, because the system had picked up words mentioned inside the text. The Act, its amendments and the Central Motor Vehicles Rules 1989 now apply to all vehicles. Twelve old Acts that amended the repealed 1914 and 1939 Motor Vehicles Acts are marked superseded. All 34 Acts were checked one by one.</p>
+<h3>Drafts stored as published standards</h3>
+<p>Sixteen draft AIS standards, including AIS-221 to AIS-230 and the new Bharat NCAP revision <code>AIS-197(Rev.1)</code>, were stored as final standards in force. Six standards actually in force (<code>AIS-021</code>, <code>AIS-029</code>, <code>AIS-031</code>, <code>AIS-126</code>, <code>AIS-197</code>, <code>AIS-216</code>) had been marked as replaced by them. All are now correct, and every standard family still has exactly one current version.</p>
+<h3>Document titles</h3>
+<p>Junk titles in the library went from 81 to 23, and no title got worse. Sources now used, in order of trust:</p>
+<ul>
+  <li>Draft cover lines, e.g. "Draft Corrigendum No. 1 to AIS-185: Approval of vehicles with regard to the Advanced Emergency Braking System".</li>
+  <li>ARAI's own title for the exact standard, matched by number, part and draft/published.</li>
+  <li>The name a notification gives itself ("These rules may be called the Motor Vehicles (Driving) Regulations, 2017").</li>
+  <li>A website listing title, but only when it names the same notification number as the document. Six MoRTH listings name the wrong notification.</li>
+</ul>
+<h3>Reference documents</h3>
+<p>35 documents that are not regulations (19 reports, 11 AIS-007 form tables, 5 unclassified items such as ARAI's index page) are hidden from the register by default, with a "Show reference documents" switch. Nothing was deleted.</p>
+</section>
+
+<section id="easystart">
+<h2 class="part">7 · Easy start for teammates <small>evening</small></h2>
+<p>A new collaborator needs only Python 3.11+, Docker Desktop and Node.js 18+. One command does the rest.</p>
+<div class="tw"><table>
+<thead><tr><th>Windows</th><th>macOS / Linux / Git Bash</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>start.bat</code> (double-click)</td><td><code>./start.sh</code></td><td>Set up the first time, then start API, auto-sync and portal</td></tr>
+<tr><td><code>.\start.ps1 -Snapshot file.dump</code></td><td><code>./start.sh --snapshot file.dump</code></td><td>Load a teammate's database snapshot first</td></tr>
+<tr><td><code>.\start.ps1 -Stop</code></td><td><code>./start.sh --stop</code></td><td>Stop everything (the database keeps running)</td></tr>
+</tbody></table></div>
+<ul>
+  <li><b>Database snapshots:</b> <code>snapshot-export</code> makes a 22 MB file in 5 seconds. A test restore into a separate database gave identical counts (2,064 documents, 148,323 clauses, 178 obligations).</li>
+  <li><b>Works in any folder:</b> stored files are found by their SHA-256 name even when the snapshot came from another machine.</li>
+  <li><b>No browser download on Windows:</b> the crawlers use Chrome, then Edge, then Playwright's own browser.</li>
+  <li><b>Tested here:</b> both scripts set up, start, and stop the services cleanly. Running them again is safe.</li>
+</ul>
+</section>
+
+<section id="errors">
+<h2>Errors and how we handled them</h2>
+<p>Grouped by when they happened. "Effect" says what went wrong for the user or the data; "Fix" says what we changed.</p>
+
+<h3>Night: environment and build</h3>
+<div class="tw"><table>
+<thead><tr><th>Problem</th><th>Effect</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>C: drive full (40 MB free)</td><td>Installs failed; memory errors; Docker would not start</td><td>Moved temporary and cache folders to D:. Nothing on C: was touched. You freed 19.6 GB.</td></tr>
+<tr><td>Docker Desktop hung after the disk was freed</td><td>Database engine missing</td><td>Did not force-kill your processes; you restarted Docker Desktop.</td></tr>
+<tr><td>AI address was a placeholder (<code>&lt;your-ngrok-id&gt;</code>)</td><td>No AI extraction, no embeddings, no AI OCR</td><td>Pipeline runs without the AI and queues that work. It runs automatically when the address is added.</td></tr>
+<tr><td>Tesseract OCR not installed (installing software not allowed)</td><td>246 scans had no text</td><td>Used the OCR built into Windows instead.</td></tr>
+<tr><td>Write-once storage bug with read-only files</td><td>Temporary files could not be removed</td><td>Remove the temporary name before marking the original read-only.</td></tr>
+<tr><td>Poor scan text: <code>728E)</code>, <code>943{E)</code>, <code>G.S.R,</code></td><td>Wrong notification numbers picked</td><td>More tolerant number and date patterns; headings preferred.</td></tr>
+<tr><td>Final notifications classed as drafts</td><td>A footer mentioning the original rules looked like a draft citation</td><td>Draft detection now ignores "principal rules / last amended" wording.</td></tr>
+<tr><td>"Motor Vehicles Act, 1988" inside 75 notifications</td><td>They were classed as Acts</td><td>Act titles matched only in capitals.</td></tr>
+<tr><td>Hidden NUL bytes in 3 PDFs</td><td>Database rejected the rows</td><td>NUL bytes stripped.</td></tr>
+<tr><td>First MoRTH crawl stopped (untyped empty value)</td><td>Crawl aborted</td><td>Typed values; each listing saved separately.</td></tr>
+<tr><td>e-Gazette paging did nothing</td><td>Only page 1 listed</td><td>Browser-style User-Agent with our project name appended.</td></tr>
+<tr><td>e-Gazette PDF downloads failed</td><td>Incomplete security certificate chain; viewer page instead of PDF</td><td>Windows certificate store (checks stay on); direct public PDF address.</td></tr>
+<tr><td>8 Excel templates from MoRTH</td><td>Text step failed</td><td>Small Excel reader added.</td></tr>
+<tr><td>Some files had no issuer</td><td>Issuer filled for 92.6%</td><td>Issuer taken from the publishing site when the text has none → 98.1%.</td></tr>
+</tbody></table></div>
+
+<h3>Afternoon</h3>
+<div class="tw"><table>
+<thead><tr><th>Problem</th><th>Effect</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Docker down again at the start</td><td>No database</td><td>Started with <code>docker desktop start</code>.</td></tr>
+<tr><td>"Open original" button text invisible</td><td>Button looked empty</td><td>Tailwind base styles moved to the right layer.</td></tr>
+<tr><td>Resolved quality flags came back on every run</td><td>Re-running wrote rows (breaks the "no change, no writes" rule)</td><td>Flags compared by content; duplicates marked. A full re-run now writes zero rows.</td></tr>
+<tr><td>Background servers stopped for low memory</td><td>Dashboard not reachable</td><td>Reported to you; not restarted without asking.</td></tr>
+</tbody></table></div>
+
+<h3>Evening: portal and data</h3>
+<div class="tw"><table>
+<thead><tr><th>Problem</th><th>Effect</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Design was a static mock-up with fake numbers</td><td>Nothing to connect to</td><td>Mapped every view to our data (see section 3).</td></tr>
+<tr><td>Chrome extension not connected</td><td>Could not check pages in a browser</td><td>Took screenshots with Playwright using the installed Edge browser.</td></tr>
+<tr><td>Only 0.6 GB memory free</td><td>Risk of crashing the laptop</td><td>Started only the lightweight API; reused the dev server already running.</td></tr>
+<tr><td>Layout bugs: cramped drawer, table pushing a column off screen, overlapping ring label, register too wide, oversized text in bell and chips</td><td>Pages looked broken in places</td><td>Fixed one by one and re-checked with screenshots.</td></tr>
+<tr><td>AI page showed raw line breaks from tables</td><td>Answers hard to read</td><td>Whitespace cleaned in fallback answers.</td></tr>
+<tr><td>Static values in the portal</td><td>Some numbers and switches were not real</td><td>All replaced with database values or removed (section 4).</td></tr>
+<tr><td>6-hour auto-sync not running</td><td>Data would not refresh itself</td><td>Started; heartbeat and visible status added.</td></tr>
+<tr><td>Manual sync and scheduler could run at once</td><td>Two pipeline runs at the same time</td><td>Database lock so only one runs at a time.</td></tr>
+<tr><td>ARAI download timed out after 2 minutes</td><td>ARAI shown as "failed"</td><td>Wait for the regulations table instead of a fully quiet page, retry once. Now loads in about 21 s.</td></tr>
+<tr><td>5 broken links on MoRTH's own site</td><td>MoRTH sync marked "partial"</td><td>Logged. These are errors on MoRTH's side.</td></tr>
+<tr><td>Change counts disagreed (123 vs 40)</td><td>Confusing numbers</td><td>All counts limited to our four categories.</td></tr>
+<tr><td>Motor Vehicles Act tagged L2 only</td><td>Law shown for the wrong vehicles</td><td>Rule: Motor Vehicles law applies to all; pre-1988 laws superseded.</td></tr>
+<tr><td>Classifier read "DRAFT" only in capitals</td><td>16 drafts shown as standards in force</td><td>Also reads "Draft AIS-221/D0"; drafts relabelled.</td></tr>
+<tr><td>Versioning never undid a "superseded" mark</td><td>6 standards in force would have been hidden</td><td>Restored automatically when the newer revision is only a draft.</td></tr>
+<tr><td>Titles taken from the wrong cover line</td><td>81 junk titles</td><td>New title rules (section 6); now 23.</td></tr>
+<tr><td>Number stored as "394(E)" vs "394"</td><td>Correct listing titles were rejected</td><td>Numbers compared without the "(E)".</td></tr>
+<tr><td>Shell quoting broke several code edits</td><td>Edits failed before running</td><td>Edits written as script files instead.</td></tr>
+<tr><td>Code used a feature Python 3.11 lacks</td><td>Linter error</td><td>Rewritten for 3.11.</td></tr>
+<tr><td>A migration file was edited after it was applied</td><td>"changed after it was applied" warning on every start</td><td>Original text restored; the setting it touched is removed by migration 0004.</td></tr>
+<tr><td>Database stored absolute paths (<code>D:egulatory_intelligence\…</code>)</td><td>"Open original PDF" would break on a teammate's machine</td><td>Files are found by their SHA-256 name under the local storage folder.</td></tr>
+<tr><td>Stop command on Git Bash left the portal running</td><td>Git Bash process ids differ from Windows ones; relative paths hid the process</td><td>Stop matches our programs by name and full path; Git Bash reuses the PowerShell stop.</td></tr>
+</tbody></table></div>
+<div class="note"><p><b>Checked after every data change:</b> running the pipeline again with nothing new writes zero rows to documents, clauses, links and obligations. This is a project rule and it held each time.</p></div>
+</section>
+
+<section id="decisions">
+<h2>Decisions to confirm</h2>
+<p>These go beyond or differ from the written spec. Each can be undone.</p>
+<div class="tw"><table>
+<thead><tr><th>Decision</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Windows OCR used for scans</td><td>Tesseract not installed; AI offline</td></tr>
+<tr><td>Extraction moves ahead without the AI; AI fills in later</td><td>Otherwise nothing would work while the laptop or ngrok is off</td></tr>
+<tr><td>Issuer taken from the publishing site when the text has none</td><td>Reliable for issuer; identity still comes only from the text</td></tr>
+<tr><td>State government documents marked off-topic</td><td>Scope is central vehicle regulation</td></tr>
+<tr><td>e-Gazette uses a browser-style User-Agent plus our project name</td><td>The site hides paging from unknown browsers</td></tr>
+<tr><td>Every source checked every 6 hours</td><td>PROMPTS says 6 hours per source</td></tr>
+<tr><td>Portal "Region" = vehicle category</td><td>The portal covers India only</td></tr>
+<tr><td>Impact and status are rule-based until the AI runs</td><td>No AI yet; labelled "rule-based" everywhere</td></tr>
+<tr><td>Website listing titles used only as a last resort, and only when the number matches</td><td>Rule 5: identity never comes from listing titles</td></tr>
+<tr><td>Reference documents hidden from the register by default</td><td>They are not regulations; still searchable</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="status">
+<h2>Where we stand</h2>
+<h3>Working now</h3>
+<ul>
+  <li>All four sources crawl politely (1–2 s between requests, back-off on errors).</li>
+  <li>Portal with nine views, live data, review and compliance tracking, reports, alerts and Admin.</li>
+  <li>Data checked and cleaned; 65 tests pass; code linted; everything committed and pushed.</li>
+</ul>
+<h3>Still open</h3>
+<div class="tw"><table>
+<thead><tr><th>Item</th><th>What is needed</th></tr></thead>
+<tbody>
+<tr><td><span class="tag bad">Blocker</span> AI (Qwen in LM Studio)</td><td>The ngrok address and embedding model name in <code>.env</code>. Then AI answers, summaries, impact review and semantic search switch on.</td></tr>
+<tr><td>Keep it running</td><td>Start everything with <code>start.bat</code>. The auto-sync runs while its window is open.</td></tr>
+<tr><td>Permanent auto-sync</td><td>Auto-sync runs only while its window is open. To survive restarts it needs a Windows Task Scheduler entry. This changes system settings, so it needs your approval.</td></tr>
+<tr><td>23 weak titles</td><td>Mostly notifications with no usable name in the text or listing; the AI fills these in.</td></tr>
+<tr><td>4 fields below 95% filled</td><td>Notification subject and nature; AIS dates. All need the AI or are missing in the documents.</td></tr>
+<tr><td>Missing source documents</td><td>The 2004 S.O. 1365(E) master table, the first wheel-rim extension S.O. 2914(E)-2021 and 113 cited drafts are not in the corpus. The crawlers link them automatically if they appear.</td></tr>
+<tr><td>Two untracked files</td><td><code>ETL_SPEC.md</code> (older copy) and <code>test_local_llm.py</code> in the project root were left untouched and not committed.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="run">
+<h2>How to run it</h2>
+<p>In PowerShell, from <code>D:\regulatory_intelligence</code>, with Docker Desktop running:</p>
+<pre>start.bat                                         # Windows: set up if needed, start everything
+./start.sh                                        # macOS / Linux / Git Bash
+.\start.ps1 -Stop                                 # stop again</pre>
+<p>When the AI address arrives: add <code>LLM_BASE_URL</code> and <code>EMBED_MODEL</code> to <code>.env</code>, then run <code>python -m regtrack.cli llm-smoke</code> to test, and <code>python -m regtrack.cli run</code> to process everything.</p>
+</section>
+
+<section id="commits">
+<h2>All commits</h2>
+<div class="tw"><table>
+<thead><tr><th>Time (8 Oct)</th><th>Commit</th><th>What</th></tr></thead>
+<tbody>
+<tr><td class="t">00:40</td><td><code>b5a4763</code></td><td>Phase 0: setup, models, offline pipeline, crawlers, API, tests</td></tr>
+<tr><td class="t">01:51</td><td><code>cb238ae</code></td><td>Phase 1: database migrated</td></tr>
+<tr><td class="t">01:52</td><td><code>f240842</code></td><td>Phase 2: seed corpus imported</td></tr>
+<tr><td class="t">02:03</td><td><code>d3bdb78</code></td><td>Phase 3: text, language, OCR for 246 scans</td></tr>
+<tr><td class="t">02:08</td><td><code>d1a4dd6</code></td><td>Phase 4: classification and identity</td></tr>
+<tr><td class="t">02:08</td><td><code>8a75208</code></td><td>Phase 5: AIS split, best copy, amendment gaps</td></tr>
+<tr><td class="t">02:13</td><td><code>4378e4f</code></td><td>Phase 6: rule-based extraction</td></tr>
+<tr><td class="t">02:20</td><td><code>7d93562</code></td><td>Phase 7: links, versions, obligations</td></tr>
+<tr><td class="t">02:25</td><td><code>2a43d93</code></td><td>Phase 8: clause chunks and search</td></tr>
+<tr><td class="t">04:17</td><td><code>0af0aae</code></td><td>Phases 9–10: live crawlers, scheduler, API</td></tr>
+<tr><td class="t">04:18</td><td><code>cf4fc94</code></td><td>Phase 11: validation report</td></tr>
+<tr><td class="t">04:24</td><td><code>d174d52</code></td><td>Build summary</td></tr>
+<tr><td class="t">13:40</td><td><code>f0b8120</code></td><td>First dashboard</td></tr>
+<tr><td class="t">13:42</td><td><code>f55cffe</code></td><td>Optional MinIO storage</td></tr>
+<tr><td class="t">14:51</td><td><code>e2b8876</code></td><td>Quality flags resolved; re-runs write nothing</td></tr>
+<tr><td class="t">14:51</td><td><code>278f9d0</code></td><td><code>llm-smoke</code> test command</td></tr>
+<tr><td class="t">20:52</td><td><code>e061360</code></td><td>Portal in the approved design</td></tr>
+<tr><td class="t">21:16</td><td><code>d666126</code></td><td>No static data; live auto-sync status</td></tr>
+<tr><td class="t">21:29</td><td><code>54e85d8</code></td><td>Sync All Sources; ARAI timeout fix</td></tr>
+<tr><td class="t">22:12</td><td><code>81d72e6</code></td><td>Portal refinements; Motor Vehicles law categories</td></tr>
+<tr><td class="t">22:57</td><td><code>43c9d4f</code></td><td>Drafts, titles, reference documents</td></tr>
+<tr><td class="t">late</td><td><em>this commit</em></td><td>Start scripts, database snapshots, day report</td></tr>
+</tbody></table></div>
+</section>
+
+<footer>Detailed records in the repository: <code>reports/BUILD_SUMMARY.md</code>, <code>reports/VALIDATION_REPORT.md</code>, <code>reports/phase_0.md</code> to <code>phase_11.md</code>, and <code>README.md</code>.</footer>
+</main>
+</div>
+
+</html>
