@@ -29,17 +29,32 @@ router = APIRouter(prefix="/portal", tags=["portal"])
 
 CATEGORIES = ["L1", "L2", "M1", "N1"]
 SCOPE = CATEGORIES + ["ALL"]
-CAT_LABEL = {"L1": "L1 Moped", "L2": "L2 Two-wheeler", "M1": "M1 Car", "N1": "N1 Light goods", "ALL": "All vehicles"}
-DOMAIN_LABEL = {
-    "safety_equipment": "Safety equipment", "braking": "Braking", "lighting": "Lighting", "emission": "Emission",
-    "fuel_efficiency": "Fuel efficiency", "ev_alt_fuel": "EV / alt fuel", "battery": "Battery", "charging": "Charging",
-    "cybersecurity": "Cybersecurity", "tracking_its": "Tracking / ITS", "type_approval": "Type approval",
-    "dimensions_weights": "Dimensions / weights", "registration": "Registration", "hsrp": "HSRP",
-    "licensing": "Licensing", "permit": "Permits", "fees": "Fees", "fitness_puc": "Fitness / PUC",
-    "recall_scrappage": "Recall / scrappage",
-}
+# labels come from the seeded vocabulary tables (vehicle_category, domain); refreshed every 10 minutes
+CAT_LABEL: dict[str, str] = {}
+DOMAIN_LABEL: dict[str, str] = {}
+_vocab_at: datetime | None = None
+IMPACT_RULE = ("High = technical, with an obligation still to come, a revision needing re-approval, or published in the "
+               "last 12 months; Medium = other technical; Low = administrative (registration, licences, fees)")
 STATUSES = ["Action Required", "Under Review", "Impact Analysis", "Tracked"]
 DRAFTS = ("NOTIFICATION_DRAFT", "AIS_DRAFT")
+
+
+def _short(label: str) -> str:
+    """Drop the bracketed detail: "Two-wheeler (max design speed > 45 km/h)" -> "Two-wheeler"."""
+    return label.split("(")[0].strip()
+
+
+def load_vocab(conn) -> None:
+    global _vocab_at
+    if _vocab_at and datetime.now() - _vocab_at < timedelta(minutes=10) and CAT_LABEL:
+        return
+    cats = {r["code"]: f"{r['code']} {_short(r['label'])}" for r in conn.execute("SELECT code, label FROM vehicle_category")}
+    CAT_LABEL.clear()
+    CAT_LABEL.update(cats)
+    CAT_LABEL.setdefault("ALL", "All vehicles")
+    DOMAIN_LABEL.clear()
+    DOMAIN_LABEL.update({r["code"]: r["label"] for r in conn.execute("SELECT code, label FROM domain ORDER BY code")})
+    _vocab_at = datetime.now()
 
 
 def _rows(conn, sql: str, args=None) -> list[dict]:
@@ -107,6 +122,7 @@ def classify_row(r: dict, today: date | None = None) -> dict:
 
 
 def regulations(conn, category: str | None = None, extra_where: str = "", args: tuple = ()) -> list[dict]:
+    load_vocab(conn)
     cats = [category] if category in CATEGORIES else SCOPE
     if category in CATEGORIES:
         cats = [category, "ALL"]
@@ -130,7 +146,7 @@ def follow_up(r: dict) -> str:
         return "Amendment to a standard: check the changed clauses against current homologation evidence."
     if r["nature"] == "administrative":
         return "Administrative change (registration / licence / fees): inform the homologation and dealer-operations teams."
-    return "Confirm applicability for L1/L2/M1/N1 models and record the decision."
+    return f"Confirm applicability for {'/'.join(r['categories'] or CATEGORIES)} models and record the decision."
 
 
 def detected_change(conn, doc_id: int) -> str:
@@ -327,6 +343,7 @@ ORDER BY coalesce(ci.due_date, m.implementation_date) DESC NULLS LAST, m.mandate
 def compliance(category: str | None = None) -> dict:
     cats = [category, "ALL"] if category in CATEGORIES else SCOPE
     with connect() as conn:
+        load_vocab(conn)
         rows = _rows(conn, COMP_SQL, (cats,))
         default_owner = _setting(conn, "default_owner", "Regulatory Affairs Team")
     for r in rows:
@@ -382,6 +399,15 @@ def impact() -> dict:
                               WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
                               GROUP BY 1 ORDER BY 2 DESC LIMIT 5""", (SCOPE,))
         owners = conn.execute("SELECT count(DISTINCT owner) AS n FROM compliance_item WHERE owner IS NOT NULL AND owner<>''").fetchone()["n"]
+        wf = conn.execute("""SELECT
+              (SELECT count(*) FROM change_event WHERE detected_at > now() - interval '30 days') AS detected,
+              (SELECT count(*) FROM file_object WHERE stage NOT IN ('downloaded','text')) AS classified,
+              (SELECT count(*) FROM file_object) AS files,
+              (SELECT count(*) FROM document_review) AS assessed,
+              (SELECT count(*) FROM compliance_item WHERE coalesce(owner,'')<>'') AS mapped,
+              (SELECT count(*) FROM mandate WHERE valid_to IS NULL AND NOT is_draft AND vehicle_categories && %s) AS obligations,
+              (SELECT count(*) FROM change_event WHERE review_status='confirmed') AS closed,
+              (SELECT count(*) FROM change_event) AS changes""", (SCOPE,)).fetchone()
     dom: dict[str, int] = {}
     for r in regs:
         for d in r["domains"] or []:
@@ -394,7 +420,15 @@ def impact() -> dict:
     cells = [{"domain": DOMAIN_LABEL.get(d, d), "code": d, "scores": [score[d][c] for c in CATEGORIES],
               "counts": [counts[d][c] for c in CATEGORIES]} for d in top]
     critical = sum(1 for d in top if max(score[d].values()) >= 4)
-    return {"categories": CATEGORIES, "cells": cells, "top_standards": stds,
+    workflow = [
+        {"step": "Detect", "text": "New or changed documents found by source monitoring (last 30 days)", "n": wf["detected"], "of": None},
+        {"step": "Classify", "text": "Files with identity, category and topic read from content", "n": wf["classified"], "of": wf["files"]},
+        {"step": "Assess", "text": "In-scope regulations with a review decision by the team", "n": wf["assessed"], "of": len(regs)},
+        {"step": "Map", "text": "Obligations in force with an owner in the Compliance Matrix", "n": wf["mapped"], "of": wf["obligations"]},
+        {"step": "Close", "text": "Detected changes marked as reviewed", "n": wf["closed"], "of": wf["changes"]},
+    ]
+    return {"categories": CATEGORIES, "category_labels": [CAT_LABEL.get(c, c) for c in CATEGORIES], "cells": cells,
+            "top_standards": stds, "workflow": workflow,
             "kpis": {"critical": critical,
                      "top1": {"name": DOMAIN_LABEL.get(top[0], top[0]) if top else "—", "n": sum(1 for r in regs if top and top[0] in (r["domains"] or []))},
                      "top2": {"name": DOMAIN_LABEL.get(top[1], top[1]) if len(top) > 1 else "—", "n": sum(1 for r in regs if len(top) > 1 and top[1] in (r["domains"] or []))},
@@ -411,6 +445,32 @@ def impact_cell(category: str, domain: str) -> dict:
 
 
 # ====================================================================== ask regulatory AI
+@router.get("/ask/context")
+def ask_context() -> dict:
+    """Suggested questions built from the current data, and the sources the assistant searches."""
+    with connect() as conn:
+        regs = regulations(conn)
+        sources = _rows(conn, """SELECT s.code, s.name, s.last_run_at, s.last_status,
+                   (SELECT count(DISTINCT d.id) FROM file_sighting f JOIN document_file df ON df.file_id=f.file_id
+                      JOIN document d ON d.id=df.document_id WHERE f.source_id=s.id AND d.vehicle_categories && %s) AS documents
+                   FROM source s ORDER BY s.id""", (SCOPE,))
+        chunks = conn.execute("SELECT count(*) AS n FROM chunk WHERE in_scope AND NOT is_boilerplate").fetchone()["n"]
+    suggest: list[str] = []
+    for c in CATEGORIES:  # most-regulated topic per category (type approval is everywhere, so skipped)
+        dom: dict[str, int] = {}
+        for r in regs:
+            if c in r["categories"]:
+                for d in r["domains"] or []:
+                    if d != "type_approval":
+                        dom[d] = dom.get(d, 0) + 1
+        if dom:
+            top = max(dom, key=dom.get)
+            suggest.append(f"Which rules on {DOMAIN_LABEL.get(top, top)} apply to {c}?")
+    latest = sorted([r for r in regs if r["impact"] == "High" and r["doc_date"]], key=lambda r: r["doc_date"], reverse=True)[:2]
+    suggest += [f"Summarize {r['canonical_id']}: {r['name'][:60]}" for r in latest]
+    return {"suggestions": suggest[:6], "sources": [x for x in sources if x["documents"]], "chunks": chunks}
+
+
 @router.post("/ask")
 def ask(body: dict = Body(...)) -> dict:
     from pydantic import BaseModel
@@ -465,7 +525,9 @@ def reports() -> dict:
         recent = _rows(conn, "SELECT * FROM report_log ORDER BY generated_at DESC LIMIT 20")
         month = conn.execute("SELECT count(*) AS n FROM report_log WHERE generated_at > date_trunc('month', now())").fetchone()["n"]
         awaiting = conn.execute("SELECT count(*) AS n FROM change_event WHERE review_status<>'confirmed'").fetchone()["n"]
-    return {"kpis": {"generated_month": month, "scheduled": 0, "awaiting_review": awaiting, "templates": len(REPORTS)},
+        last = conn.execute("SELECT max(generated_at) AS t FROM report_log").fetchone()["t"]
+    return {"kpis": {"generated_month": month, "last_generated": last, "awaiting_review": awaiting, "templates": len(REPORTS)},
+            "scope": ", ".join(CATEGORIES),
             "templates": [{"kind": k, "name": v} for k, v in REPORTS.items()], "recent": recent}
 
 
@@ -493,7 +555,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
         s = summary()
         ch = change_monitor(30)
         sections = [
-            ("Key figures", ["Measure", "Value"], [["Regulations tracked (India, L1/L2/M1/N1)", s["kpis"]["tracked"]],
+            ("Key figures", ["Measure", "Value"], [[f"Regulations tracked (India, {'/'.join(CATEGORIES)})", s["kpis"]["tracked"]],
                                                    ["Changes in last 30 days", s["kpis"]["changes_30d"]],
                                                    ["High impact (rule-based)", s["kpis"]["high"]],
                                                    ["Action required", s["kpis"]["action_required"]]]),
@@ -526,7 +588,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
         head, rows = sections[1][1], sections[1][2]
     with connect() as conn:
         conn.execute("INSERT INTO report_log (kind, scope, owner, rows) VALUES (%s,%s,%s,%s)",
-                     (title, "India · L1/L2/M1/N1", owner, len(rows)))
+                     (title, "India · " + "/".join(CATEGORIES), owner, len(rows)))
         conn.commit()
     fname = f"{title.replace(' ', '_')}_{date.today().isoformat()}"
     if fmt == "csv":
@@ -536,7 +598,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
         w.writerows(rows)
         return Response(buf.getvalue(), media_type="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'})
-    body = _html(title, f"RegTrack India · India, vehicle categories L1/L2/M1/N1 · generated {stamp}. "
+    body = _html(title, f"RegTrack India · India, vehicle categories {', '.join(CATEGORIES)} · generated {stamp}. "
                         f"Impact is rule-based until the AI pass runs.", sections)
     return Response(body, media_type="text/html", headers={"Content-Disposition": f'attachment; filename="{fname}.html"'})
 
@@ -652,22 +714,43 @@ def admin() -> dict:
         warnings = conn.execute("""SELECT count(*) AS n FROM quality_flag WHERE resolved_at IS NULL
                                    AND rule IN ('low_ocr_confidence','schema_violation','identity_not_found')""").fetchone()["n"]
         settings = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM app_setting")}
+    from regtrack.scheduler import CRAWLERS
+
+    now = datetime.now().astimezone()
     live = [s for s in sources if s["code"] != "LOCAL_SEED"]
     last = max((s["last_run_at"] for s in live if s["last_run_at"]), default=None)
+    for s in sources:
+        s["crawler"] = s["code"] in CRAWLERS
+        s["next_due"] = (s["last_run_at"] + timedelta(hours=min(s["schedule_hours"], 6))
+                         if s["crawler"] and s["last_run_at"] and s["schedule_hours"] else None)
+        s["overdue"] = bool(s["crawler"] and (s["next_due"] is None or s["next_due"] < now - timedelta(minutes=30)))
     for r in runs:
         st = r["stats"] or {}
         r["documents"] = st.get("seen", st.get("files", 0))
         r["changes"] = st.get("new_files", st.get("file_object_new", 0))
-    return {"kpis": {"connected": sum(1 for s in live if s["last_status"] in ("ok", "partial")), "sources": len(live),
+    return {"kpis": {"connected": sum(1 for s in sources if s["crawler"] and s["last_status"] in ("ok", "partial")),
+                     "sources": sum(1 for s in sources if s["crawler"]),
                      "success_pct": round(100 * tot["good"] / tot["n"], 1) if tot["n"] else None,
                      "warnings": warnings, "partial_runs": tot["partial"],
-                     "last_sync_min": int((datetime.now().astimezone() - last).total_seconds() // 60) if last else None},
-            "sources": sources, "runs": runs, "settings": settings, "sync": _sync_state}
+                     "last_sync_min": int((now - last).total_seconds() // 60) if last else None},
+            "sources": sources, "runs": runs, "settings": {k: v for k, v in settings.items() if k != "scheduler_heartbeat"},
+            "sync": _sync_state, "syncable": [s["code"] for s in sources if s["crawler"]],
+            "scheduler": scheduler_status(settings), "impact_rule": IMPACT_RULE}
+
+
+def scheduler_status(settings: dict) -> dict:
+    """Alive if the scheduler loop wrote its heartbeat within the last two intervals."""
+    from regtrack.scheduler import HEARTBEAT_MIN
+
+    hb = settings.get("scheduler_heartbeat")
+    beat = datetime.fromisoformat(hb) if hb else None
+    alive = bool(beat and datetime.now().astimezone() - beat < timedelta(minutes=2 * HEARTBEAT_MIN + 1))
+    return {"alive": alive, "heartbeat": beat, "auto_sync": settings.get("auto_sync", "true") != "false"}
 
 
 @router.put("/settings")
 def put_settings(body: dict = Body(...)) -> dict:
-    allowed = {"default_owner", "review_sla_days", "high_impact_rule", "auto_sync", "auto_compliance_task"}
+    allowed = {"default_owner", "review_sla_days", "auto_sync"}
     with connect() as conn:
         for k, v in body.items():
             if k in allowed:
@@ -680,10 +763,10 @@ def put_settings(body: dict = Body(...)) -> dict:
 @router.post("/admin/sync")
 def run_sync(body: dict = Body(default={})) -> dict:
     """Start one source crawl + pipeline run in the background (one at a time)."""
-    from regtrack.scheduler import run_source
+    from regtrack.scheduler import CRAWLERS, run_source
 
     code = body.get("source") or "MORTH_API"
-    if code not in ("MORTH_API", "ARAI_AIS", "EGAZETTE", "INDIACODE"):
+    if code not in CRAWLERS:
         raise HTTPException(400, "unknown source")
     if not _sync_lock.acquire(blocking=False):
         return {"started": False, "running": _sync_state["running"]}
@@ -705,8 +788,13 @@ def run_sync(body: dict = Body(default={})) -> dict:
 
 @router.get("/meta")
 def portal_meta() -> dict:
+    from regtrack.scheduler import CRAWLERS
+
     with connect() as conn:
-        s = conn.execute("""SELECT count(*) FILTER (WHERE code<>'LOCAL_SEED' AND last_status IN ('ok','partial')) AS n,
-                            max(last_run_at) FILTER (WHERE code<>'LOCAL_SEED') AS last FROM source""").fetchone()
-    return {"sources": s["n"], "last_sync": s["last"], "categories": [{"code": c, "label": CAT_LABEL[c]} for c in CATEGORIES],
+        load_vocab(conn)
+        s = conn.execute("""SELECT count(*) FILTER (WHERE last_status IN ('ok','partial')) AS n, count(*) AS total,
+                            max(last_run_at) AS last FROM source WHERE code = ANY(%s)""", (list(CRAWLERS),)).fetchone()
+        settings = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM app_setting")}
+    return {"sources": s["n"], "sources_total": s["total"], "last_sync": s["last"], "scheduler": scheduler_status(settings),
+            "categories": [{"code": c, "label": CAT_LABEL.get(c, c)} for c in CATEGORIES],
             "statuses": STATUSES, "domains": [{"code": k, "label": v} for k, v in DOMAIN_LABEL.items()]}

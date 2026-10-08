@@ -155,6 +155,22 @@ follow-up; review status and owner can be changed there and are saved.
   - Tracked = the rest.
   - A status set by the team always wins.
 
+**No static data.** Every number, list and label comes from the database:
+- category and topic names come from `vehicle_category` and `domain`;
+- suggested AI questions come from the most-regulated topics and the latest high-impact items;
+- knowledge sources, sync sources and the workflow counts are live.
+
+**Keep the scheduler running.** The portal shows real sync health: the sidebar and Admin say *Auto-sync running / not running /
+paused*. The scheduler writes a heartbeat every 5 minutes. A source is marked *overdue* when its 6-hour run is late.
+For data that refreshes itself, keep the scheduler running next to the API:
+
+```powershell
+.venv\Scripts\python -m regtrack.cli schedule     # crawls every 6 h + pipeline; heartbeat every 5 min
+```
+
+The Admin switch *Automatic source sync* pauses and resumes the scheduled crawls. Manual *Run Source Sync* always
+works. A PostgreSQL advisory lock stops a manual sync and the scheduler from running the pipeline at the same time.
+
 The team's inputs (reviews, compliance matrix, alert rules, settings, report log) live in the tables of
 `db/migrations/0002_portal_workflow.sql`. Pipeline data is never edited from the portal; the one exception is marking
 change events as reviewed. Values the Qwen pass has not filled yet are marked "✦ AI fields pending".

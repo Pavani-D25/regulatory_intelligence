@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Badge, Card, ErrorBox, Kpi, Loading } from "../ui";
-
-const SYNCABLE = ["MORTH_API", "ARAI_AIS", "EGAZETTE", "INDIACODE"];
+import { ago, Badge, Card, ErrorBox, fmtTime, Kpi, Loading } from "../ui";
 
 export default function Admin() {
   const [tick, setTick] = useState(0);
@@ -27,22 +25,24 @@ export default function Admin() {
     toast(r.started ? `Sync started: ${src}` : `A sync is already running (${r.running})`);
     setTick((t) => t + 1);
   };
-  const on = (key) => s?.[key] === "true";
-  const flip = (key) => setS({ ...s, [key]: on(key) ? "false" : "true" });
+  const autoOn = s?.auto_sync !== "false";
+  const sch = data.scheduler;
+  const schLabel = !sch.auto_sync ? "Paused" : sch.alive ? "Running" : "Not running";
   return (
     <section className="view">
       <div className="pagehead">
         <div><h1>Admin</h1><p>Sources, monitoring configuration and ingestion jobs.</p></div>
         <div className="actions">
-          <select className="select" value={src} onChange={(e) => setSrc(e.target.value)}>{SYNCABLE.map((c) => <option key={c}>{c}</option>)}</select>
+          <select className="select" value={src} onChange={(e) => setSrc(e.target.value)}>{data.syncable.map((c) => <option key={c}>{c}</option>)}</select>
           <button className="btn primary" disabled={!!data.sync.running} onClick={sync}>{data.sync.running ? `Syncing ${data.sync.running}…` : "Run Source Sync"}</button>
         </div>
       </div>
       <div className="kpis">
-        <Kpi label="Connected Sources" value={`${k.connected}/${k.sources}`} small="Last run ok or partial" corner="⇄" />
+        <Kpi label="Connected Sources" value={`${k.connected}/${k.sources}`} small="Crawled sources, last run ok or partial" corner="⇄" />
         <Kpi label="Job Success" value={k.success_pct != null ? `${k.success_pct}%` : "—"} small={`Last 30 days · ${k.partial_runs} partial`} corner="✓" tone="green" />
         <Kpi label="Data Warnings" value={k.warnings} small="Open OCR / schema / identity flags" corner="!" tone="amber" />
-        <Kpi label="Last Sync" value={k.last_sync_min != null ? (k.last_sync_min < 120 ? `${k.last_sync_min} min` : `${Math.round(k.last_sync_min / 60)} h`) : "—"} small="Since the most recent source run" corner="⏱" />
+        <Kpi label="Auto-sync (every 6 h)" value={schLabel} tone={sch.alive && sch.auto_sync ? "green" : "red"} corner="⏱"
+          small={`heartbeat ${sch.heartbeat ? ago(sch.heartbeat) : "never"} · last sync ${k.last_sync_min != null ? (k.last_sync_min < 120 ? `${k.last_sync_min} min` : `${Math.round(k.last_sync_min / 60)} h`) + " ago" : "—"}`} />
       </div>
       <div className="grid2">
         <Card title="Regulatory Sources" sub="Public sources only · polite crawling (1–2 s, backoff)">
@@ -51,8 +51,9 @@ export default function Admin() {
               <div key={x.code} className="sourceitem">
                 <div className="itemmain"><span className="dot" style={{ background: x.last_status === "ok" ? "#22c55e" : x.last_status === "partial" ? "#f59e0b" : "#cbd5e1" }} />
                   <div><strong style={{ fontSize: 12 }}>{x.name}</strong>
-                    <small>{x.code} · every {x.schedule_hours || "—"} h · {x.sightings} files seen · last run {x.last_run_at ? new Date(x.last_run_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "never"}</small></div></div>
-                <Badge v={x.last_status || "not run"} tone={x.last_status ? undefined : "blue"} />
+                    <small>{x.code} · {x.crawler ? `every ${Math.min(x.schedule_hours, 6)} h` : x.code === "LOCAL_SEED" ? "one-time import" : "no crawler yet"} · {x.sightings} files seen · last run {x.last_run_at ? fmtTime(x.last_run_at) : "never"}
+                      {x.next_due && <> · next due {fmtTime(x.next_due)}</>}</small></div></div>
+                <span style={{ display: "flex", gap: 5 }}>{x.overdue && <Badge v="overdue" tone="red" />}<Badge v={x.last_status || "not run"} tone={x.last_status ? undefined : "blue"} /></span>
               </div>
             ))}
           </div>
@@ -68,16 +69,14 @@ export default function Admin() {
               <div className="stack" style={{ marginTop: 6 }}>
                 <div className="alertitem">
                   <div className="itemmain"><div><strong style={{ fontSize: 12 }}>High-impact threshold (rule-based until AI review)</strong>
-                    <small>High = {s.high_impact_rule || "technical, with obligations to come, re-approval or recent publication"}</small></div></div>
+                    <small>{data.impact_rule}</small></div></div>
                   <span className="pill purple">rules</span>
                 </div>
-                {[["auto_sync", "Automatic source sync", "Scheduler crawls every 6 hours (python -m regtrack.cli schedule)"],
-                  ["auto_compliance_task", "Create compliance items", "New obligations appear in the Compliance Matrix automatically"]].map(([key, t, d]) => (
-                  <div key={key} className="alertitem">
-                    <div className="itemmain"><div><strong style={{ fontSize: 12 }}>{t}</strong><small>{d}</small></div></div>
-                    <label className="switch"><input type="checkbox" checked={on(key)} onChange={() => flip(key)} /><span className="slider" /></label>
-                  </div>
-                ))}
+                <div className="alertitem">
+                  <div className="itemmain"><div><strong style={{ fontSize: 12 }}>Automatic source sync</strong>
+                    <small>Scheduled crawls run only while this is on{sch.alive ? "" : " and the scheduler is running (python -m regtrack.cli schedule)"}</small></div></div>
+                  <label className="switch"><input type="checkbox" checked={autoOn} onChange={() => setS({ ...s, auto_sync: autoOn ? "false" : "true" })} /><span className="slider" /></label>
+                </div>
               </div>
               <div className="actions" style={{ marginTop: 12 }}><button className="btn primary" onClick={save}>Save Configuration</button></div>
             </>
@@ -89,7 +88,7 @@ export default function Admin() {
           <thead><tr><th>Job</th><th>Source</th><th>Started</th><th>Duration</th><th>Files seen</th><th>New files</th><th>Status</th></tr></thead>
           <tbody>{data.runs.map((r) => (
             <tr key={r.id}><td className="mono">#{r.id}</td><td>{r.code}</td>
-              <td>{new Date(r.started_at).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+              <td>{fmtTime(r.started_at)}</td>
               <td>{r.finished_at ? `${Math.max(1, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 60000))} min` : "running"}</td>
               <td>{r.documents ?? "—"}</td><td>{r.changes ?? "—"}</td><td><Badge v={r.status} /></td></tr>))}
             {!data.runs.length && <tr><td colSpan={7} className="empty">No jobs yet.</td></tr>}

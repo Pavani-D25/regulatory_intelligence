@@ -10,7 +10,7 @@ export default function Compliance() {
   const [category, setCategory] = useState("");
   const [tick, setTick] = useState(0);
   const { data, error, loading } = useLoad(() => portal.compliance(category), [category, tick]);
-  const { openReg, toast } = usePortal();
+  const { openReg, toast, meta } = usePortal();
   const [edits, setEdits] = useState({});
   const [saving, setSaving] = useState(false);
   useEffect(() => setEdits({}), [data]);
@@ -40,7 +40,7 @@ export default function Compliance() {
         <div><h1>Compliance Matrix</h1><p>Map each obligation in force (CMVR rule + standard + categories) to owner, evidence and status.</p></div>
         <div className="actions">
           <select className="select" value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">All categories</option><option>L1</option><option>L2</option><option>M1</option><option>N1</option></select>
+            <option value="">All categories</option>{(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}</select>
           <button className="btn primary" disabled={!dirty.length || saving} onClick={save}>{saving ? "Saving…" : `Save Matrix${dirty.length ? ` (${dirty.length})` : ""}`}</button>
         </div>
       </div>

@@ -39,6 +39,7 @@ def test_views_only_india_scope(client):
     s = client.get("/portal/summary").json()
     assert s["kpis"]["tracked"] > 0 and len(s["trend"]) == 12
     assert [c["code"] for c in s["by_category"]] == ["L1", "L2", "M1", "N1"]
+    assert all(c["name"].startswith(c["code"]) for c in s["by_category"])
     regs = client.get("/portal/regulations").json()["rows"]
     assert regs and all(set(r["categories"]) <= {"L1", "L2", "M1", "N1", "ALL"} and r["categories"] for r in regs)
     for path in ("/portal/changes", "/portal/compliance", "/portal/impact", "/portal/reports", "/portal/alerts", "/portal/admin"):
@@ -91,3 +92,22 @@ def test_ask_returns_cited_clauses(client):
     r = client.post("/portal/ask", json={"question": "traction battery safety"}).json()
     assert r["mode"] in ("search", "qwen") and r["sources"]
     assert any(s["canonical_id"].startswith("AIS-") for s in r["sources"])
+
+
+def test_no_static_values(client):
+    """Labels, suggestions, sync sources and scheduler state come from the database, not from code."""
+    from regtrack.db import connect
+
+    meta = client.get("/portal/meta").json()
+    with connect() as conn:
+        labels = {r["code"]: r["label"] for r in conn.execute("SELECT code, label FROM vehicle_category")}
+    assert all(labels[c["code"]].startswith(c["label"].split(" ", 1)[1]) for c in meta["categories"])
+    assert {"alive", "heartbeat", "auto_sync"} <= meta["scheduler"].keys()
+    ctx = client.get("/portal/ask/context").json()
+    assert ctx["suggestions"] and ctx["sources"] and ctx["chunks"] > 0
+    adm = client.get("/portal/admin").json()
+    assert set(adm["syncable"]) == {"MORTH_API", "ARAI_AIS", "EGAZETTE", "INDIACODE"}
+    assert "high_impact_rule" not in adm["settings"] and "auto_compliance_task" not in adm["settings"]
+    wf = client.get("/portal/impact").json()["workflow"]
+    assert [w["step"] for w in wf] == ["Detect", "Classify", "Assess", "Map", "Close"]
+    assert "scheduled" not in client.get("/portal/reports").json()["kpis"]

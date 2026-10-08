@@ -13,7 +13,7 @@ const COND = {
 export default function Alerts() {
   const [tick, setTick] = useState(0);
   const { data, error, loading } = useLoad(() => portal.alerts(), [tick]);
-  const { openReg, toast } = usePortal();
+  const { openReg, toast, meta } = usePortal();
   const [form, setForm] = useState(null);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -43,7 +43,7 @@ export default function Alerts() {
           <div className="formrow">
             <label className="formlabel">Name<input className="input" value={form.name} placeholder="e.g. M1 lighting changes" onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
             <label className="formlabel">Vehicle category<select className="select" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })}>
-              {["All categories", "L1", "L2", "M1", "N1"].map((c) => <option key={c}>{c}</option>)}</select></label>
+              <option>All categories</option>{(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}</select></label>
             <label className="formlabel">Condition<select className="select" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value, param: e.target.value === "due_within" ? "60" : "" })}>
               {data.conditions.map((c) => <option key={c} value={c}>{COND[c]}</option>)}</select></label>
             {form.condition === "due_within" && <label className="formlabel">Days<input className="input" type="number" min="1" value={form.param} onChange={(e) => setForm({ ...form, param: e.target.value })} /></label>}

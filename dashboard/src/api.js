@@ -64,6 +64,7 @@ export const portal = {
   impact: () => get("/portal/impact"),
   impactCell: (category, domain) => get("/portal/impact/cell", { category, domain }),
   ask: (question) => send("POST", "/portal/ask", { question }),
+  askContext: () => get("/portal/ask/context"),
   reports: () => get("/portal/reports"),
   alerts: () => get("/portal/alerts"),
   addAlert: (body) => send("POST", "/portal/alerts", body),

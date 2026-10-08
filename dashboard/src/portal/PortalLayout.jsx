@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { docPath, fileUrl, portal } from "../api";
 import "./portal.css";
-import { Badge, fmt } from "./ui";
+import { Badge, fmt, fmtTime } from "./ui";
 
 // views of the approved design, in its order; "Tools" are the earlier RegTrack pages kept reachable
 const NAV = [
@@ -90,7 +90,13 @@ export default function PortalLayout() {
   const [drawer, setDrawer] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
   const [q, setQ] = useState("");
-  useEffect(() => { portal.meta().then(setMeta).catch(() => setMeta(null)); }, []);
+  // refresh source / scheduler status every minute and on navigation
+  useEffect(() => {
+    const load = () => portal.meta().then(setMeta).catch(() => setMeta(null));
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [loc.pathname]);
   useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
   const toast = useCallback((m) => { setToastMsg(m); setTimeout(() => setToastMsg(""), 1800); }, []);
   const base = "/" + (loc.pathname.split("/")[1] || "");
@@ -111,9 +117,12 @@ export default function PortalLayout() {
             ))}
           </nav>
           <div className="sidefoot">
-            <div className="health"><span className="dot" style={meta && meta.sources < 4 ? { background: "#f59e0b" } : undefined} />
-              <span>{meta ? `${meta.sources} sources connected` : "connecting…"}</span></div>
-            <div style={{ marginTop: 8, color: "#9ca3af" }}>Last sync: {meta?.last_sync ? new Date(meta.last_sync).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " IST" : "—"}</div>
+            <div className="health"><span className="dot" style={meta && meta.sources < meta.sources_total ? { background: "#f59e0b" } : undefined} />
+              <span>{meta ? `${meta.sources}/${meta.sources_total} sources connected` : "connecting…"}</span></div>
+            <div className="health" style={{ marginTop: 8 }}>
+              <span className="dot" style={{ background: !meta ? "#6b7280" : meta.scheduler.alive && meta.scheduler.auto_sync ? "#22c55e" : "#ef4444" }} />
+              <span>{!meta ? "—" : !meta.scheduler.auto_sync ? "Auto-sync paused" : meta.scheduler.alive ? "Auto-sync running" : "Auto-sync not running"}</span></div>
+            <div style={{ marginTop: 8, color: "#9ca3af" }}>Last sync: {meta?.last_sync ? fmtTime(meta.last_sync) : "—"}</div>
           </div>
         </aside>
         <main className="main">

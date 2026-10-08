@@ -2,7 +2,7 @@ import { useState } from "react";
 import { portal, reportUrl } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Card, ErrorBox, Kpi, Loading } from "../ui";
+import { ago, Card, ErrorBox, fmtTime, Kpi, Loading } from "../ui";
 
 const CARDS = {
   executive: ["▤", "Management summary: tracked regulations, changes, high-impact items, category and topic breakdown, upcoming dates."],
@@ -25,11 +25,11 @@ export default function Reports() {
   return (
     <section className="view">
       <div className="pagehead">
-        <div><h1>Reports</h1><p>Generate regulatory reports from live data · India · L1, L2, M1, N1.</p></div>
+        <div><h1>Reports</h1><p>Generate regulatory reports from live data · India · {data.scope}.</p></div>
       </div>
       <div className="kpis">
         <Kpi label="Generated This Month" value={k.generated_month} small="All report types" corner="▤" />
-        <Kpi label="Scheduled Reports" value={k.scheduled} small="Scheduling not set up yet" corner="⏱" tone="amber" />
+        <Kpi label="Last Report" value={k.last_generated ? ago(k.last_generated) : "—"} small={k.last_generated ? fmtTime(k.last_generated) : "No report generated yet"} corner="⏱" tone="amber" />
         <Kpi label="Changes Awaiting Review" value={k.awaiting_review} small="Shown in the change report" corner="?" tone="red" />
         <Kpi label="Report Templates" value={k.templates} small="Executive, gap, change impact" corner="T" tone="green" />
       </div>

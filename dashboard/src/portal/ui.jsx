@@ -16,6 +16,19 @@ export function fmt(d) {
   return Number.isNaN(x.getTime()) ? String(d) : x.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// "5 min ago" / "3 h ago" / "2 d ago" from a timestamp
+export function ago(t) {
+  if (!t) return "—";
+  const m = Math.max(0, Math.round((Date.now() - new Date(t).getTime()) / 60000));
+  return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+}
+
+// local date-time with the browser's own time-zone name (e.g. "08 Oct, 04:16 GMT+5:30")
+export function fmtTime(t) {
+  if (!t) return "—";
+  return new Date(t).toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+}
+
 export function Kpi({ label, value, small, corner, tone = "" }) {
   return (
     <div className={`kpi ${tone}`}><div className="corner">{corner}</div><span className="label">{label}</span>

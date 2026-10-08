@@ -5,8 +5,6 @@ import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { AiNote, Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows } from "../ui";
 
-const CATS = [["", "All categories"], ["L1", "L1 Moped"], ["L2", "L2 Two-wheeler"], ["M1", "M1 Car"], ["N1", "N1 Light goods"]];
-
 function csv(rows) {
   const head = ["ID", "Regulation", "Category", "Authority", "Domain", "Effective", "Impact", "Status"];
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -24,13 +22,14 @@ export default function Regulations() {
   const set = (k, v) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); setSp(n, { replace: true }); };
   const { data, error, loading } = useLoad(() => portal.regulations({ q: f.q, category: f.category, impact: f.impact, status: f.status }),
     [f.q, f.category, f.impact, f.status]);
-  const { openReg } = usePortal();
+  const { openReg, meta } = usePortal();
+  const cats = [["", "All categories"], ...(meta?.categories || []).map((c) => [c.code, c.label])];
   const rows = useMemo(() => (data?.rows || []).filter((r) => !f.month || (r.doc_date || "").startsWith(f.month)), [data, f.month]);
   const k = data?.kpis;
   return (
     <section className="view">
       <div className="pagehead">
-        <div><h1>Regulation Library</h1><p>Search, filter and review Indian vehicle regulations, standards and notifications for L1, L2, M1 and N1.</p></div>
+        <div><h1>Regulation Library</h1><p>Search, filter and review Indian vehicle regulations, standards and notifications for {(meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
         <div className="actions"><button className="btn secondary" disabled={!rows.length} onClick={() => csv(rows)}>Export CSV</button></div>
       </div>
       <div className="kpis">
@@ -44,7 +43,7 @@ export default function Regulations() {
           <input className="input" placeholder="Search by ID, title, authority or topic" defaultValue={f.q}
             onKeyDown={(e) => { if (e.key === "Enter") set("q", e.target.value.trim()); }} onBlur={(e) => set("q", e.target.value.trim())} />
           <select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>
-            {CATS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+            {cats.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           <select className="select" value={f.impact} onChange={(e) => set("impact", e.target.value)}>
             <option value="">All impact</option><option>High</option><option>Medium</option><option>Low</option></select>
           <select className="select" value={f.status} onChange={(e) => set("status", e.target.value)}>

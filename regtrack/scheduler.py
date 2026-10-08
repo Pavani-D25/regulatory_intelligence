@@ -3,6 +3,9 @@ a pipeline run that moves new files through all stages. Runs never fail because 
 
     python -m regtrack.cli schedule          # blocking APScheduler loop
     python -m regtrack.cli crawl MORTH_API   # one run now (what Windows Task Scheduler calls)
+
+The loop writes app_setting 'scheduler_heartbeat' every 5 minutes so the portal can show whether it is alive, and
+skips scheduled crawls while app_setting 'auto_sync' is 'false' (the Admin switch). Manual runs are not affected.
 """
 
 from __future__ import annotations
@@ -16,27 +19,32 @@ log = logging.getLogger(__name__)
 _lock = threading.Lock()  # one pipeline run at a time
 
 
+CRAWLERS = {"MORTH_API": "morth", "ARAI_AIS": "arai", "EGAZETTE": "egazette", "INDIACODE": "indiacode"}
+HEARTBEAT_MIN = 5
+
+
 def crawl_source(code: str) -> dict:
-    if code == "MORTH_API":
-        from regtrack.sources.morth import crawl
-    elif code == "ARAI_AIS":
-        from regtrack.sources.arai import crawl
-    elif code == "EGAZETTE":
-        from regtrack.sources.egazette import crawl
-    elif code == "INDIACODE":
-        from regtrack.sources.indiacode import crawl
-    else:
+    if code not in CRAWLERS:
         raise ValueError(f"no crawler for {code}")
-    return crawl()
+    import importlib
+
+    return importlib.import_module(f"regtrack.sources.{CRAWLERS[code]}").crawl()
+
+
+PIPELINE_LOCK = 774201  # pg advisory lock: one pipeline run at a time across processes (scheduler, API sync)
 
 
 def run_source(code: str, process: bool = True) -> dict:
     out = {"crawl": crawl_source(code)}
     if process:
-        with _lock:
+        with _lock, connect() as lk:
             from regtrack.pipeline.runner import run_pipeline
 
-            out["pipeline"] = run_pipeline()
+            lk.execute("SELECT pg_advisory_lock(%s)", (PIPELINE_LOCK,))
+            try:
+                out["pipeline"] = run_pipeline()
+            finally:
+                lk.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_LOCK,))
     return out
 
 
@@ -46,28 +54,55 @@ def main() -> None:
     sched = BlockingScheduler(timezone="Asia/Kolkata")
     with connect() as conn:
         sources = conn.execute("SELECT code, schedule_hours FROM source WHERE schedule_hours > 0 "
-                               "AND code IN ('MORTH_API','ARAI_AIS','EGAZETTE','INDIACODE') ORDER BY id").fetchall()
+                               "AND code = ANY(%s) ORDER BY id", (list(CRAWLERS),)).fetchall()
     for i, s in enumerate(sources):
-        sched.add_job(run_source, "interval", hours=min(s["schedule_hours"], 6), args=[s["code"]], id=s["code"],
+        sched.add_job(_scheduled_run, "interval", hours=min(s["schedule_hours"], 6), args=[s["code"]], id=s["code"],
                       max_instances=1, coalesce=True, misfire_grace_time=3600,
                       next_run_time=_staggered(i))
         log.info("scheduled %s every %sh", s["code"], s["schedule_hours"])
     # pipeline catch-up every hour: picks up files left behind while the LLM / embeddings were offline
     sched.add_job(_catch_up, "interval", hours=1, id="pipeline", max_instances=1, coalesce=True)
+    sched.add_job(heartbeat, "interval", minutes=HEARTBEAT_MIN, id="heartbeat", next_run_time=_staggered(-1))
     sched.start()
+
+
+def heartbeat() -> None:
+    with connect() as conn:
+        conn.execute("INSERT INTO app_setting (key, value) VALUES ('scheduler_heartbeat', now()::text) "
+                     "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")
+        conn.commit()
+
+
+def auto_sync_enabled() -> bool:
+    with connect() as conn:
+        r = conn.execute("SELECT value FROM app_setting WHERE key='auto_sync'").fetchone()
+    return not r or r["value"] != "false"
+
+
+def _scheduled_run(code: str) -> None:
+    if not auto_sync_enabled():
+        log.info("auto_sync is off: skipping scheduled crawl of %s", code)
+        return
+    run_source(code)
 
 
 def _staggered(i: int):
     from datetime import datetime, timedelta
 
-    return datetime.now() + timedelta(minutes=2 + 10 * i)
+    return datetime.now() + timedelta(minutes=2 + 10 * i) if i >= 0 else datetime.now()
 
 
 def _catch_up() -> None:
     if _lock.acquire(blocking=False):
         try:
-            from regtrack.pipeline.runner import run_pipeline
+            with connect() as lk:
+                if not lk.execute("SELECT pg_try_advisory_lock(%s) AS ok", (PIPELINE_LOCK,)).fetchone()["ok"]:
+                    return
+                try:
+                    from regtrack.pipeline.runner import run_pipeline
 
-            run_pipeline()
+                    run_pipeline()
+                finally:
+                    lk.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_LOCK,))
         finally:
             _lock.release()

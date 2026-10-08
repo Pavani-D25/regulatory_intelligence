@@ -2,11 +2,11 @@ import { useNavigate } from "react-router-dom";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows } from "../ui";
+import { ago, Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows } from "../ui";
 
 export default function Dashboard() {
   const { data: s, error, loading } = useLoad(() => portal.summary(), []);
-  const { openReg } = usePortal();
+  const { openReg, meta } = usePortal();
   const nav = useNavigate();
   if (loading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -17,7 +17,7 @@ export default function Dashboard() {
     <section className="view">
       <div className="pagehead">
         <div><h1>Regulatory Overview</h1>
-          <p>Live view of Indian vehicle regulations (MoRTH, ARAI AIS, e-Gazette, India Code) for L1, L2, M1 and N1.</p></div>
+          <p>Live view of Indian vehicle regulations from {meta ? `${meta.sources_total} monitored sources` : "the monitored sources"} for {(meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
         <div className="actions">
           <button className="btn secondary" onClick={() => nav("/reports")}>Generate Report</button>
           <button className="btn primary" onClick={() => nav("/changes")}>Review Changes</button>
@@ -30,7 +30,7 @@ export default function Dashboard() {
         <Kpi label="Action Required" value={k.action_required} small="High impact with a date still to come" corner="✓" tone="green" />
       </div>
       <div className="grid2 wide">
-        <Card title="Regulatory Change Trend" sub="New regulations published per month · last 12 months" right={<Badge v="Live" tone="blue" />}>
+        <Card title="Regulatory Change Trend" sub="New regulations published per month · last 12 months" right={meta?.last_sync && <Badge v={`synced ${ago(meta.last_sync)}`} tone={meta.scheduler?.alive ? "green" : "amber"} />}>
           <div className="chartbars">
             {s.trend.map((m) => (
               <button key={m.ym} className="vbar" style={{ height: `${Math.max(3, (m.n / peak) * 100)}%` }}
@@ -75,7 +75,7 @@ export default function Dashboard() {
               <div key={d.mandate_key} className="taskitem" style={{ cursor: "pointer" }} onClick={() => openReg(d.canonical_id)}>
                 <div className="itemmain"><div>
                   <strong style={{ fontSize: 12 }}>{d.mandate_key}</strong>
-                  <small>{d.canonical_id} · {(d.vehicle_categories || []).filter((c) => ["L1", "L2", "M1", "N1", "ALL"].includes(c)).join(", ")}</small>
+                  <small>{d.canonical_id} · {(d.vehicle_categories || []).filter((c) => c === "ALL" || (meta?.categories || []).some((x) => x.code === c)).join(", ")}</small>
                 </div></div>
                 <Badge v={(d.is_draft ? "P · " : "") + fmt(d.implementation_date)} tone={s.deadlines.length ? "amber" : "blue"} />
               </div>

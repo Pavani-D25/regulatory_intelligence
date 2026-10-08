@@ -5,15 +5,6 @@ import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { Badge, Card, ErrorBox, Kpi, Loading, MetricRows } from "../ui";
 
-const CAT_LABEL = { L1: "L1 Moped", L2: "L2 Two-wheeler", M1: "M1 Car", N1: "N1 Light goods" };
-const STEPS = [
-  ["Detect", "Source monitoring finds a new or changed document (every 6 hours)."],
-  ["Classify", "Identity, category and topic are read from the document content."],
-  ["Assess", "Impact is scored and applicability per category is checked."],
-  ["Map", "Obligations are mapped to owners and evidence in the Compliance Matrix."],
-  ["Close", "Evidence attached and the change marked as reviewed."],
-];
-
 export default function Impact() {
   const { data, error, loading } = useLoad(() => portal.impact(), []);
   const { openReg } = usePortal();
@@ -42,7 +33,7 @@ export default function Impact() {
       <div className="grid2 wide">
         <Card title="Category × Domain Impact Heatmap" sub="Score 1–5 from regulation count (high impact counts double) · click a cell">
           <div className="heat">
-            <div />{data.categories.map((c) => <div key={c} className="hhead">{CAT_LABEL[c]}</div>)}
+            <div />{data.categories.map((c, i) => <div key={c} className="hhead">{data.category_labels[i]}</div>)}
             {data.cells.map((row) => (
               <FragmentRow key={row.code} row={row} cats={data.categories} onPick={pick} sel={cell} />
             ))}
@@ -51,7 +42,7 @@ export default function Impact() {
             Low {[1, 2, 3, 4, 5].map((l) => <span key={l} className={`l${l}`} style={{ width: 22, height: 12, borderRadius: 3, display: "inline-block" }} />)} High
           </div>
         </Card>
-        <Card title={cell ? `${detail?.domain || "…"} · ${CAT_LABEL[cell.cat]}` : "Cell Detail"}
+        <Card title={cell ? `${detail?.domain || "…"} · ${data.category_labels[data.categories.indexOf(cell.cat)]}` : "Cell Detail"}
           sub={cell ? (detail ? `${detail.count} regulation(s) · top 6 shown` : "Loading…") : "Select a heatmap cell"}>
           {!cell && <div className="empty">Click any cell to see the regulations behind the score.</div>}
           <div className="stack">
@@ -71,10 +62,13 @@ export default function Impact() {
         <Card title="Top Affected Systems" sub="Standards most referenced by obligations in force">
           <MetricRows rows={data.top_standards} />
         </Card>
-        <Card title="Impact Workflow" sub="How a change moves from detection to closure">
+        <Card title="Impact Workflow" sub="Where changes are right now, from detection to closure">
           <div className="stack">
-            {STEPS.map(([t, d], i) => (
-              <div key={t} className="taskitem"><div className="itemmain"><span className="pill blue">{i + 1}</span><div><strong style={{ fontSize: 12 }}>{t}</strong><small>{d}</small></div></div></div>
+            {data.workflow.map((w, i) => (
+              <div key={w.step} className="taskitem">
+                <div className="itemmain"><span className="pill blue">{i + 1}</span><div><strong style={{ fontSize: 12 }}>{w.step}</strong><small>{w.text}</small></div></div>
+                <b style={{ whiteSpace: "nowrap" }}>{w.n}{w.of != null && <span style={{ color: "var(--muted)", fontWeight: 500 }}> / {w.of}</span>}</b>
+              </div>
             ))}
           </div>
         </Card>

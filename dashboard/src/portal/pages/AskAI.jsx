@@ -2,24 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { portal } from "../../api";
 import { usePortal } from "../PortalLayout";
-import { Card } from "../ui";
-
-const SUGGEST = [
-  "Which ABS / CBS rules apply to L2 motorcycles?",
-  "Seat belt reminder requirements for M1",
-  "Traction battery safety for electric vehicles",
-  "Speed limiting device requirements for N1",
-  "High security registration plate rules",
-];
-const SOURCES = [
-  ["MoRTH notifications", "G.S.R. / S.O. final and draft rules, orders"], ["ARAI AIS standards", "Standards, amendments, corrigenda, drafts"],
-  ["e-Gazette of India", "Gazette copies of MoRTH notifications"], ["India Code", "Motor Vehicles Act, CMVR 1989 and amendments"],
-];
+import useLoad from "../../useLoad";
+import { ago, Card, Loading } from "../ui";
 
 export default function AskAI() {
   const [sp] = useSearchParams();
-  const { openReg } = usePortal();
-  const [msgs, setMsgs] = useState([{ role: "ai", text: "Ask about Indian vehicle regulations for L1, L2, M1 and N1. Answers cite the regulation and clause they come from." }]);
+  const { openReg, meta } = usePortal();
+  const { data: ctx } = useLoad(() => portal.askContext(), []);
+  const cats = (meta?.categories || []).map((c) => c.code).join(", ");
+  const [msgs, setMsgs] = useState([{ role: "ai", text: "Ask about Indian vehicle regulations. Answers cite the regulation and clause they come from." }]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const end = useRef(null);
@@ -77,13 +68,16 @@ export default function AskAI() {
           </div>
         </Card>
         <div>
-          <Card title="Suggested Questions">
-            <div className="suggest">{SUGGEST.map((s) => <button key={s} onClick={() => ask(s)}>{s}</button>)}</div>
+          <Card title="Suggested Questions" sub="Built from the most-regulated topics and latest high-impact items">
+            {!ctx ? <Loading /> : <div className="suggest">{ctx.suggestions.map((s) => <button key={s} onClick={() => ask(s)}>{s}</button>)}</div>}
           </Card>
-          <Card title="Knowledge Sources" sub="What the assistant searches">
+          <Card title="Knowledge Sources" sub={ctx ? `${ctx.chunks.toLocaleString()} indexed clauses · categories ${cats}` : "What the assistant searches"}>
             <div className="stack">
-              {SOURCES.map(([t, d]) => (
-                <div key={t} className="sourceitem"><div className="itemmain"><span className="dot" /><div><strong style={{ fontSize: 12 }}>{t}</strong><small>{d}</small></div></div></div>
+              {ctx?.sources.map((s) => (
+                <div key={s.code} className="sourceitem"><div className="itemmain">
+                  <span className="dot" style={{ background: s.last_status === "ok" ? "#22c55e" : s.last_status === "partial" ? "#f59e0b" : "#cbd5e1" }} />
+                  <div><strong style={{ fontSize: 12 }}>{s.name}</strong><small>{s.documents} in-scope documents · last run {s.last_run_at ? ago(s.last_run_at) : "never"}</small></div>
+                </div></div>
               ))}
             </div>
             <p className="note" style={{ marginTop: 12 }}>Written answers come from the local Qwen model once LM Studio is connected. Until then the assistant returns the best-matching clauses with links.</p>
