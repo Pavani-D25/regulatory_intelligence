@@ -697,7 +697,7 @@ def delete_alert(rule_id: int) -> dict:
 
 # ====================================================================== admin & sources
 _sync_lock = threading.Lock()
-_sync_state: dict = {"running": None, "last": None}
+_sync_state: dict = {"running": None, "step": None, "done": 0, "total": 0, "last": None}
 
 
 @router.get("/admin")
@@ -734,7 +734,7 @@ def admin() -> dict:
                      "warnings": warnings, "partial_runs": tot["partial"],
                      "last_sync_min": int((now - last).total_seconds() // 60) if last else None},
             "sources": sources, "runs": runs, "settings": {k: v for k, v in settings.items() if k != "scheduler_heartbeat"},
-            "sync": _sync_state, "syncable": [s["code"] for s in sources if s["crawler"]],
+            "sync": _sync_state, "syncable": ["ALL"] + [s["code"] for s in sources if s["crawler"]],
             "scheduler": scheduler_status(settings), "impact_rule": IMPACT_RULE}
 
 
@@ -762,24 +762,36 @@ def put_settings(body: dict = Body(...)) -> dict:
 
 @router.post("/admin/sync")
 def run_sync(body: dict = Body(default={})) -> dict:
-    """Start one source crawl + pipeline run in the background (one at a time)."""
-    from regtrack.scheduler import CRAWLERS, run_source
+    """Start a crawl + pipeline run in the background (one at a time). source='ALL' crawls every source in turn,
+    then processes once; 'step' tells the page which source is being crawled right now."""
+    from regtrack.scheduler import CRAWLERS, run_all, run_source
 
-    code = body.get("source") or "MORTH_API"
-    if code not in CRAWLERS:
+    code = body.get("source") or "ALL"
+    if code != "ALL" and code not in CRAWLERS:
         raise HTTPException(400, "unknown source")
     if not _sync_lock.acquire(blocking=False):
         return {"started": False, "running": _sync_state["running"]}
 
+    def step(name: str) -> None:
+        _sync_state["step"] = name
+        if name in CRAWLERS:
+            _sync_state["done"] = list(CRAWLERS).index(name)
+
     def work() -> None:
         try:
-            _sync_state["running"] = code
-            res = run_source(code)
-            _sync_state["last"] = {"source": code, "finished": datetime.now().isoformat(), "crawl": res.get("crawl")}
+            _sync_state.update(running=code, step=None, done=0, total=len(CRAWLERS) if code == "ALL" else 1)
+            if code == "ALL":
+                res = run_all(step)
+            else:
+                step(code)
+                res = run_source(code)
+            errors = res.get("errors") or {}
+            _sync_state["last"] = {"source": code, "finished": datetime.now().isoformat(),
+                                   "errors": errors, "ok": [c for c in (res.get("crawl") or {})] if code == "ALL" else [code]}
         except Exception as e:  # noqa: BLE001
             _sync_state["last"] = {"source": code, "error": f"{type(e).__name__}: {e}"[:300]}
         finally:
-            _sync_state["running"] = None
+            _sync_state.update(running=None, step=None)
             _sync_lock.release()
 
     threading.Thread(target=work, daemon=True).start()

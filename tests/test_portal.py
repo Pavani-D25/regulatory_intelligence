@@ -106,8 +106,34 @@ def test_no_static_values(client):
     ctx = client.get("/portal/ask/context").json()
     assert ctx["suggestions"] and ctx["sources"] and ctx["chunks"] > 0
     adm = client.get("/portal/admin").json()
-    assert set(adm["syncable"]) == {"MORTH_API", "ARAI_AIS", "EGAZETTE", "INDIACODE"}
+    assert set(adm["syncable"]) == {"ALL", "MORTH_API", "ARAI_AIS", "EGAZETTE", "INDIACODE"}
     assert "high_impact_rule" not in adm["settings"] and "auto_compliance_task" not in adm["settings"]
     wf = client.get("/portal/impact").json()["workflow"]
     assert [w["step"] for w in wf] == ["Detect", "Classify", "Assess", "Map", "Close"]
     assert "scheduled" not in client.get("/portal/reports").json()["kpis"]
+
+
+def test_sync_all_runs_every_source_and_survives_a_failure(monkeypatch):
+    from regtrack import scheduler
+
+    calls, steps = [], []
+
+    def fake_crawl(code):
+        calls.append(code)
+        if code == "ARAI_AIS":
+            raise TimeoutError("site slow")
+        return {"status": "ok"}
+
+    monkeypatch.setattr(scheduler, "crawl_source", fake_crawl)
+    monkeypatch.setattr(scheduler, "run_pipeline_locked", lambda: {"stage": "done"})
+    res = scheduler.run_all(steps.append)
+    assert calls == list(scheduler.CRAWLERS)
+    assert steps == list(scheduler.CRAWLERS) + ["pipeline"]
+    assert set(res["crawl"]) == set(scheduler.CRAWLERS) - {"ARAI_AIS"}
+    assert "ARAI_AIS" in res["errors"] and res["pipeline"] == {"stage": "done"}
+
+
+def test_sync_endpoint_offers_all(client):
+    adm = client.get("/portal/admin").json()
+    assert adm["syncable"][0] == "ALL"
+    assert client.post("/portal/admin/sync", json={"source": "NOPE"}).status_code == 400

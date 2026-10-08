@@ -34,17 +34,38 @@ def crawl_source(code: str) -> dict:
 PIPELINE_LOCK = 774201  # pg advisory lock: one pipeline run at a time across processes (scheduler, API sync)
 
 
+def run_pipeline_locked() -> dict:
+    with _lock, connect() as lk:
+        from regtrack.pipeline.runner import run_pipeline
+
+        lk.execute("SELECT pg_advisory_lock(%s)", (PIPELINE_LOCK,))
+        try:
+            return run_pipeline()
+        finally:
+            lk.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_LOCK,))
+
+
 def run_source(code: str, process: bool = True) -> dict:
     out = {"crawl": crawl_source(code)}
     if process:
-        with _lock, connect() as lk:
-            from regtrack.pipeline.runner import run_pipeline
+        out["pipeline"] = run_pipeline_locked()
+    return out
 
-            lk.execute("SELECT pg_advisory_lock(%s)", (PIPELINE_LOCK,))
-            try:
-                out["pipeline"] = run_pipeline()
-            finally:
-                lk.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_LOCK,))
+
+def run_all(on_step=None) -> dict:
+    """Crawl every source one after another (a failing source does not stop the others), then one pipeline run."""
+    out: dict = {"crawl": {}, "errors": {}}
+    for code in CRAWLERS:
+        if on_step:
+            on_step(code)
+        try:
+            out["crawl"][code] = crawl_source(code)
+        except Exception as e:  # noqa: BLE001
+            log.exception("crawl %s failed", code)
+            out["errors"][code] = f"{type(e).__name__}: {e}"[:300]
+    if on_step:
+        on_step("pipeline")
+    out["pipeline"] = run_pipeline_locked()
     return out
 
 

@@ -9,7 +9,7 @@ export default function Admin() {
   const { data, error, loading } = useLoad(() => portal.admin(), [tick]);
   const { toast } = usePortal();
   const [s, setS] = useState(null);
-  const [src, setSrc] = useState("MORTH_API");
+  const [src, setSrc] = useState("ALL");
   useEffect(() => { if (data) setS(data.settings); }, [data]);
   useEffect(() => {
     if (!data?.sync?.running) return undefined;
@@ -22,7 +22,7 @@ export default function Admin() {
   const save = async () => { await portal.saveSettings(s); toast("Configuration saved"); setTick((t) => t + 1); };
   const sync = async () => {
     const r = await portal.sync(src);
-    toast(r.started ? `Sync started: ${src}` : `A sync is already running (${r.running})`);
+    toast(r.started ? (src === "ALL" ? "Sync started: all sources" : `Sync started: ${src}`) : `A sync is already running (${r.running})`);
     setTick((t) => t + 1);
   };
   const autoOn = s?.auto_sync !== "false";
@@ -33,8 +33,10 @@ export default function Admin() {
       <div className="pagehead">
         <div><h1>Admin</h1><p>Sources, monitoring configuration and ingestion jobs.</p></div>
         <div className="actions">
-          <select className="select" value={src} onChange={(e) => setSrc(e.target.value)}>{data.syncable.map((c) => <option key={c}>{c}</option>)}</select>
-          <button className="btn primary" disabled={!!data.sync.running} onClick={sync}>{data.sync.running ? `Syncing ${data.sync.running}…` : "Run Source Sync"}</button>
+          <select className="select" value={src} onChange={(e) => setSrc(e.target.value)}>{data.syncable.map((c) => <option key={c} value={c}>{c === "ALL" ? "ALL sources (one after another)" : c}</option>)}</select>
+          <button className="btn primary" disabled={!!data.sync.running} onClick={sync}>{!data.sync.running ? (src === "ALL" ? "Sync All Sources" : "Run Source Sync")
+            : data.sync.step === "pipeline" ? "Processing new files…"
+            : data.sync.running === "ALL" ? `Syncing ${data.sync.step || "…"} (${data.sync.done + 1}/${data.sync.total})…` : `Syncing ${data.sync.running}…`}</button>
         </div>
       </div>
       <div className="kpis">
@@ -57,7 +59,14 @@ export default function Admin() {
               </div>
             ))}
           </div>
-          {data.sync.last && <p className="note" style={{ marginTop: 10 }}>Last manual sync: {data.sync.last.source} {data.sync.last.error ? `failed — ${data.sync.last.error}` : `finished ${data.sync.last.finished?.slice(0, 16).replace("T", " ")}`}</p>}
+          {data.sync.last && (
+            <p className="note" style={{ marginTop: 10 }}>
+              Last manual sync: {data.sync.last.source === "ALL" ? "all sources" : data.sync.last.source}{" "}
+              {data.sync.last.error ? `failed — ${data.sync.last.error}` : `finished ${fmtTime(data.sync.last.finished)}`}
+              {data.sync.last.errors && Object.keys(data.sync.last.errors).length > 0 &&
+                <span style={{ color: "var(--red)" }}> · failed: {Object.entries(data.sync.last.errors).map(([c, e]) => `${c} (${e})`).join("; ")}</span>}
+            </p>
+          )}
         </Card>
         <Card title="Monitoring Configuration" sub="Saved and used by the portal">
           {s && (

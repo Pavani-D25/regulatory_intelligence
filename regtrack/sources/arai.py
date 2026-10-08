@@ -44,6 +44,20 @@ def read_rows(page) -> list[dict]:
     return out
 
 
+def open_listing(page, attempts: int = 2) -> None:
+    """Load the AIS page and wait for the table itself. 'networkidle' can hang on a slow site or background
+    trackers, so wait for the DOM and then for the first table row; retry once after a pause on timeout."""
+    for i in range(attempts):
+        try:
+            page.goto(URL, wait_until="domcontentloaded", timeout=90000)
+            page.wait_for_selector("table tbody tr td", timeout=90000)
+            return
+        except Exception:  # noqa: BLE001
+            if i == attempts - 1:
+                raise
+            time.sleep(30 * (i + 1))
+
+
 def scrape(max_pages: int = 80) -> list[dict]:
     from playwright.sync_api import sync_playwright
 
@@ -51,7 +65,7 @@ def scrape(max_pages: int = 80) -> list[dict]:
     with sync_playwright() as p:
         b = _launch(p)
         page = b.new_page(user_agent=get_settings().user_agent)
-        page.goto(URL, wait_until="networkidle", timeout=120000)
+        open_listing(page)
         for tab in TABS:
             t = page.get_by_text(tab, exact=True)
             if t.count():
