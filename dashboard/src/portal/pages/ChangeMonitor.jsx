@@ -2,7 +2,7 @@ import { useState } from "react";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { AiNote, Badge, Card, ErrorBox, Kpi, Loading, MetricRows, Ring } from "../ui";
+import { AiNote, Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring } from "../ui";
 
 const TYPE_LABEL = {
   new_document: "New document", draft_published: "Draft published", draft_finalised: "Draft finalised",
@@ -14,14 +14,18 @@ export default function ChangeMonitor() {
   const [days, setDays] = useState(365);
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [tick, setTick] = useState(0);
-  const { data, error, loading } = useLoad(() => portal.changes(days), [days, tick]);
-  const { openReg, toast } = usePortal();
+  const [type, setType] = useState("");
+  const [limit, setLimit] = useState(60);
+  const { openReg, toast, version } = usePortal();
+  const { data, error, loading } = useLoad(() => portal.changes(days), [days, tick, version]);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const k = data.kpis;
-  const visible = data.events.filter((e) => e.in_scope && (!onlyOpen || e.review_status !== "confirmed"));
-  const markAll = async () => {
-    const ids = visible.filter((e) => e.review_status !== "confirmed").map((e) => e.id);
+  const scoped = data.events.filter((e) => e.in_scope);
+  const visible = scoped.filter((e) => (!onlyOpen || e.review_status !== "confirmed") && (!type || e.event_type === type));
+  const openIds = visible.filter((e) => e.review_status !== "confirmed").map((e) => e.id);
+  const types = [...new Set(scoped.map((e) => e.event_type))].map((t) => [t, scoped.filter((e) => e.event_type === t).length]).sort((a, b) => b[1] - a[1]);
+  const mark = async (ids) => {
     if (!ids.length) { toast("Nothing to mark"); return; }
     const r = await portal.markReviewed(ids);
     toast(`${r.reviewed} change(s) marked as reviewed`);
@@ -36,7 +40,7 @@ export default function ChangeMonitor() {
         <div className="actions">
           <select className="select" value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={365}>Last 12 months</option><option value={3650}>All</option></select>
-          <button className="btn primary" onClick={markAll}>Mark Visible as Reviewed</button>
+          <button className="btn primary" disabled={!openIds.length} onClick={() => mark(openIds)}>Mark Visible as Reviewed{openIds.length ? ` (${openIds.length})` : ""}</button>
         </div>
       </div>
       <div className="kpis">
@@ -46,30 +50,37 @@ export default function ChangeMonitor() {
         <Kpi label="Reviewed" value={k.reviewed} small="Marked as reviewed" corner="✓" tone="green" />
       </div>
       <div className="grid2 wide">
-        <Card title="Delta Events" sub="Click an event for regulation detail"
+        <Card title="Delta Events" sub={`${visible.length} event(s) · "found" = when our crawl saw it, "dated" = the document's own date`}
           right={<label className="sub" style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> Unreviewed only</label>}>
+          <div className="chips" style={{ marginBottom: 12 }}>
+            <button className={`chip ${!type ? "on" : ""}`} onClick={() => setType("")}>All<b>{scoped.length}</b></button>
+            {types.map(([t, n]) => <button key={t} className={`chip ${type === t ? "on" : ""}`} onClick={() => setType(type === t ? "" : t)}>{TYPE_LABEL[t] || t}<b>{n}</b></button>)}
+          </div>
           <div className="timeline" style={{ maxHeight: 720, overflow: "auto" }}>
-            {visible.slice(0, 80).map((e) => (
+            {visible.slice(0, limit).map((e) => (
               <div key={e.id} className="event">
-                <div className="date">{new Date(e.detected_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</div>
+                <div className="date">found {fmt(e.detected_at)}{e.doc_date && <><br />dated {fmt(e.doc_date)}</>}</div>
                 <div className="axis" />
                 <div className="eventbox" onClick={() => e.canonical_id && openReg(e.canonical_id)}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
                     <h3>{TYPE_LABEL[e.event_type] || e.event_type} · <span className="mono">{e.canonical_id}</span></h3>
-                    <span style={{ display: "flex", gap: 5 }}><Badge v={e.impact} />{e.review_status === "confirmed" ? <Badge v="Reviewed" tone="green" /> : <Badge v="New" tone="blue" />}</span>
+                    <span style={{ display: "flex", gap: 5, alignItems: "center" }}><Badge v={e.impact} />
+                      {e.review_status === "confirmed" ? <Badge v="Reviewed" tone="green" />
+                        : <button className="chip" title="Mark this change as reviewed" onClick={(ev) => { ev.stopPropagation(); mark([e.id]); }}>✓ Review</button>}</span>
                   </div>
                   <p>{e.summary}</p>
                   {e.ai_summary_pending && <AiNote>✦ AI summary pending</AiNote>}
                 </div>
               </div>
             ))}
-            {!visible.length && <div className="empty">No changes in this period.</div>}
+            {!visible.length && <div className="empty">No changes match.</div>}
           </div>
+          {visible.length > limit && <button className="btn ghost" onClick={() => setLimit(limit + 60)}>Show more ({visible.length - limit} left)</button>}
         </Card>
         <div>
-          <Card title="Changes by Type" sub="Selected period">
-            <MetricRows rows={data.by_type.map(([t, n]) => ({ name: TYPE_LABEL[t] || t, n }))} />
+          <Card title="Changes by Type" sub="Selected period · click to filter">
+            <MetricRows rows={data.by_type.map(([t, n]) => ({ name: TYPE_LABEL[t] || t, n, t }))} onClick={(r) => setType(r.t)} />
           </Card>
           <Card title="Review SLA" sub={`Target: review within ${sla.days} days (set in Admin)`}>
             <div style={{ display: "flex", gap: 20, alignItems: "center" }}>

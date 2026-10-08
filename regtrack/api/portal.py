@@ -121,8 +121,12 @@ def classify_row(r: dict, today: date | None = None) -> dict:
     return r
 
 
-def regulations(conn, category: str | None = None, extra_where: str = "", args: tuple = ()) -> list[dict]:
+def regulations(conn, category: str | None = None, extra_where: str = "", args: tuple = (),
+                history: bool = False) -> list[dict]:
+    """In-scope regulations with impact/status. history=False leaves out superseded and withdrawn documents."""
     load_vocab(conn)
+    if not history:
+        extra_where = "AND d.status NOT IN ('superseded','withdrawn') " + extra_where
     cats = [category] if category in CATEGORIES else SCOPE
     if category in CATEGORIES:
         cats = [category, "ALL"]
@@ -177,8 +181,10 @@ def summary() -> dict:
                       AND date_trunc('month', d.doc_date)=m) AS n
                    FROM generate_series(date_trunc('month', current_date) - interval '11 months',
                                         date_trunc('month', current_date), interval '1 month') m ORDER BY m""", (SCOPE,))
-        changes = _rows(conn, """SELECT count(*) AS n, count(*) FILTER (WHERE review_status<>'confirmed') AS open
-                                 FROM change_event WHERE detected_at > now() - interval '30 days'""")[0]
+        changes = _rows(conn, """SELECT count(*) AS n, count(*) FILTER (WHERE e.review_status<>'confirmed') AS open
+                                 FROM change_event e JOIN document d ON d.id=e.document_id
+                                 WHERE e.detected_at > now() - interval '30 days' AND d.doc_class <> 'OFF_TOPIC'
+                                   AND d.vehicle_categories && %s""", (SCOPE,))[0]
         # upcoming obligations: notified (final) and proposed (draft notifications), soonest first
         deadlines = _rows(conn, """SELECT m.mandate_key, m.subject, m.implementation_date, m.vehicle_categories,
                    m.is_draft, d.canonical_id FROM mandate m JOIN document d ON d.id=m.source_doc_id
@@ -211,17 +217,19 @@ def summary() -> dict:
 
 def _reg_out(r: dict) -> dict:
     keys = ("id", "canonical_id", "name", "doc_class", "region", "categories", "authority", "domain", "domains", "effective",
-            "doc_date", "impact", "impact_basis", "status", "ai_pending", "next_obligation", "family_key")
+            "doc_date", "impact", "impact_basis", "status", "ai_pending", "next_obligation", "family_key", "doc_status")
     return {k: r.get(k) for k in keys}
 
 
 # ====================================================================== regulation library
 @router.get("/regulations")
 def regulation_list(q: str | None = None, category: str | None = None, impact: str | None = None,
-                    status: str | None = None) -> dict:
+                    status: str | None = None, history: bool = False) -> dict:
     today = date.today()
     with connect() as conn:
-        regs = regulations(conn, category)
+        regs = regulations(conn, category, history=history)
+        superseded = conn.execute("""SELECT count(*) AS n FROM document WHERE doc_class<>'OFF_TOPIC' AND vehicle_categories && %s
+                                     AND status IN ('superseded','withdrawn')""", (SCOPE,)).fetchone()["n"]
         comp = _rows(conn, """SELECT coalesce(issuer,'Unknown') AS name, count(*) AS n FROM document
                               WHERE doc_class<>'OFF_TOPIC' AND vehicle_categories && %s GROUP BY 1 ORDER BY 2 DESC LIMIT 6""", (SCOPE,))
     rows = regs
@@ -236,7 +244,7 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
     return {
         "kpis": {"records": len(regs), "new_quarter": sum(1 for r in regs if r["doc_date"] and r["doc_date"] >= today - timedelta(days=90)),
                  "drafts": sum(1 for r in regs if r["doc_class"] in DRAFTS or r["doc_status"] == "draft"),
-                 "high": sum(1 for r in regs if r["impact"] == "High")},
+                 "high": sum(1 for r in regs if r["impact"] == "High"), "superseded": superseded},
         "count": len(rows), "rows": [_reg_out(r) for r in rows], "composition": comp,
     }
 
@@ -244,7 +252,7 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
 @router.get("/regulations/{canonical_id:path}/detail")
 def regulation_detail(canonical_id: str) -> dict:
     with connect() as conn:
-        regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,))
+        regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,), history=True)
         if not regs:
             raise HTTPException(404, "not an in-scope regulation")
         r = regs[0]
@@ -283,15 +291,16 @@ def change_monitor(days: int = 365) -> dict:
     with connect() as conn:
         sla = int(_setting(conn, "review_sla_days", "2"))
         events = _rows(conn, """SELECT e.id, e.event_type, e.detected_at, e.summary, e.review_status, e.details,
-                   d.canonical_id, d.id AS doc_id FROM change_event e LEFT JOIN document d ON d.id=e.document_id
+                   d.canonical_id, d.id AS doc_id, d.doc_date, d.doc_class FROM change_event e LEFT JOIN document d ON d.id=e.document_id
                    WHERE e.detected_at > now() - make_interval(days => %s) ORDER BY e.detected_at DESC, e.id DESC""", (days,))
-        regs = {r["id"]: r for r in regulations(conn)}
+        regs = {r["id"]: r for r in regulations(conn, history=True)}
     for e in events:
         r = regs.get(e["doc_id"])
         e["impact"] = r["impact"] if r else "Low"
         e["in_scope"] = r is not None
         e["name"] = r["name"] if r else e["canonical_id"]
         e["ai_summary_pending"] = (e["details"] or {}).get("summary_by") == "template"
+    events = [e for e in events if e["in_scope"]]
     now = datetime.now().astimezone()
     reviewed = [e for e in events if e["review_status"] == "confirmed"]
     open_ = [e for e in events if e["review_status"] != "confirmed"]
@@ -524,7 +533,9 @@ def reports() -> dict:
     with connect() as conn:
         recent = _rows(conn, "SELECT * FROM report_log ORDER BY generated_at DESC LIMIT 20")
         month = conn.execute("SELECT count(*) AS n FROM report_log WHERE generated_at > date_trunc('month', now())").fetchone()["n"]
-        awaiting = conn.execute("SELECT count(*) AS n FROM change_event WHERE review_status<>'confirmed'").fetchone()["n"]
+        awaiting = conn.execute("""SELECT count(*) AS n FROM change_event e JOIN document d ON d.id=e.document_id
+                                   WHERE e.review_status<>'confirmed' AND d.doc_class <> 'OFF_TOPIC'
+                                     AND d.vehicle_categories && %s""", (SCOPE,)).fetchone()["n"]
         last = conn.execute("SELECT max(generated_at) AS t FROM report_log").fetchone()["t"]
     return {"kpis": {"generated_month": month, "last_generated": last, "awaiting_review": awaiting, "templates": len(REPORTS)},
             "scope": ", ".join(CATEGORIES),

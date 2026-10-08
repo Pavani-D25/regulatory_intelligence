@@ -2,10 +2,11 @@ import { useNavigate } from "react-router-dom";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { ago, Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows } from "../ui";
+import { ago, Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId } from "../ui";
 
 export default function Dashboard() {
-  const { data: s, error, loading } = useLoad(() => portal.summary(), []);
+  const { version } = usePortal();
+  const { data: s, error, loading } = useLoad(() => portal.summary(), [version]);
   const { openReg, meta } = usePortal();
   const nav = useNavigate();
   if (loading) return <Loading />;
@@ -62,7 +63,7 @@ export default function Dashboard() {
             <thead><tr><th>Regulation</th><th>Category</th><th>Domain</th><th>Effective</th><th>Impact</th><th>Status</th></tr></thead>
             <tbody>{s.latest.map((r) => (
               <tr key={r.canonical_id} className="click" onClick={() => openReg(r.canonical_id)}>
-                <td><strong className="truncate" style={{ display: "block" }}>{r.name}</strong><span className="mono" style={{ color: "var(--muted)" }}>{r.canonical_id}</span></td>
+                <td><strong className="truncate" style={{ display: "block" }}>{r.name}</strong><span style={{ color: "var(--muted)" }}><OfficialId id={r.canonical_id} /></span></td>
                 <td>{r.region || "—"}</td><td>{r.domain}</td><td>{fmt(r.effective)}</td>
                 <td><Badge v={r.impact} /></td><td><Badge v={r.status} /></td>
               </tr>))}</tbody>

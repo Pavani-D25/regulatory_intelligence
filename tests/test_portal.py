@@ -137,3 +137,20 @@ def test_sync_endpoint_offers_all(client):
     adm = client.get("/portal/admin").json()
     assert adm["syncable"][0] == "ALL"
     assert client.post("/portal/admin/sync", json={"source": "NOPE"}).status_code == 400
+
+
+def test_superseded_hidden_unless_asked(client):
+    cur = client.get("/portal/regulations").json()
+    hist = client.get("/portal/regulations", params={"history": True}).json()
+    assert all(r["doc_status"] not in ("superseded", "withdrawn") for r in cur["rows"])
+    assert hist["kpis"]["records"] == cur["kpis"]["records"] + cur["kpis"]["superseded"]
+
+
+def test_motor_vehicle_law_rule():
+    from regtrack.pipeline.extract import motor_vehicle_law
+
+    assert motor_vehicle_law("THE MOTOR VEHICLES ACT, 1988", "") == "in_force"
+    assert motor_vehicle_law("THE CENTRAL MOTOR VEHICLES RULES, 1989", "") == "in_force"
+    assert motor_vehicle_law("THE MOTOR VEHIC ES (AMENDMENT) ACT, 1969", "An Act further to amend the Motor Vehicles Act, 1939.") == "repealed"
+    assert motor_vehicle_law("REGISTERED NO. DL-33004/2000", "An Act further to amend the Motor Vehicles Act, 1988.") == "in_force"
+    assert motor_vehicle_law("THE CARRIAGE BY ROAD ACT, 2007", "An Act to provide for the regulation of common carriers") is None

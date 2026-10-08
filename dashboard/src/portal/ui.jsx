@@ -89,7 +89,23 @@ export function Ring({ pct, label, color = "var(--green)" }) {
   );
 }
 
-export function Loading() { return <div className="loading">Loading live data…</div>; }
+// page-shaped placeholder while live data loads (inline=true for a small block inside a card)
+export function Loading({ inline = false }) {
+  if (inline) return <div className="skeleton" style={{ height: 120 }} aria-label="Loading" />;
+  return (
+    <div aria-label="Loading live data">
+      <div className="skeleton" style={{ height: 54, width: "45%", marginBottom: 18 }} />
+      <div className="skelkpis">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 116 }} />)}</div>
+      <div className="skeleton" style={{ height: 320 }} />
+    </div>
+  );
+}
+
+// documents without an official number get a generated id (DOC-…, NOTIF-…): show that plainly
+export function OfficialId({ id }) {
+  if (/^(DOC|NOTIF)-[0-9a-f]{8,}$/.test(id || "")) return <span className="idmuted" title={id}>no official no.</span>;
+  return <span className="mono">{id}</span>;
+}
 export function ErrorBox({ error }) {
   if (!error) return null;
   return <div className="errorbox">{String(error.message || error)} — is the API running? (python -m regtrack.cli api)</div>;

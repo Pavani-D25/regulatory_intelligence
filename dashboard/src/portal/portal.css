@@ -65,3 +65,31 @@
 .ringtext span{display:block}
 .drawerbody h3{margin:18px 0 6px}.drawerbody p{margin:0 0 4px}
 .card h2{line-height:1.25}
+
+/* ---- refinements: bell, loading placeholders, sortable table, chips ------------------------------------------------ */
+.metricrow{grid-template-columns:minmax(120px,170px) 1fr 40px}
+.bellwrap{position:relative}
+.bell{width:38px;height:38px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer;position:relative;font-size:15px}
+.bellcount{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:99px;background:var(--red);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center}
+.bellmenu{position:absolute;right:0;top:46px;width:360px;max-width:88vw;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px rgba(15,23,42,.16);z-index:40;overflow:hidden}
+.bellitem{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;padding:10px 14px;cursor:pointer;font-size:11px}
+.bellitem:hover{background:#f8faff}.bellitem strong{font-size:12px}.bellitem span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bellitem small{color:var(--muted);font-size:10px}
+.skeleton{border-radius:10px;background:linear-gradient(90deg,#eef2f7 25%,#f6f8fb 50%,#eef2f7 75%);background-size:200% 100%;animation:shimmer 1.2s infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skelkpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:14px}
+.portal th.sort{cursor:pointer;user-select:none}.portal th.sort:hover{color:var(--text)}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 11px;font-size:11px;font-weight:650;cursor:pointer;color:var(--text)}
+.chip.on{background:var(--blue);border-color:var(--blue);color:#fff}.chip b{opacity:.7;margin-left:4px}
+.banner{display:flex;gap:10px;align-items:center;border:1px solid #ddd6fe;background:var(--purpleSoft);color:#5b21b6;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:14px}
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding-top:12px;font-size:12px;color:var(--muted)}
+.idmuted{color:var(--muted);font-style:italic;font-family:inherit}
+@media(max-width:1150px){.skelkpis{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:760px){.skelkpis{grid-template-columns:1fr}.bellmenu{right:-60px}}
+
+/* specificity: '.portal button' sets font:inherit, so component buttons need the .portal prefix */
+.portal .bellitem{font-size:11px}.portal .bellitem strong{font-size:12px}
+.portal .chip{font-size:11px}
+.portal .bell{font-size:15px}
+.portal td.wrap{white-space:normal;min-width:240px;max-width:380px}
+.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}

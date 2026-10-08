@@ -6,7 +6,8 @@ import { usePortal } from "../PortalLayout";
 import { Badge, Card, ErrorBox, Kpi, Loading, MetricRows } from "../ui";
 
 export default function Impact() {
-  const { data, error, loading } = useLoad(() => portal.impact(), []);
+  const { version } = usePortal();
+  const { data, error, loading } = useLoad(() => portal.impact(), [version]);
   const { openReg } = usePortal();
   const nav = useNavigate();
   const [cell, setCell] = useState(null);

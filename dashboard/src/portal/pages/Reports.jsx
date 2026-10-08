@@ -12,7 +12,8 @@ const CARDS = {
 
 export default function Reports() {
   const [tick, setTick] = useState(0);
-  const { data, error, loading } = useLoad(() => portal.reports(), [tick]);
+  const { version } = usePortal();
+  const { data, error, loading } = useLoad(() => portal.reports(), [tick, version]);
   const { toast } = usePortal();
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;

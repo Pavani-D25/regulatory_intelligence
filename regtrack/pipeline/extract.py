@@ -22,7 +22,7 @@ from regtrack import llm
 from regtrack.config import get_settings
 from regtrack.db import Jsonb
 from regtrack.models import model_for
-from regtrack.models.enums import DocClass, FlagRule
+from regtrack.models.enums import DocClass, FlagRule, Status
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline.dbutil import add_flag, update_if_changed
 from regtrack.pipeline.text import PageText, english_text, load_pages
@@ -32,7 +32,7 @@ from regtrack.vocab import find_domains
 
 log = logging.getLogger(__name__)
 PROMPT_VERSION = "extract_v1"
-RULES_VERSION = "rules_v1"
+RULES_VERSION = "rules_v2"  # v2: Motor Vehicles Acts / CMVR apply to ALL; pre-1988 MV law superseded
 MAX_LLM_CHARS = 24000
 
 
@@ -188,6 +188,27 @@ def bis_catalogue_rows(path: str) -> list[dict]:
     return rows
 
 
+# Motor vehicle law. Titles are often OCR-damaged ("MOTOR VEHIC ES", "VEHICIJES", "Noor Vehicles"), so the opening
+# lines are checked too. The 1914 and 1939 Acts were repealed by the Motor Vehicles Act, 1988; Acts amending them
+# are history (superseded), the 1988 Act, its amendments and the CMVR 1989 are in force.
+MV_TITLE = re.compile(r"motor\W{0,3}vehi\w{0,5}\W{0,3}e?s?\s*(\(\s*amendment\s*\)\s*)?act|central\s+motor\s+vehicles\s+rules", re.I)
+MV_AMENDS = re.compile(r"(amend|menl)\w*\s+the\s+(indian\s+)?[\w~]{2,7}\s+vehicles\s+act,?\s*(\d{4})", re.I)
+MV_AMENDMENT_ACT = re.compile(r"motor\s+vehicles\s*\(\s*amendment\s*\)\s*act", re.I)
+
+
+def motor_vehicle_law(title: str, head: str) -> str | None:
+    """'in_force' / 'repealed' for the Motor Vehicles Acts and CMVR, None for any other Act."""
+    amends = MV_AMENDS.search(head)
+    if amends:
+        return "repealed" if int(amends.group(3)) < 1988 else "in_force"
+    if not (MV_TITLE.search(title) or MV_AMENDMENT_ACT.search(head[:1500])):
+        return None
+    years = [int(y) for y in re.findall(r"\b(1[89]\d\d|20\d\d)\b", title)]
+    if "rules" in title.lower() or (years and max(years) >= 1988):
+        return "in_force"
+    return "repealed" if years else "in_force"
+
+
 # ====================================================================== deterministic extraction per document
 def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, names: list[str]) -> tuple[dict, dict, dict]:
     """Returns (columns, data, confidence)."""
@@ -276,6 +297,13 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         cols["usage"] = P.find_usage(text_for_tags[:30000])
         cols["powertrains"] = P.find_powertrains(text_for_tags[:30000], min_hits=2)
         cols["domains"] = find_domains(text_for_tags)
+    if dc in (DocClass.ACT, DocClass.CONSOLIDATED_RULES):
+        law = motor_vehicle_law(f"{cols.get('subject') or ''} {(names[0] if names else '').replace('_', ' ')}", eng[:2000])
+        if law:
+            # the Motor Vehicles Act / CMVR govern all motor vehicles; category words inside them are only mentions
+            cats = ["ALL"]
+            if law == "repealed":
+                cols["status"] = Status.SUPERSEDED.value
     cols["vehicle_categories"] = cats
     cols["in_scope"] = in_scope(cats) if cats else (None if dc == DocClass.OFF_TOPIC else False)
     conf["vehicle_categories"] = 0.7 if cats else 0.0

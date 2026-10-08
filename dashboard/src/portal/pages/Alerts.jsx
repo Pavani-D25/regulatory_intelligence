@@ -12,7 +12,8 @@ const COND = {
 
 export default function Alerts() {
   const [tick, setTick] = useState(0);
-  const { data, error, loading } = useLoad(() => portal.alerts(), [tick]);
+  const { version } = usePortal();
+  const { data, error, loading } = useLoad(() => portal.alerts(), [tick, version]);
   const { openReg, toast, meta } = usePortal();
   const [form, setForm] = useState(null);
   if (loading && !data) return <Loading />;
