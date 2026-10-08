@@ -99,3 +99,16 @@ and what is still pending. Details per phase are in `reports/phase_<n>.md`; fina
 | Classify / extract / link / chunk all files | ~3.5 / 2.7 / 1.5 / 4 min |
 | First MoRTH crawl (1,160 listings, 1–2 s pacing) | ~40 min; re-run ~5 min |
 | ARAI + India Code + e-Gazette first crawl | ~30 min |
+
+## 7. After the build (8 Oct 2026, while waiting for the LM Studio URL)
+
+| Part | What | Commit |
+|---|---|---|
+| Dashboard | React + Vite + Tailwind in `dashboard/` on top of the read API: vehicle check (L1/L2/M1/N1, cc, powertrain, usage, date → regulations in force and coming later, share-pack download for the selection), browse, version timelines, changes feed, search, document detail with open/download of the original. "✦ AI fields pending" marks Qwen-only values. API: CORS, `/meta`, `/families`, `/files/{sha256}`, share pack by vehicle selection. | `f0b8120` |
+| MinIO | `STORAGE_BACKEND=local\|s3`, MinIO as docker compose profile `s3`, same sha256 keys; write-once (existing keys never rewritten, object-lock bucket with legal hold), sha256-verified read cache, `storage-upload [--switch]`. Local stays the default. | `f55cffe` |
+| Quality flags | Deterministic resolver (`resolve.py`) + splitter/identity/date fixes: title mismatches 16→0 open, amendment gaps 21→0 open (5 new amendment documents found), doubtful years fixed (SO-1668(E)-2005, GSR-212(E)-2015, cmvr-1989 = consolidated rules), no future dates. Re-run writes zero rows (verified). | `e2b8876` |
+| `llm-smoke` | Qwen extraction + identity double-check + embeddings on 10 documents; `--dry-run`; stops on an embedding-size mismatch; exit 2 when LM Studio is unreachable. | this commit |
+
+New incidents: Docker Desktop was down again at the start (started with `docker desktop start`); the
+"open original" button was unreadable (Tailwind base styles moved to `@layer base`); a resolver ↔ gap-check loop
+re-raised resolved flags on every run (flags are now compared by content, not by resolver notes).

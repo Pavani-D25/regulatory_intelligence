@@ -30,6 +30,9 @@ python -m regtrack.cli crawl MORTH_API       # one live crawl + pipeline (MORTH_
 python -m regtrack.cli schedule              # APScheduler: every 6 h per source + hourly pipeline catch-up
 python -m regtrack.cli api                   # read-only API on http://127.0.0.1:8000/docs
 python -m regtrack.cli report                # reports/VALIDATION_REPORT.md
+python -m regtrack.cli llm-smoke             # test LM Studio on 10 documents (Qwen extraction + embeddings); --dry-run writes nothing
+python -m regtrack.cli resolve-flags         # resolve quality flags whose evidence settles them (also runs after every pipeline run)
+python -m regtrack.cli storage-upload        # one-time copy of the originals to MinIO/S3 (see below)
 python scripts/prepare_corpus.py             # offline: hash + store + extract text (no DB needed)
 python scripts/profile_offline.py            # offline: classification/identity profile vs regression numbers
 ```
@@ -72,6 +75,19 @@ sources (MoRTH JSON API, ARAI page via Playwright, e-Gazette via Playwright, Ind
 * LLM offline (laptop off / ngrok URL changed): runs never fail. Deterministic extraction is written with
   `extraction.llm_pending=true` and the Qwen pass runs on a later run; chunks wait at stage `chunked` until the
   embedding endpoint is back.
+
+## When the LM Studio URL arrives
+
+```powershell
+# .env: LLM_BASE_URL=https://<ngrok-id>.ngrok-free.app/v1   EMBED_MODEL=<embedding model name in LM Studio>
+.venv\Scripts\python -m regtrack.cli llm-smoke --dry-run   # reachability, structured output, 10 documents, embedding size
+.venv\Scripts\python -m regtrack.cli llm-smoke             # same, and writes the 10 results
+.venv\Scripts\python -m regtrack.cli run                   # everything pending: Qwen pass, embeddings, event summaries
+.venv\Scripts\python -m regtrack.cli report                # agreement rate and fill rates
+```
+
+`llm-smoke` stops before writing anything if the embedding size differs from `EMBED_DIM` / `vector(N)` and prints
+the migration to add. Exit code 2 means LM Studio was not reachable.
 
 ## Object storage: local (default) or MinIO / S3
 
