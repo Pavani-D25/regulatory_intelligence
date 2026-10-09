@@ -20,7 +20,10 @@ param(
     [switch]$Stop
 )
 
-$ErrorActionPreference = "Stop"
+# "Continue", not "Stop": in Windows PowerShell 5.1 any stderr line from a native program (docker, pip, npm) becomes
+# an error record, so "Stop" would abort on harmless messages - e.g. `docker info` while Docker is still starting.
+# Every step checks $LASTEXITCODE itself and calls Fail with a clear message.
+$ErrorActionPreference = "Continue"
 $Root = $PSScriptRoot
 Set-Location $Root
 $Py = Join-Path $Root ".venv\Scripts\python.exe"
