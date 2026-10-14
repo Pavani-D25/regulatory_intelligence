@@ -18,7 +18,7 @@ from datetime import date
 import psycopg
 from pydantic import BaseModel, Field, create_model
 
-from regtrack import llm
+from regtrack import country, llm
 from regtrack.config import get_settings
 from regtrack.db import Jsonb
 from regtrack.models import model_for
@@ -665,7 +665,7 @@ def enrich_pending(conn: psycopg.Connection, limit: int = 200) -> int:
     rows = conn.execute(
         """SELECT d.*, df.file_id, df.page_from, df.page_to FROM document d
            JOIN document_file df ON df.document_id=d.id AND df.is_best_copy
-           WHERE (d.extraction->>'llm_pending')::boolean LIMIT %s""", (limit,)).fetchall()
+           WHERE (d.extraction->>'llm_pending')::boolean AND """ + country.sql("d") + " LIMIT %s", (limit,)).fetchall()
     n = 0
     for doc in rows:
         f = conn.execute("SELECT * FROM file_object WHERE id=%s", (doc["file_id"],)).fetchone()

@@ -9,7 +9,7 @@ from __future__ import annotations
 import psycopg
 from pydantic import BaseModel
 
-from regtrack import llm
+from regtrack import country, llm
 from regtrack.db import Jsonb
 
 CLASS_EVENT = {
@@ -57,7 +57,7 @@ def live_documents(conn: psycopg.Connection) -> list[dict]:
     return conn.execute(
         """SELECT DISTINCT d.* FROM document d JOIN document_file df ON df.document_id=d.id
            JOIN file_sighting s ON s.file_id=df.file_id JOIN source so ON so.id=s.source_id
-           WHERE so.code<>'LOCAL_SEED' AND s.crawl_run_id IS NOT NULL
+           WHERE so.code<>'LOCAL_SEED' AND s.crawl_run_id IS NOT NULL AND """ + country.sql("d") + """
              AND NOT EXISTS (SELECT 1 FROM file_sighting s2 JOIN source so2 ON so2.id=s2.source_id
                              WHERE s2.file_id=df.file_id AND so2.code='LOCAL_SEED')""").fetchall()
 

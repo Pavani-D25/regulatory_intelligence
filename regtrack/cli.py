@@ -5,7 +5,7 @@
   schemas               export JSON Schemas from the Pydantic models
   import-seed           Phase 2: import SEED_CORPUS_DIR (read-only) into storage + DB
   run [--stage S] [--limit N]   run pipeline stages on pending files (resumable)
-  crawl [SOURCE]        run live crawlers once (MORTH_API, ARAI_AIS, EGAZETTE, INDIACODE)
+  crawl [SOURCE]        run the current country's live crawlers once (India: MORTH_API, ARAI_AIS, EGAZETTE, INDIACODE)
   schedule              start the 6-hour scheduler (blocking)
   report                write reports/VALIDATION_REPORT.md
   api                   start the read-only FastAPI server
@@ -103,9 +103,9 @@ def cmd_run(args) -> int:
 
 
 def cmd_crawl(args) -> int:
-    from regtrack.scheduler import run_source
+    from regtrack.scheduler import crawlers, run_source
 
-    for code in args.sources or ["MORTH_API", "ARAI_AIS", "EGAZETTE", "INDIACODE"]:
+    for code in args.sources or list(crawlers()):
         print(code, run_source(code, process=not args.no_process))
     return 0
 

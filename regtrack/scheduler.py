@@ -6,6 +6,7 @@ a pipeline run that moves new files through all stages. Runs never fail because 
 
 The loop writes app_setting 'scheduler_heartbeat' every 5 minutes so the portal can show whether it is alive, and
 skips scheduled crawls while app_setting 'auto_sync' is 'false' (the Admin switch). Manual runs are not affected.
+Only the current country's sources (regtrack/country.py) are scheduled or crawled.
 """
 
 from __future__ import annotations
@@ -13,22 +14,34 @@ from __future__ import annotations
 import logging
 import threading
 
+from regtrack import country
 from regtrack.db import connect
 
 log = logging.getLogger(__name__)
 _lock = threading.Lock()  # one pipeline run at a time
 
 
-CRAWLERS = {"MORTH_API": "morth", "ARAI_AIS": "arai", "EGAZETTE": "egazette", "INDIACODE": "indiacode"}
+# source code -> module in regtrack.sources, per country (Thai crawlers are added here when they exist)
+CRAWLERS_BY_COUNTRY: dict[str, dict[str, str]] = {
+    "IN": {"MORTH_API": "morth", "ARAI_AIS": "arai", "EGAZETTE": "egazette", "INDIACODE": "indiacode"},
+    "TH": {},
+}
+CRAWLERS = CRAWLERS_BY_COUNTRY["IN"]  # India's; code that runs crawls uses crawlers()
+
+
+def crawlers(cc: str | None = None) -> dict[str, str]:
+    """The crawlers of the current country (or of `cc`)."""
+    return CRAWLERS_BY_COUNTRY.get(country.code(cc), {})
 HEARTBEAT_MIN = 5
 
 
 def crawl_source(code: str) -> dict:
-    if code not in CRAWLERS:
-        raise ValueError(f"no crawler for {code}")
+    mods = crawlers()
+    if code not in mods:
+        raise ValueError(f"no crawler for {code} in country {country.code()}")
     import importlib
 
-    return importlib.import_module(f"regtrack.sources.{CRAWLERS[code]}").crawl()
+    return importlib.import_module(f"regtrack.sources.{mods[code]}").crawl()
 
 
 PIPELINE_LOCK = 774201  # pg advisory lock: one pipeline run at a time across processes (scheduler, API sync)
@@ -55,7 +68,7 @@ def run_source(code: str, process: bool = True) -> dict:
 def run_all(on_step=None) -> dict:
     """Crawl every source one after another (a failing source does not stop the others), then one pipeline run."""
     out: dict = {"crawl": {}, "errors": {}}
-    for code in CRAWLERS:
+    for code in crawlers():
         if on_step:
             on_step(code)
         try:
@@ -74,8 +87,8 @@ def main() -> None:
 
     sched = BlockingScheduler(timezone="Asia/Kolkata")
     with connect() as conn:
-        sources = conn.execute("SELECT code, schedule_hours FROM source WHERE schedule_hours > 0 "
-                               "AND code = ANY(%s) ORDER BY id", (list(CRAWLERS),)).fetchall()
+        sources = conn.execute(f"SELECT code, schedule_hours FROM source WHERE schedule_hours > 0 AND {country.sql()} "
+                               "AND code = ANY(%s) ORDER BY id", (list(crawlers()),)).fetchall()
     for i, s in enumerate(sources):
         sched.add_job(_scheduled_run, "interval", hours=min(s["schedule_hours"], 6), args=[s["code"]], id=s["code"],
                       max_instances=1, coalesce=True, misfire_grace_time=3600,

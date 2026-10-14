@@ -21,7 +21,8 @@ def test_migrations_apply_twice(migrated):
 
 def test_seed_vocab(conn):
     assert conn.execute("SELECT count(*) AS n FROM vehicle_category WHERE in_scope").fetchone()["n"] == 5
-    assert conn.execute("SELECT count(*) AS n FROM source").fetchone()["n"] == 6
+    by_country = {r["country"]: r["n"] for r in conn.execute("SELECT country, count(*) AS n FROM source GROUP BY 1")}
+    assert by_country == {"IN": 6, "TH": 8}  # 0001 seed + 0005 Thai sources
     assert conn.execute("SELECT extversion FROM pg_extension WHERE extname='vector'").fetchone()
 
 

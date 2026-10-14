@@ -43,6 +43,7 @@ class Settings:
     s3_secure: bool = False
     cache_dir: Path = ROOT / "data" / "cache"  # local copies of s3 objects for parsing/serving
     user_agent: str = "RegTrackIndia/0.1 (research)"
+    country: str = "IN"                     # whose rows this process sees (env REGTRACK_COUNTRY); see regtrack/country.py
 
     @property
     def psycopg_dsn(self) -> str:
@@ -79,4 +80,5 @@ def get_settings() -> Settings:
         s3_secret_key=_clean(os.getenv("S3_SECRET_KEY")),
         s3_secure=(_clean(os.getenv("S3_SECURE")) or "false").lower() in ("1", "true", "yes"),
         cache_dir=Path(_clean(os.getenv("CACHE_DIR")) or storage.parent / "cache"),
+        country=(_clean(os.getenv("REGTRACK_COUNTRY")) or "IN").upper(),
     )

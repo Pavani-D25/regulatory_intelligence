@@ -10,6 +10,7 @@ import re
 
 import psycopg
 
+from regtrack import country
 from regtrack.pipeline.identity import parse_arai_code
 from regtrack.pipeline.text import load_pages
 
@@ -32,7 +33,7 @@ def verify_title_mismatches(conn: psycopg.Connection) -> int:
     content's series (G.S.R. → Part II-3(i), S.O. → Part II-3(ii)): the listing is wrong, the content identity stands."""
     n = 0
     for q in conn.execute("""SELECT q.id, q.entity_id, q.details, f.sha256 FROM quality_flag q JOIN file_object f ON f.id=q.entity_id
-                             WHERE q.rule='title_file_mismatch' AND q.resolved_at IS NULL""").fetchall():
+                             WHERE q.rule='title_file_mismatch' AND q.resolved_at IS NULL AND """ + country.sql("f")).fetchall():
         d = q["details"]
         doc = conn.execute("""SELECT d.canonical_id, d.data->'gazette'->>'sub_section' AS sub FROM document d
                               JOIN document_file df ON df.document_id=d.id WHERE df.file_id=%s AND d.canonical_id=%s""",
@@ -64,7 +65,7 @@ def resolve_amendment_gaps(conn: psycopg.Connection) -> int:
     n = 0
     for q in conn.execute("""SELECT q.id, q.entity_id, q.details, d.family_key, d.canonical_id FROM quality_flag q
                              JOIN document d ON d.id=q.entity_id
-                             WHERE q.rule='amendment_gap' AND q.resolved_at IS NULL""").fetchall():
+                             WHERE q.rule='amendment_gap' AND q.resolved_at IS NULL AND """ + country.sql("d")).fetchall():
         target, missing = q["details"]["target"], set(q["details"]["missing"])
         why: dict[int, str] = {}
         # (a) the amendment exists under a sibling id of the same family (header named the standard without Rev/Part)
@@ -108,6 +109,7 @@ def resolve_placeholder_dates(conn: psycopg.Connection) -> int:
     for q in conn.execute("""SELECT q.id, q.details, max(d.doc_date) AS doc_date FROM quality_flag q
                              JOIN document_file df ON df.file_id=q.entity_id JOIN document d ON d.id=df.document_id
                              WHERE q.rule='placeholder_listing_date' AND q.resolved_at IS NULL AND q.entity='file_object'
+                               AND """ + country.sql("d") + """
                              GROUP BY q.id, q.details""").fetchall():
         if q["doc_date"]:
             _resolve(conn, q["id"], "content date used; listing placeholder ignored",
@@ -121,7 +123,7 @@ def corroborate_inferred_years(conn: psycopg.Connection) -> int:
     """A year taken from the file number is confirmed when an independent listing date has the same year."""
     n = 0
     for q in conn.execute("""SELECT q.id, q.entity_id, d.year FROM quality_flag q JOIN document d ON d.id=q.entity_id
-                             WHERE q.rule='identity_year_inferred' AND q.resolved_at IS NULL""").fetchall():
+                             WHERE q.rule='identity_year_inferred' AND q.resolved_at IS NULL AND """ + country.sql("d")).fetchall():
         years = [r["y"] for r in conn.execute(
             """SELECT DISTINCT extract(year FROM s.listing_date)::int AS y FROM document_file df
                JOIN file_sighting s ON s.file_id=df.file_id WHERE df.document_id=%s AND s.listing_date IS NOT NULL

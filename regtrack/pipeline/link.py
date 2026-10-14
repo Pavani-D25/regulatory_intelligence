@@ -17,6 +17,7 @@ import re
 
 import psycopg
 
+from regtrack import country
 from regtrack.db import Jsonb
 from regtrack.models.enums import DocClass, FlagRule
 from regtrack.pipeline import mandates as M
@@ -27,7 +28,8 @@ from regtrack.pipeline.text import english_text, load_pages
 
 
 def doc_by_cid(conn: psycopg.Connection, cid: str) -> dict | None:
-    return conn.execute("SELECT id, doc_date, status, doc_class FROM document WHERE canonical_id=%s", (cid,)).fetchone()
+    return conn.execute(f"SELECT id, doc_date, status, doc_class FROM document WHERE canonical_id=%s AND {country.sql()}",
+                        (cid,)).fetchone()
 
 
 def add_relation(conn: psycopg.Connection, from_doc: int, rtype: str, to_cid: str | None = None, to_doc: int | None = None,
@@ -234,8 +236,9 @@ def record_date_changes(conn: psycopg.Connection, doc: dict, stats: dict) -> Non
 
 def resolve_refs(conn: psycopg.Connection) -> int:
     """Fill to_doc for relations whose target has arrived since."""
-    cur = conn.execute("""UPDATE doc_relation r SET to_doc=d.id FROM document d
-                          WHERE r.to_doc IS NULL AND r.to_ref=d.canonical_id AND d.id<>r.from_doc""")
+    cur = conn.execute(f"""UPDATE doc_relation r SET to_doc=d.id FROM document d
+                           WHERE r.to_doc IS NULL AND r.to_ref=d.canonical_id AND d.id<>r.from_doc
+                             AND {country.sql('d')} AND {country.doc_sql('r.from_doc')}""")
     n = cur.rowcount
     if n:
         conn.execute("""UPDATE quality_flag q SET resolved_at=now() FROM doc_relation r, document d

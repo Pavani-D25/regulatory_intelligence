@@ -15,6 +15,7 @@ from datetime import date
 
 import psycopg
 
+from regtrack import country
 from regtrack.db import Jsonb
 from regtrack.models import model_for
 from regtrack.models.enums import DocClass, FlagRule, Role
@@ -155,8 +156,8 @@ def upsert_document(conn: psycopg.Connection, canonical_id: str, values: dict) -
     """Insert a document or fill the empty columns of an existing one. Returns (id, created)."""
     row = conn.execute("SELECT * FROM document WHERE canonical_id=%s", (canonical_id,)).fetchone()
     if row is None:
-        cols = ["canonical_id", *values]
-        vals = [canonical_id, *[Jsonb(v) if isinstance(v, (dict, list)) and k in JSON_COLS else v
+        cols = ["canonical_id", "country", *values]
+        vals = [canonical_id, country.code(), *[Jsonb(v) if isinstance(v, (dict, list)) and k in JSON_COLS else v
                                 for k, v in values.items()]]
         new = conn.execute(f"INSERT INTO document ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING id",
                            vals).fetchone()
@@ -539,7 +540,8 @@ def recompute_best_copies(conn: psycopg.Connection, doc_ids: list[int]) -> None:
 
 def tap_best_copies(conn: psycopg.Connection) -> None:
     conn.execute("""UPDATE document_file df SET is_best_copy=true FROM document d
-                    WHERE d.id=df.document_id AND d.doc_class='TAP_DOCUMENT' AND NOT df.is_best_copy""")
+                    WHERE d.id=df.document_id AND d.doc_class='TAP_DOCUMENT' AND NOT df.is_best_copy
+                      AND """ + country.sql("d"))
 
 
 def jdump(v) -> str:

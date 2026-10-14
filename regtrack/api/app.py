@@ -1,4 +1,5 @@
 """Read-only API. No LLM calls at read time except embedding the search query.
+Every query shows one country: ?country= if given, else the COUNTRY setting (regtrack/country.py).
 
     uvicorn regtrack.api.app:app      (or: python -m regtrack.cli api)
 """
@@ -14,6 +15,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
+from regtrack import country
+from regtrack.api.params import CountryParam, resolve_country
 from regtrack.db import connect
 from regtrack.models.enums import IN_SCOPE_CATEGORIES
 from regtrack.pipeline.search import search as chunk_search
@@ -40,7 +43,7 @@ def _rows(sql: str, args: list | tuple = ()) -> list[dict]:
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "documents": _rows("SELECT count(*) AS n FROM document")[0]["n"]}
+    return {"ok": True, "documents": _rows(f"SELECT count(*) AS n FROM document WHERE {country.sql()}")[0]["n"]}
 
 
 # ---------------------------------------------------------------- vehicle view
@@ -55,13 +58,14 @@ COND_SQL = """
 def vehicles_applicable(category: str = Query(..., examples=["L2"]), engine_cc: float | None = None,
                         power_kw: float | None = None, gvw_kg: float | None = None, seats: float | None = None,
                         powertrain: str | None = None, usage: str | None = None, on: date | None = None,
-                        include_drafts: bool = False, include_future: bool = False) -> dict:
+                        include_drafts: bool = False, include_future: bool = False, cc: CountryParam = None) -> dict:
     """Mandates for a vehicle on a date, with the standards behind each and their current versions."""
+    cc = resolve_country(cc)
     on = on or date.today()
     cats = [category.upper(), "ALL"]
     args: list = [cats]
     sql = ["SELECT m.*, d.canonical_id AS source_canonical_id, d.official_title AS source_title FROM mandate m "
-           "JOIN document d ON d.id=m.source_doc_id WHERE m.vehicle_categories && %s"]
+           f"JOIN document d ON d.id=m.source_doc_id WHERE m.vehicle_categories && %s AND {country.sql('d', cc)}"]
     if not include_drafts:
         sql.append("AND NOT m.is_draft")
     if not include_future:
@@ -85,9 +89,11 @@ def vehicles_applicable(category: str = Query(..., examples=["L2"]), engine_cc: 
             m["standards"] = []
             for ref in m["standard_refs"] or []:
                 fam = ref.split("(Rev")[0] if ref.startswith("AIS-") else None
-                cur = conn.execute(f"SELECT {DOC_COLS} FROM document WHERE family_key=%s AND is_current", (fam,)).fetchone() if fam else None
-                amds = conn.execute("SELECT canonical_id, doc_date FROM document WHERE family_key=%s AND doc_class "
-                                    "IN ('AIS_AMENDMENT','AIS_CORRIGENDUM') ORDER BY version_seq", (fam,)).fetchall() if fam else []
+                cur = conn.execute(f"SELECT {DOC_COLS} FROM document WHERE family_key=%s AND is_current AND {country.sql(None, cc)}",
+                                   (fam,)).fetchone() if fam else None
+                amds = conn.execute(f"SELECT canonical_id, doc_date FROM document WHERE family_key=%s AND {country.sql(None, cc)} "
+                                    "AND doc_class IN ('AIS_AMENDMENT','AIS_CORRIGENDUM') ORDER BY version_seq",
+                                    (fam,)).fetchall() if fam else []
                 m["standards"].append({"ref": ref, "current_version": dict(cur) if cur else None,
                                        "amendments": [dict(a) for a in amds]})
     return {"query": {"category": category, "engine_cc": engine_cc, "powertrain": powertrain, "on": on},
@@ -99,8 +105,8 @@ def vehicles_applicable(category: str = Query(..., examples=["L2"]), engine_cc: 
 def documents(year: int | None = None, category: str | None = None, doc_class: str | None = None,
               domain: str | None = None, in_scope: bool | None = None, nature: str | None = None,
               status: str | None = None, is_current: bool | None = None, q: str | None = None,
-              limit: int = Query(100, le=1000), offset: int = 0) -> dict:
-    where, args = ["TRUE"], []
+              limit: int = Query(100, le=1000), offset: int = 0, cc: CountryParam = None) -> dict:
+    where, args = [country.sql(None, resolve_country(cc))], []
     if year:
         where.append("extract(year FROM doc_date) = %s")
         args.append(year)
@@ -136,9 +142,10 @@ def documents(year: int | None = None, category: str | None = None, doc_class: s
 
 
 @app.get("/documents/{canonical_id:path}")
-def document(canonical_id: str) -> dict:
+def document(canonical_id: str, cc: CountryParam = None) -> dict:
+    cc = resolve_country(cc)
     with connect() as conn:
-        d = conn.execute("SELECT * FROM document WHERE canonical_id=%s", (canonical_id,)).fetchone()
+        d = conn.execute(f"SELECT * FROM document WHERE canonical_id=%s AND {country.sql(None, cc)}", (canonical_id,)).fetchone()
         if not d:
             raise HTTPException(404, f"{canonical_id} not found")
         files = conn.execute(
@@ -167,8 +174,9 @@ def document(canonical_id: str) -> dict:
 
 
 @app.get("/families/{family_key:path}/versions")
-def family_versions(family_key: str) -> dict:
-    rows = _rows(f"SELECT {DOC_COLS} FROM document WHERE family_key=%s ORDER BY version_seq NULLS LAST, doc_date", (family_key,))
+def family_versions(family_key: str, cc: CountryParam = None) -> dict:
+    rows = _rows(f"SELECT {DOC_COLS} FROM document WHERE family_key=%s AND {country.sql(None, resolve_country(cc))} "
+                 "ORDER BY version_seq NULLS LAST, doc_date", (family_key,))
     if not rows:
         raise HTTPException(404, f"family {family_key} not found")
     with connect() as conn:
@@ -182,44 +190,49 @@ def family_versions(family_key: str) -> dict:
 
 
 @app.get("/changes")
-def changes(since: datetime | None = None, limit: int = Query(200, le=2000)) -> dict:
+def changes(since: datetime | None = None, limit: int = Query(200, le=2000), cc: CountryParam = None) -> dict:
     rows = _rows("SELECT e.*, d.canonical_id FROM change_event e LEFT JOIN document d ON d.id=e.document_id "
-                 "WHERE e.detected_at >= %s ORDER BY e.detected_at DESC LIMIT %s",
+                 f"WHERE e.detected_at >= %s AND {country.event_sql('e.document_id', resolve_country(cc))} "
+                 "ORDER BY e.detected_at DESC LIMIT %s",
                  (since or datetime(1970, 1, 1), limit))
     return {"since": since, "count": len(rows), "changes": rows}
 
 
 @app.get("/search")
 def search(q: str, category: str | None = None, in_scope: bool | None = None, is_current: bool | None = None,
-           doc_class: str | None = None, limit: int = Query(10, le=50)) -> dict:
+           doc_class: str | None = None, limit: int = Query(10, le=50), cc: CountryParam = None) -> dict:
+    cc = resolve_country(cc)
     with connect() as conn:
-        return chunk_search(conn, q, category, in_scope, is_current, doc_class, limit)
+        return chunk_search(conn, q, category, in_scope, is_current, doc_class, limit, cc=cc)
 
 
 # ---------------------------------------------------------------- vendor share pack
 def share_pack_documents(conn, category: str, on: date, technical_only: bool = True, engine_cc: float | None = None,
-                         powertrain: str | None = None, usage: str | None = None) -> list[dict]:
+                         powertrain: str | None = None, usage: str | None = None, cc: str | None = None) -> list[dict]:
     """Documents behind the vehicle's mandates (in force on `on` or upcoming) + current AIS standards for the category."""
+    cc = country.code(cc)
     sel = vehicles_applicable(category=category, engine_cc=engine_cc, power_kw=None, gvw_kg=None, seats=None,
-                              powertrain=powertrain, usage=usage, on=on, include_drafts=False, include_future=True)
+                              powertrain=powertrain, usage=usage, on=on, include_drafts=False, include_future=True, cc=cc)
     ids = {m["source_doc_id"] for m in sel["mandates"]} | {i for m in sel["mandates"] for i in (m["standard_doc_ids"] or [])}
     cats = [category.upper(), "ALL"]
     return [dict(r) for r in conn.execute(
         f"""SELECT {', '.join('d.' + c.strip() for c in DOC_COLS_BASE.split(','))}
             FROM document d
             WHERE (d.id = ANY(%s) OR (d.vehicle_categories && %s AND d.is_current AND d.doc_class LIKE 'AIS_%%'))
-              AND d.doc_class <> 'OFF_TOPIC' {"AND (d.nature='technical' OR d.nature IS NULL)" if technical_only else ""}
+              AND d.doc_class <> 'OFF_TOPIC' AND {country.sql('d', cc)}
+              {"AND (d.nature='technical' OR d.nature IS NULL)" if technical_only else ""}
             ORDER BY d.doc_class, d.canonical_id""", (list(ids), cats)).fetchall()]
 
 
 @app.get("/share-pack")
 def share_pack(category: str, on: date | None = None, engine_cc: float | None = None, powertrain: str | None = None,
-               usage: str | None = None, technical_only: bool = True) -> StreamingResponse:
+               usage: str | None = None, technical_only: bool = True, cc: CountryParam = None) -> StreamingResponse:
     """Zip of best-copy originals + manifest.csv for a vehicle selection (category [+ cc, powertrain, usage])."""
+    cc = resolve_country(cc)
     on = on or date.today()
     buf = io.BytesIO()
     with connect() as conn:
-        docs = share_pack_documents(conn, category, on, technical_only, engine_cc, powertrain, usage)
+        docs = share_pack_documents(conn, category, on, technical_only, engine_cc, powertrain, usage, cc=cc)
         if not docs:
             raise HTTPException(404, f"no documents for category {category}")
         manifest = io.StringIO()
@@ -271,39 +284,45 @@ def original_file(sha256: str, download: bool = False) -> FileResponse:
 
 
 @app.get("/families")
-def families(q: str | None = None, limit: int = Query(200, le=1000)) -> dict:
+def families(q: str | None = None, limit: int = Query(200, le=1000), cc: CountryParam = None) -> dict:
     """Version families (AIS code, S.O. 1365 master table, TAP, ...) with their current version."""
     rows = _rows(
         """SELECT family_key, count(*) AS versions, max(doc_date) AS latest,
                   max(canonical_id) FILTER (WHERE is_current) AS current,
                   max(coalesce(official_title, subject)) FILTER (WHERE is_current) AS title,
                   bool_or(in_scope) AS in_scope
-           FROM document WHERE family_key IS NOT NULL
+           FROM document WHERE family_key IS NOT NULL AND """ + country.sql(None, resolve_country(cc)) + """
              AND (%s::text IS NULL OR family_key ILIKE %s OR coalesce(official_title, subject, '') ILIKE %s)
            GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT %s""", (q, f"%{q}%", f"%{q}%", limit))
     return {"count": len(rows), "families": rows}
 
 
 @app.get("/meta")
-def meta() -> dict:
-    """Filter options and headline numbers for the dashboard."""
+def meta(cc: CountryParam = None) -> dict:
+    """Filter options and headline numbers for the dashboard (one country)."""
+    cc = resolve_country(cc)
+    doc = country.sql(None, cc)
     with connect() as conn:
         stats = dict(conn.execute(
-            """SELECT (SELECT count(*) FROM document WHERE doc_class<>'OFF_TOPIC') AS documents,
-                      (SELECT count(*) FROM document WHERE in_scope) AS in_scope,
-                      (SELECT count(*) FROM mandate WHERE valid_to IS NULL AND NOT is_draft) AS open_mandates,
-                      (SELECT count(*) FROM change_event WHERE detected_at > now() - interval '30 days') AS changes_30d,
-                      (SELECT count(*) FROM document WHERE (extraction->>'llm_pending')::boolean) AS ai_pending,
-                      (SELECT max(finished_at) FROM crawl_run WHERE status IN ('ok','partial')) AS last_crawl""").fetchone())
+            f"""SELECT (SELECT count(*) FROM document WHERE doc_class<>'OFF_TOPIC' AND {doc}) AS documents,
+                      (SELECT count(*) FROM document WHERE in_scope AND {doc}) AS in_scope,
+                      (SELECT count(*) FROM mandate WHERE valid_to IS NULL AND NOT is_draft
+                         AND {country.doc_sql('source_doc_id', cc)}) AS open_mandates,
+                      (SELECT count(*) FROM change_event WHERE detected_at > now() - interval '30 days'
+                         AND {country.event_sql('document_id', cc)}) AS changes_30d,
+                      (SELECT count(*) FROM document WHERE (extraction->>'llm_pending')::boolean AND {doc}) AS ai_pending,
+                      (SELECT max(finished_at) FROM crawl_run WHERE status IN ('ok','partial')
+                         AND {country.source_sql('source_id', cc)}) AS last_crawl""").fetchone())
         years = [dict(r) for r in conn.execute(
             "SELECT extract(year FROM doc_date)::int AS year, count(*) AS n FROM document "
-            "WHERE doc_date IS NOT NULL AND doc_class<>'OFF_TOPIC' GROUP BY 1 ORDER BY 1 DESC")]
-        classes = [dict(r) for r in conn.execute("SELECT doc_class, count(*) AS n FROM document GROUP BY 1 ORDER BY 2 DESC")]
+            f"WHERE doc_date IS NOT NULL AND doc_class<>'OFF_TOPIC' AND {doc} GROUP BY 1 ORDER BY 1 DESC")]
+        classes = [dict(r) for r in conn.execute(f"SELECT doc_class, count(*) AS n FROM document WHERE {doc} "
+                                                 "GROUP BY 1 ORDER BY 2 DESC")]
         domains = [dict(r) for r in conn.execute(
-            "SELECT d.code, d.label, (SELECT count(*) FROM document x WHERE d.code = ANY(x.domains)) AS n "
+            f"SELECT d.code, d.label, (SELECT count(*) FROM document x WHERE d.code = ANY(x.domains) AND {country.sql('x', cc)}) AS n "
             "FROM domain d ORDER BY 3 DESC")]
         cats = [dict(r) for r in conn.execute("SELECT code, label, in_scope FROM vehicle_category ORDER BY code")]
-    return {"stats": stats, "years": years, "doc_classes": classes, "domains": domains, "categories": cats,
+    return {"country": cc, "stats": stats, "years": years, "doc_classes": classes, "domains": domains, "categories": cats,
             "powertrains": ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"],
             "usage": ["private", "transport"]}
 

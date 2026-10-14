@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import psycopg
 
-from regtrack import llm
+from regtrack import country, llm
 from regtrack.db import vec_literal
 from regtrack.models.enums import DocClass
 from regtrack.pipeline.dbutil import set_stage
@@ -154,7 +154,7 @@ def sync_chunk_filters(conn: psycopg.Connection) -> int:
     cur = conn.execute(
         """UPDATE chunk c SET doc_class=d.doc_class, family_key=d.family_key, vehicle_categories=d.vehicle_categories,
                   domains=d.domains, status=d.status, is_current=d.is_current, in_scope=d.in_scope
-           FROM document d WHERE d.id=c.document_id AND (c.is_current IS DISTINCT FROM d.is_current
+           FROM document d WHERE d.id=c.document_id AND """ + country.sql("d") + """ AND (c.is_current IS DISTINCT FROM d.is_current
                 OR c.status IS DISTINCT FROM d.status OR c.in_scope IS DISTINCT FROM d.in_scope
                 OR c.vehicle_categories IS DISTINCT FROM d.vehicle_categories OR c.domains IS DISTINCT FROM d.domains
                 OR c.family_key IS DISTINCT FROM d.family_key OR c.doc_class IS DISTINCT FROM d.doc_class)""")
@@ -166,8 +166,8 @@ def embed_pending(conn: psycopg.Connection, batch: int = 64, limit: int | None =
     """Embed chunks without a vector (non-boilerplate first). Raises nothing when the LLM is down."""
     done = 0
     while True:
-        rows = conn.execute("SELECT id, content, heading FROM chunk WHERE embedding IS NULL ORDER BY is_boilerplate, id LIMIT %s",
-                            (batch,)).fetchall()
+        rows = conn.execute(f"SELECT id, content, heading FROM chunk WHERE embedding IS NULL AND {country.doc_sql('document_id')} "
+                            "ORDER BY is_boilerplate, id LIMIT %s", (batch,)).fetchall()
         if not rows:
             break
         try:
@@ -188,7 +188,7 @@ def advance_embedded(conn: psycopg.Connection) -> int:
     """Files whose chunks all have vectors (or that have no chunks) move chunked -> embedded -> done."""
     cur = conn.execute(
         """UPDATE file_object f SET stage='done', stage_error=NULL WHERE f.stage IN ('chunked','embedded')
-           AND NOT EXISTS (SELECT 1 FROM chunk c WHERE c.file_id=f.id AND c.embedding IS NULL)""")
+           AND """ + country.sql("f") + """ AND NOT EXISTS (SELECT 1 FROM chunk c WHERE c.file_id=f.id AND c.embedding IS NULL)""")
     return cur.rowcount
 
 

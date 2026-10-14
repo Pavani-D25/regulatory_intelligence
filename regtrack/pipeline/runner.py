@@ -3,6 +3,7 @@
 Each file/stage runs in its own transaction; a failure records stage_error and the run continues.
 Stages run over all pending files before the next stage starts (classification settles best copies before
 extraction; link replays notifications in date order so mandate versions come out right).
+Only files of the current country (regtrack/country.py) are picked; other countries' files keep their stage.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import logging
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from regtrack import country
 from regtrack.db import connect
 from regtrack.pipeline import chunk as C
 from regtrack.pipeline import events as E
@@ -25,7 +27,8 @@ SOURCE_STAGE = {"text": "downloaded", "classify": "text", "extract": "classified
 
 
 def _files(conn, stage: str, limit: int | None, order: str = "f.id") -> list[dict]:
-    q = f"SELECT f.* FROM file_object f WHERE f.stage=%s ORDER BY {order}" + (" LIMIT %s" if limit else "")
+    q = (f"SELECT f.* FROM file_object f WHERE f.stage=%s AND {country.sql('f')} ORDER BY {order}"
+         + (" LIMIT %s" if limit else ""))
     return conn.execute(q, (stage, limit) if limit else (stage,)).fetchall()
 
 
@@ -57,7 +60,7 @@ def run_stage(stage: str, limit: int | None = None, workers: int = 1) -> dict:
             # notifications in date order so mandate replays are chronological
             files = conn.execute(
                 """SELECT f.id FROM file_object f LEFT JOIN document_file df ON df.file_id=f.id
-                   LEFT JOIN document d ON d.id=df.document_id WHERE f.stage='parsed'
+                   LEFT JOIN document d ON d.id=df.document_id WHERE f.stage='parsed' AND """ + country.sql("f") + """
                    GROUP BY f.id ORDER BY min(d.doc_date) NULLS LAST, f.id""" + (f" LIMIT {int(limit)}" if limit else "")
             ).fetchall()
         else:

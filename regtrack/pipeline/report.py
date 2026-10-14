@@ -7,6 +7,7 @@ from pathlib import Path
 
 import psycopg
 
+from regtrack import country
 from regtrack.config import ROOT
 from regtrack.db import connect
 
@@ -77,6 +78,7 @@ def regression(conn: psycopg.Connection) -> list[tuple[str, str, str]]:
 
 
 def fill_rates(conn: psycopg.Connection, where: str = "doc_class <> 'OFF_TOPIC'") -> list[tuple[str, int, int]]:
+    where = f"({where}) AND {country.sql()}"
     total = one(conn, f"SELECT count(*) FROM document WHERE {where}")
     out = []
     for c in COLUMNS:
@@ -91,7 +93,7 @@ def fill_rates(conn: psycopg.Connection, where: str = "doc_class <> 'OFF_TOPIC'"
 
 
 def agreement(conn: psycopg.Connection) -> dict:
-    rows = conn.execute("SELECT extraction->'agreement' AS a FROM document WHERE extraction ? 'agreement'").fetchall()
+    rows = conn.execute(f"SELECT extraction->'agreement' AS a FROM document WHERE extraction ? 'agreement' AND {country.sql()}").fetchall()
     out = {}
     for f in ("number", "date", "status"):
         vals = [r["a"].get(f) for r in rows if r["a"] and r["a"].get(f) is not None]
@@ -115,12 +117,18 @@ def write_validation_report(path: Path | None = None) -> str:
     with connect() as conn:
         reg = regression(conn)
         out = [f"# RegTrack India — Validation report\n\nGenerated {datetime.now():%Y-%m-%d %H:%M}.\n"]
-        counts = conn.execute("SELECT (SELECT count(*) FROM file_object) AS files, (SELECT count(*) FROM document) AS docs, "
-                              "(SELECT count(*) FROM doc_relation) AS rels, (SELECT count(*) FROM mandate) AS mandates, "
-                              "(SELECT count(*) FROM chunk) AS chunks, (SELECT count(*) FROM chunk WHERE embedding IS NOT NULL) AS emb, "
-                              "(SELECT count(*) FROM change_event) AS events").fetchone()
+        cc = country.code()
+        counts = conn.execute(
+            f"SELECT (SELECT count(*) FROM file_object WHERE {country.sql(None, cc)}) AS files, "
+            f"(SELECT count(*) FROM document WHERE {country.sql(None, cc)}) AS docs, "
+            f"(SELECT count(*) FROM doc_relation WHERE {country.doc_sql('from_doc', cc)}) AS rels, "
+            f"(SELECT count(*) FROM mandate WHERE {country.doc_sql('source_doc_id', cc)}) AS mandates, "
+            f"(SELECT count(*) FROM chunk WHERE {country.doc_sql('document_id', cc)}) AS chunks, "
+            f"(SELECT count(*) FROM chunk WHERE embedding IS NOT NULL AND {country.doc_sql('document_id', cc)}) AS emb, "
+            f"(SELECT count(*) FROM change_event WHERE {country.event_sql('document_id', cc)}) AS events").fetchone()
         out.append(md_table(list(counts.keys()), [list(counts.values())]))
-        stages = conn.execute("SELECT stage, count(*) AS n FROM file_object GROUP BY 1 ORDER BY 1").fetchall()
+        stages = conn.execute(f"SELECT stage, count(*) AS n FROM file_object WHERE {country.sql(None, cc)} "
+                              "GROUP BY 1 ORDER BY 1").fetchall()
         out.append("\n## Files by stage\n\n" + md_table(["stage", "files"], [[r["stage"], r["n"]] for r in stages]))
         out.append("\n## Regression table (CLAUDE.md) — measured vs expected\n\n" + md_table(["Measure", "Expected", "Measured"],
                                                                                             [list(r) for r in reg]))
@@ -141,8 +149,8 @@ def write_validation_report(path: Path | None = None) -> str:
         ag = agreement(conn)
         out.append("\n## Qwen double-extraction agreement (identity / status / date, threshold ≥ 90 %)\n\n" + md_table(
             ["field", "agree", "checked", "rate"], [[f, a, b, pct(a, b)] for f, (a, b) in ag.items()]))
-        flags = conn.execute("SELECT rule, entity, count(*) AS n FROM quality_flag WHERE resolved_at IS NULL "
-                             "GROUP BY 1,2 ORDER BY 3 DESC").fetchall()
+        flags = conn.execute(f"SELECT rule, entity, count(*) AS n FROM quality_flag WHERE resolved_at IS NULL "
+                             f"AND {country.flag_sql(None, cc)} GROUP BY 1,2 ORDER BY 3 DESC").fetchall()
         out.append("\n## Open quality flags by rule\n\n" + md_table(["rule", "entity", "open"], [[r["rule"], r["entity"], r["n"]] for r in flags]))
         res = conn.execute(
             """SELECT rule, details->>'resolution' AS how, count(*) AS n,
@@ -160,12 +168,12 @@ def write_validation_report(path: Path | None = None) -> str:
             """SELECT d.canonical_id, d.doc_class, count(q.id) AS flags, string_agg(DISTINCT q.rule, ', ') AS rules,
                       coalesce(d.official_title, d.subject, '') AS title
                FROM document d JOIN quality_flag q ON q.entity='document' AND q.entity_id=d.id AND q.resolved_at IS NULL
-               WHERE d.doc_class <> 'OFF_TOPIC' AND (d.in_scope OR d.doc_class LIKE 'AIS%' OR d.doc_class LIKE 'NOTIF%')
+               WHERE d.doc_class <> 'OFF_TOPIC' AND """ + country.sql("d", cc) + """ AND (d.in_scope OR d.doc_class LIKE 'AIS%' OR d.doc_class LIKE 'NOTIF%')
                GROUP BY d.id ORDER BY (d.in_scope IS TRUE) DESC, count(q.id) DESC, d.doc_date DESC NULLS LAST LIMIT 20""").fetchall()
         out.append("\n## Top 20 documents that need checking\n\n" + md_table(
             ["canonical_id", "class", "flags", "rules", "title"],
             [[r["canonical_id"], r["doc_class"], r["flags"], r["rules"], (r["title"] or "")[:80]] for r in top]))
-        llm_pending = one(conn, "SELECT count(*) FROM document WHERE (extraction->>'llm_pending')::boolean")
+        llm_pending = one(conn, f"SELECT count(*) FROM document WHERE (extraction->>'llm_pending')::boolean AND {country.sql(None, cc)}")
         out.append(f"\n## LLM status\n\nDocuments waiting for the Qwen pass (llm_pending): {llm_pending}.\n"
                    f"Chunks without embedding: {counts['chunks'] - counts['emb']}.\n")
     text = "\n".join(out)

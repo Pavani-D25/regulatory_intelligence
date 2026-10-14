@@ -34,6 +34,12 @@ class DocClass(StrEnum):
     REPORT = "REPORT"
     OFF_TOPIC = "OFF_TOPIC"
     OTHER = "OTHER"
+    # Thailand (migration 0005)
+    TIS_STANDARD = "TIS_STANDARD"
+    GAZETTE_NOTICE = "GAZETTE_NOTICE"
+    DLT_NOTIFICATION = "DLT_NOTIFICATION"
+    MINISTERIAL_REGULATION = "MINISTERIAL_REGULATION"
+    NEWS = "NEWS"
 
     @property
     def is_notification(self) -> bool:
@@ -46,6 +52,10 @@ class DocClass(StrEnum):
 
 AIS_CLASSES = {c for c in DocClass if c.is_ais}
 NOTIFICATION_CLASSES = {c for c in DocClass if c.is_notification}
+THAI_CLASSES = frozenset({DocClass.TIS_STANDARD, DocClass.GAZETTE_NOTICE, DocClass.DLT_NOTIFICATION,
+                          DocClass.MINISTERIAL_REGULATION, DocClass.NEWS})
+# what India's classifier may answer (the Qwen prompt and its schema list exactly these)
+INDIA_CLASSES = [c for c in DocClass if c not in THAI_CLASSES]
 
 
 class RelationType(StrEnum):

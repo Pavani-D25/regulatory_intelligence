@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from regtrack.models.enums import DocClass, Nature
+from regtrack.models.enums import INDIA_CLASSES, DocClass, Nature
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline.text import PageText, english_text, full_text
 
@@ -304,8 +305,12 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
 
 
 # ------------------------------------------------------------------ Qwen fallback (OTHER leftovers only)
+# India's classes only (no Thai classes): same name, so the schema sent to Qwen is unchanged
+IndiaDocClass = StrEnum("DocClass", {c.name: c.value for c in INDIA_CLASSES})
+
+
 class LlmClass(BaseModel):
-    doc_class: DocClass = Field(description="One of the allowed classes")
+    doc_class: IndiaDocClass = Field(description="One of the allowed classes")
     automotive: bool = Field(description="Is the document about motor vehicles / road transport regulation?")
     reason: str
 
@@ -320,9 +325,9 @@ def classify_with_llm(ctx: FileCtx) -> ClassResult | None:
     if len(text.strip()) < 200:
         return None
     sys_p = ("You classify Indian vehicle-regulation documents. Allowed classes: "
-             + ", ".join(c.value for c in DocClass)
+             + ", ".join(c.value for c in INDIA_CLASSES)
              + ". Use OFF_TOPIC for documents unrelated to motor vehicles or road transport.")
     r = llm.structured(LlmClass, sys_p, f"File name: {ctx.name}\n\n{text}")
-    dc = DocClass.OFF_TOPIC if not r.automotive else r.doc_class
+    dc = DocClass.OFF_TOPIC if not r.automotive else DocClass(r.doc_class)
     return ClassResult(dc, "draft" if dc in (DocClass.NOTIFICATION_DRAFT, DocClass.AIS_DRAFT) else "final",
                        detect_issuer(ctx.english), relevance(ctx), nature_of(ctx.english, dc), "qwen", r.reason)

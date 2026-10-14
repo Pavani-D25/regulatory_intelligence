@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import psycopg
 
-from regtrack import llm
+from regtrack import country, llm
 from regtrack.db import vec_literal
 
 
 def search(conn: psycopg.Connection, q: str, category: str | None = None, in_scope: bool | None = True,
-           is_current: bool | None = None, doc_class: str | None = None, limit: int = 10) -> dict:
-    where = ["NOT c.is_boilerplate"]
+           is_current: bool | None = None, doc_class: str | None = None, limit: int = 10, cc: str | None = None) -> dict:
+    """cc: country code (default: the COUNTRY setting); only that country's chunks are searched."""
+    where = ["NOT c.is_boilerplate", country.sql("d", cc)]
     args: list = []
     if category:
         where.append("c.vehicle_categories && %s")
