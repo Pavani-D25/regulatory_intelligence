@@ -68,10 +68,12 @@ def test_category_and_version_views(conn):
 
 
 def test_mandate_versioning_wheel_rim_chain(conn):
-    """Replaying S.O. 1406 -> 359 -> 3896 -> 3800 gives 4 versions of Sr.8(d) with one open row."""
+    """Replaying S.O. 1406 -> 359 -> 3896 gives 3 versions of Sr.8(d) with one open row (v4B: one
+    compliance_requirements row, its versions in requirement_versions)."""
     from pathlib import Path
 
     from regtrack.pipeline import mandates as M
+    from regtrack.pipeline import repo
     from regtrack.pipeline.extract import operative_text
     from regtrack.pipeline.text import english_text, extract
 
@@ -80,15 +82,19 @@ def test_mandate_versioning_wheel_rim_chain(conn):
              ("so_359_2022_wheel_rim_extension.pdf", "SO-359(E)-2022", date(2022, 1, 27)),
              ("so_3896_2022_wheel_rim_extension.pdf", "SO-3896(E)-2022", date(2022, 8, 12))]
     for name, cid, d in chain:
-        did = _doc(conn, cid, doc_class="NOTIFICATION_ORDER", doc_date=d)
-        doc = conn.execute("SELECT * FROM document WHERE id=%s", (did,)).fetchone()
+        did = repo.insert_document(conn, cid, {"doc_class": "NOTIFICATION_ORDER", "status": "final", "doc_date": d})
+        doc = repo.get_document(conn, did)
         M.mandates_for_document(conn, doc, operative_text(english_text(extract(fx / name, "pdf").pages)))
-    rows = conn.execute("SELECT implementation_date, valid_to FROM mandate WHERE mandate_key='SO-1365(E)-2004 Table Sr.8(d)' "
-                        "ORDER BY id").fetchall()
+    rows = conn.execute("SELECT v.implementation_date, v.valid_to, v.vehicle_category_ids FROM requirement_versions v "
+                        "JOIN compliance_requirements c ON c.id=v.requirement_id "
+                        "WHERE c.requirement_code='SO-1365(E)-2004 Table Sr.8(d)' ORDER BY v.id").fetchall()
     assert [r["implementation_date"] for r in rows] == [date(2021, 9, 21), date(2022, 9, 21), date(2023, 6, 22)]
     assert sum(1 for r in rows if r["valid_to"] is None) == 1
+    assert all(r["vehicle_category_ids"] for r in rows)  # category codes stored as the region's category ids
+    assert conn.execute("SELECT count(*) AS n FROM compliance_requirements "
+                        "WHERE requirement_code='SO-1365(E)-2004 Table Sr.8(d)'").fetchone()["n"] == 1
     # re-running a document adds nothing
-    doc = conn.execute("SELECT * FROM document WHERE canonical_id='SO-3896(E)-2022'").fetchone()
-    before = conn.execute("SELECT count(*) AS n FROM mandate").fetchone()["n"]
+    doc = repo.find_document(conn, "SO-3896(E)-2022")
+    before = conn.execute("SELECT count(*) AS n FROM requirement_versions").fetchone()["n"]
     M.mandates_for_document(conn, doc, operative_text(english_text(extract(fx / chain[2][0], "pdf").pages)))
-    assert conn.execute("SELECT count(*) AS n FROM mandate").fetchone()["n"] == before
+    assert conn.execute("SELECT count(*) AS n FROM requirement_versions").fetchone()["n"] == before

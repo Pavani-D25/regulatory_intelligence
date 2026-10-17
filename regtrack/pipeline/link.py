@@ -1,4 +1,5 @@
-"""Link stage: 'parsed' -> 'linked'. doc_relation rows, family versions, mandates.
+"""Link stage: 'parsed' -> 'linked'. regulation_relations rows, family versions, rule versions
+(compliance_requirements / requirement_versions, written by mandates.py).
 
 Relation sources (deterministic first):
   finalises     final -> draft: "draft ... published vide G.S.R. X dated Y" (regex) or equal file_no (file_no)
@@ -8,7 +9,8 @@ Relation sources (deterministic first):
   annex_of      AIS-007 table -> AIS-007(Rev.5);  interprets: interpretation manual -> standard
   supersedes    "deemed to comply with AIS-xxx"
   references    cited AIS / IS / UN R / other notifications
-Unknown targets keep to_doc NULL and to_ref = canonical id; resolve_refs() fills them when the target arrives.
+Unknown targets keep to_regulation_id NULL and to_ref = canonical id; resolve_refs() fills them when the target
+arrives.
 """
 
 from __future__ import annotations
@@ -22,14 +24,15 @@ from regtrack.db import Jsonb
 from regtrack.models.enums import DocClass, FlagRule
 from regtrack.pipeline import mandates as M
 from regtrack.pipeline import patterns as P
+from regtrack.pipeline import repo as R
 from regtrack.pipeline.dbutil import add_flag, set_stage, update_if_changed
 from regtrack.pipeline.extract import operative_text
 from regtrack.pipeline.text import english_text, load_pages
 
 
 def doc_by_cid(conn: psycopg.Connection, cid: str) -> dict | None:
-    return conn.execute(f"SELECT id, doc_date, status, doc_class FROM document WHERE canonical_id=%s AND {country.sql()}",
-                        (cid,)).fetchone()
+    return conn.execute("SELECT id, published_date AS doc_date, legal_status AS status, local_class AS doc_class "
+                        f"FROM regulations WHERE external_code=%s AND {country.region_sql()}", (cid,)).fetchone()
 
 
 def add_relation(conn: psycopg.Connection, from_doc: int, rtype: str, to_cid: str | None = None, to_doc: int | None = None,
@@ -43,16 +46,18 @@ def add_relation(conn: psycopg.Connection, from_doc: int, rtype: str, to_cid: st
         return False
     ref = to_cid if to_doc is None else (to_cid or None)
     hit = conn.execute(
-        "SELECT 1 FROM doc_relation WHERE from_doc=%s AND type=%s AND coalesce(to_doc,0)=coalesce(%s,0) "
-        "AND coalesce(to_ref,'')=coalesce(%s,'') AND coalesce(details,'{}'::jsonb)=%s::jsonb",
+        "SELECT 1 FROM regulation_relations WHERE from_regulation_id=%s AND type=%s "
+        "AND coalesce(to_regulation_id,0)=coalesce(%s,0) AND coalesce(to_ref,'')=coalesce(%s,'') "
+        "AND coalesce(details,'{}'::jsonb)=%s::jsonb",
         (from_doc, rtype, to_doc, ref, Jsonb(details or {}))).fetchone()
     if hit:
         return False
     if to_doc is None and not ref:
         return False
     conn.execute(
-        """INSERT INTO doc_relation (from_doc, to_doc, to_ref, type, requires_reapproval, details, evidence, page,
-                                     confidence, method) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        """INSERT INTO regulation_relations (from_regulation_id, to_regulation_id, to_ref, type, requires_reapproval,
+                                             details, evidence, page, confidence, method)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (from_doc, to_doc, ref, rtype, requires_reapproval, Jsonb(details) if details else None,
          (evidence or "")[:500] or None, page, confidence, method))
     return True
@@ -74,9 +79,10 @@ def link_notification(conn: psycopg.Connection, doc: dict, op: str) -> None:
             add_flag(conn, "regulation", doc["id"], FlagRule.DRAFT_FINAL_DATE_MISMATCH,
                      {"cited": dref["date"], "draft_doc_date": str(t["doc_date"]), "draft": dref["canonical_id"]})
     elif doc["status"] == "final" and data.get("file_no"):
-        for d in conn.execute("SELECT id, canonical_id FROM document WHERE status='draft' AND data->>'file_no'=%s "
-                              "AND doc_class='NOTIFICATION_DRAFT' AND (doc_date IS NULL OR doc_date <= %s)",
-                              (data["file_no"], doc["doc_date"])):
+        for d in conn.execute("SELECT id, external_code AS canonical_id FROM regulations WHERE legal_status='draft' "
+                              "AND data->>'file_no'=%s AND local_class='NOTIFICATION_DRAFT' "
+                              f"AND (published_date IS NULL OR published_date <= %s) AND {country.region_sql()}",
+                              (data["file_no"], doc["doc_date"])).fetchall():
             add_relation(conn, doc["id"], "finalises", to_doc=d["id"], to_cid=d["canonical_id"],
                          evidence=f"same file no {data['file_no']}", method="file_no", confidence=0.7)
     # changes to other notifications
@@ -113,10 +119,9 @@ def link_ais(conn: psycopg.Connection, doc: dict) -> None:
     dc = DocClass(doc["doc_class"])
     if dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and data.get("amends") and not doc["vehicle_categories"]:
         # an amendment applies to the vehicles of the standard it amends
-        base = conn.execute("SELECT vehicle_categories, in_scope, domains, powertrains FROM document WHERE canonical_id=%s",
-                            (data["amends"],)).fetchone()
+        base = R.find_document(conn, data["amends"])
         if base and base["vehicle_categories"]:
-            update_if_changed(conn, "document", {"id": doc["id"]},
+            R.update_document(conn, doc["id"],
                               {"vehicle_categories": base["vehicle_categories"], "in_scope": base["in_scope"],
                                "domains": doc["domains"] or base["domains"],
                                "powertrains": doc["powertrains"] or base["powertrains"]})
@@ -153,8 +158,9 @@ def notification_family(doc: dict) -> str | None:
 def recompute_family(conn: psycopg.Connection, family_key: str) -> None:
     """version_seq in order, exactly one is_current per family (drafts excluded)."""
     rows = conn.execute(
-        """SELECT id, canonical_id, doc_class, status, revision, amendment_no, corrigendum_no, doc_date, version_seq,
-                  is_current FROM document WHERE family_key=%s""", (family_key,)).fetchall()
+        """SELECT id, external_code AS canonical_id, local_class AS doc_class, legal_status AS status, revision,
+                  amendment_no, corrigendum_no, published_date AS doc_date, version_seq, is_current
+           FROM regulations WHERE family_key=%s AND """ + country.region_sql(), (family_key,)).fetchall()
     if not rows:
         return
     versioned = [r for r in rows if r["doc_class"] not in ("AIS_DRAFT", "NOTIFICATION_DRAFT") and r["status"] != "draft"]
@@ -176,7 +182,7 @@ def recompute_family(conn: psycopg.Connection, family_key: str) -> None:
     # clear the old current first (partial unique index)
     for r in rows:
         if r["is_current"] and r["id"] != current_id:
-            conn.execute("UPDATE document SET is_current=false WHERE id=%s", (r["id"],))
+            conn.execute("UPDATE regulations SET is_current=false WHERE id=%s", (r["id"],))
     seq = {r["id"]: i + 1 for i, r in enumerate(versioned)}
     top_rev = max((r["revision"] or 0) for r in versioned) if versioned else 0
     for r in rows:
@@ -187,17 +193,16 @@ def recompute_family(conn: psycopg.Connection, family_key: str) -> None:
         elif (r["doc_class"] == "AIS_STANDARD" and (r["revision"] or 0) >= top_rev and status == "superseded"
                 and not family_key.startswith(("SO-1365", "CMVR-Rule"))):
             status = "final"  # the newer revision turned out to be a draft (or was retired): this one is in force again
-        update_if_changed(conn, "document", {"id": r["id"]},
-                          {"version_seq": seq.get(r["id"]), "is_current": r["id"] == current_id, "status": status})
+        update_if_changed(conn, "regulations", {"id": r["id"]},
+                          {"version_seq": seq.get(r["id"]), "is_current": r["id"] == current_id, "legal_status": status})
 
 
 # ---------------------------------------------------------------------- stage
 def stage_link(conn: psycopg.Connection, f: dict) -> str:
     pages = load_pages(f["sha256"])
     families: set[str] = set()
-    for df in conn.execute("SELECT * FROM document_file WHERE file_id=%s AND (is_best_copy OR role='consolidated_segment')",
-                           (f["id"],)).fetchall():
-        doc = conn.execute("SELECT * FROM document WHERE id=%s", (df["document_id"],)).fetchone()
+    for df in R.parts_of_file(conn, f["id"], readable_only=True):
+        doc = R.get_document(conn, df["document_id"])
         dc = DocClass(doc["doc_class"])
         if dc == DocClass.OFF_TOPIC:
             continue
@@ -206,14 +211,14 @@ def stage_link(conn: psycopg.Connection, f: dict) -> str:
             link_notification(conn, doc, op)
             fam = notification_family(doc)
             if fam:
-                update_if_changed(conn, "document", {"id": doc["id"]}, {"family_key": fam})
+                R.update_document(conn, doc["id"], {"family_key": fam})
                 families.add(fam)
             if doc["status"] == "final" or dc == DocClass.NOTIFICATION_DRAFT:
                 stats = M.mandates_for_document(conn, doc, op)
                 record_date_changes(conn, doc, stats)
-                for rel in conn.execute("SELECT to_doc FROM doc_relation WHERE from_doc=%s AND type='finalises' "
-                                        "AND to_doc IS NOT NULL", (doc["id"],)):
-                    M.finalise_drafts(conn, doc["id"], rel["to_doc"], doc["doc_date"])
+                for rel in conn.execute("SELECT to_regulation_id FROM regulation_relations WHERE from_regulation_id=%s "
+                                        "AND type='finalises' AND to_regulation_id IS NOT NULL", (doc["id"],)).fetchall():
+                    M.finalise_drafts(conn, doc["id"], rel["to_regulation_id"], doc["doc_date"])
         elif dc.is_ais:
             link_ais(conn, doc)
         if doc["family_key"]:
@@ -235,14 +240,16 @@ def record_date_changes(conn: psycopg.Connection, doc: dict, stats: dict) -> Non
 
 
 def resolve_refs(conn: psycopg.Connection) -> int:
-    """Fill to_doc for relations whose target has arrived since."""
-    cur = conn.execute(f"""UPDATE doc_relation r SET to_doc=d.id FROM document d
-                           WHERE r.to_doc IS NULL AND r.to_ref=d.canonical_id AND d.id<>r.from_doc
-                             AND {country.sql('d')} AND {country.doc_sql('r.from_doc')}""")
+    """Fill to_regulation_id for relations whose target has arrived since (same region as the citing regulation)."""
+    cur = conn.execute(f"""UPDATE regulation_relations r SET to_regulation_id=g.id
+                           FROM regulations g, regulations src
+                           WHERE r.to_regulation_id IS NULL AND r.to_ref=g.external_code AND g.id<>r.from_regulation_id
+                             AND src.id=r.from_regulation_id AND src.region_id=g.region_id
+                             AND {country.region_sql('g')}""")
     n = cur.rowcount
     if n:
-        conn.execute("""UPDATE quality_flag q SET resolved_at=now() FROM doc_relation r, document d
-                        WHERE q.rule='unresolved_reference' AND q.resolved_at IS NULL AND q.entity='document'
-                          AND q.entity_id=r.from_doc AND r.type='finalises' AND r.to_doc=d.id
-                          AND q.details->>'draft'=d.canonical_id""")
+        conn.execute("""UPDATE quality_flags q SET resolved_at=now() FROM regulation_relations r, regulations g
+                        WHERE q.rule='unresolved_reference' AND q.resolved_at IS NULL AND q.entity='regulation'
+                          AND q.entity_id=r.from_regulation_id AND r.type='finalises' AND r.to_regulation_id=g.id
+                          AND q.details->>'draft'=g.external_code""")
     return n

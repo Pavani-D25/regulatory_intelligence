@@ -171,3 +171,113 @@ def test_stage_files_are_copies_not_moves(tmp_path):
 
     store_file(src, root=tmp_path / "raw")
     assert src.exists()
+
+
+# ====================================================================== phase 4: link
+WHEEL_RIM = ["so_1406_2021_wheel_rim.pdf", "so_359_2022_wheel_rim_extension.pdf", "so_3896_2022_wheel_rim_extension.pdf"]
+
+
+def link_chain(conn) -> list[int]:
+    from regtrack.pipeline import link as L
+    from regtrack.pipeline import repo
+
+    fids = [add_seed_file(conn, n) for n in WHEEL_RIM]
+    for fid in fids:
+        run_all(conn, fid)
+    for fid in fids:  # in date order, as the runner does
+        L.stage_link(conn, repo.get_file(conn, fid))
+    return fids
+
+
+def test_wheel_rim_chain_links_and_versions(v4):
+    from regtrack.pipeline import repo
+
+    conn = v4
+    fids = link_chain(conn)
+    assert {repo.get_file(conn, f)["stage"] for f in fids} == {"linked"}
+    ids = {repo.find_document(conn, c)["id"]: c for c in ("SO-1406(E)-2021", "SO-359(E)-2022", "SO-3896(E)-2022")}
+    rels = conn.execute("SELECT from_regulation_id, type, to_regulation_id, to_ref FROM regulation_relations "
+                        "WHERE from_regulation_id = ANY(%s)", (list(ids),)).fetchall()
+    # the extensions change the 2004 master table, which is not stored: the link keeps its code
+    ext = [r for r in rels if r["type"] == "extends_date"]
+    assert ext and all(r["to_regulation_id"] is None and r["to_ref"] == "SO-1365(E)-2004" for r in ext)
+    vers = conn.execute("""SELECT v.implementation_date, v.valid_to, v.source_regulation_id FROM requirement_versions v
+                           JOIN compliance_requirements c ON c.id=v.requirement_id
+                           WHERE c.requirement_code='SO-1365(E)-2004 Table Sr.8(d)' ORDER BY v.id""").fetchall()
+    assert [v["implementation_date"].isoformat() for v in vers] == ["2021-09-21", "2022-09-21", "2023-06-22"]
+    assert [ids[v["source_regulation_id"]] for v in vers] == ["SO-1406(E)-2021", "SO-359(E)-2022", "SO-3896(E)-2022"]
+    assert sum(v["valid_to"] is None for v in vers) == 1
+    # the master-table family: newest notification is current
+    cur = conn.execute("SELECT external_code FROM regulations WHERE family_key='SO-1365-MASTER' AND is_current").fetchall()
+    assert [r["external_code"] for r in cur] == ["SO-3896(E)-2022"]
+
+
+def test_relink_writes_nothing(v4):
+    from regtrack.pipeline import link as L
+    from regtrack.pipeline import repo
+
+    conn = v4
+    fids = link_chain(conn)
+    before = writes(conn)
+    for fid in fids:
+        conn.execute("UPDATE documents SET stage='parsed' WHERE id=%s", (fid,))
+    for fid in fids:
+        L.stage_link(conn, repo.get_file(conn, fid))
+    assert writes(conn) - before == 2 * len(fids)  # only parsed -> linked again; no relation, version or rule row
+
+
+def test_reference_resolves_when_target_arrives(v4):
+    from regtrack.pipeline import link as L
+    from regtrack.pipeline import repo
+    from regtrack.pipeline.dbutil import add_flag
+
+    conn = v4
+    final = repo.insert_document(conn, "GSR-9001(E)-2030", {"doc_class": "NOTIFICATION_FINAL", "status": "final"})
+    assert L.add_relation(conn, final, "finalises", to_cid="GSR-8001(E)-2029")
+    assert not L.add_relation(conn, final, "finalises", to_cid="GSR-8001(E)-2029")  # no duplicate
+    add_flag(conn, "regulation", final, "unresolved_reference", {"draft": "GSR-8001(E)-2029"})
+    draft = repo.insert_document(conn, "GSR-8001(E)-2029", {"doc_class": "NOTIFICATION_DRAFT", "status": "draft"})
+    assert L.resolve_refs(conn) >= 1
+    r = conn.execute("SELECT to_regulation_id FROM regulation_relations WHERE from_regulation_id=%s", (final,)).fetchone()
+    assert r["to_regulation_id"] == draft
+    assert conn.execute("SELECT resolved_at FROM quality_flags WHERE entity='regulation' AND entity_id=%s",
+                        (final,)).fetchone()["resolved_at"] is not None
+
+
+def test_ais_family_current_and_superseded(v4):
+    from regtrack.pipeline import link as L
+    from regtrack.pipeline import repo
+
+    conn = v4
+    r1 = repo.insert_document(conn, "AIS-990(Rev.1)", {"doc_class": "AIS_STANDARD", "status": "final",
+                                                       "family_key": "AIS-990", "revision": 1})
+    r2 = repo.insert_document(conn, "AIS-990(Rev.2)", {"doc_class": "AIS_STANDARD", "status": "final",
+                                                       "family_key": "AIS-990", "revision": 2})
+    L.recompute_family(conn, "AIS-990")
+    g = {r["id"]: r for r in conn.execute("SELECT id, is_current, legal_status, version_seq FROM regulations "
+                                          "WHERE family_key='AIS-990'")}
+    assert g[r2]["is_current"] and not g[r1]["is_current"]
+    assert g[r1]["legal_status"] == "superseded" and g[r2]["legal_status"] == "final"
+    assert (g[r1]["version_seq"], g[r2]["version_seq"]) == (1, 2)
+    before = writes(conn)
+    L.recompute_family(conn, "AIS-990")
+    assert writes(conn) == before
+
+
+def test_final_closes_its_drafts_versions(v4):
+    from datetime import date
+
+    from regtrack.pipeline import mandates as M
+    from regtrack.pipeline import repo
+
+    conn = v4
+    draft = repo.insert_document(conn, "GSR-8002(E)-2029", {"doc_class": "NOTIFICATION_DRAFT", "status": "draft"})
+    final = repo.insert_document(conn, "GSR-9002(E)-2030", {"doc_class": "NOTIFICATION_FINAL", "status": "final"})
+    base = {"legal_basis": "CMVR Rule 999", "subject": "test", "source_doc_id": draft, "vehicle_categories": ["M1"],
+            "conditions": {}, "model_scope": "all"}
+    d_id, _ = M.supersede(conn, "CMVR Rule 999 :: test", base, date(2029, 1, 1), True)
+    f_id, _ = M.supersede(conn, "CMVR Rule 999 :: test", {**base, "source_doc_id": final}, date(2030, 1, 1), False)
+    assert M.finalise_drafts(conn, final, draft, date(2030, 1, 1)) == 1
+    v = conn.execute("SELECT valid_to, superseded_by FROM requirement_versions WHERE id=%s", (d_id,)).fetchone()
+    assert v["valid_to"] == date(2030, 1, 1) and v["superseded_by"] == f_id
+    assert M.open_versions(conn, "CMVR Rule 999 :: test")[0]["vehicle_categories"] == ["M1"]

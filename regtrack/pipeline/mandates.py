@@ -21,6 +21,7 @@ from datetime import date
 
 import psycopg
 
+from regtrack import country
 from regtrack.db import Jsonb
 from regtrack.pipeline import patterns as P
 
@@ -279,24 +280,58 @@ def parse_rule_obligations(op: str) -> list[RuleObligation]:
 
 
 # ---------------------------------------------------------------------- DB writes
+# A rule ("mandate" in this module) is a compliance_requirements row (requirement_code = mandate_key) per region;
+# each version of it is a requirement_versions row. Versions come back under the names this module uses.
+def version_sql() -> str:  # built per call: the current country can change (tests, REGTRACK_COUNTRY)
+    return f"""
+SELECT v.*, c.requirement_code AS mandate_key, v.source_regulation_id AS source_doc_id,
+       v.standard_regulation_ids AS standard_doc_ids,
+       coalesce((SELECT array_agg(vc.code ORDER BY vc.code) FROM vehicle_categories vc
+                 WHERE vc.id = ANY(v.vehicle_category_ids)), '{{}}') AS vehicle_categories
+FROM requirement_versions v JOIN compliance_requirements c ON c.id = v.requirement_id
+WHERE {country.region_sql('c')}"""
+VERSION_COLS = {"source_doc_id": "source_regulation_id", "standard_doc_ids": "standard_regulation_ids"}
+
+
 def open_versions(conn: psycopg.Connection, key: str, is_draft: bool = False) -> list[dict]:
-    return conn.execute("SELECT * FROM mandate WHERE mandate_key=%s AND valid_to IS NULL AND is_draft=%s ORDER BY id",
+    return conn.execute(version_sql() + " AND c.requirement_code=%s AND v.valid_to IS NULL AND v.is_draft=%s ORDER BY v.id",
                         (key, is_draft)).fetchall()
 
 
 def already_recorded(conn: psycopg.Connection, key: str, source_doc: int) -> bool:
-    return conn.execute("SELECT 1 FROM mandate WHERE mandate_key=%s AND source_doc_id=%s", (key, source_doc)).fetchone() is not None
+    return conn.execute(version_sql() + " AND c.requirement_code=%s AND v.source_regulation_id=%s LIMIT 1",
+                        (key, source_doc)).fetchone() is not None
+
+
+def requirement_id(conn: psycopg.Connection, key: str, legal_basis: str | None) -> int:
+    """The rule a version belongs to; created on its first version, with the stored regulation it is based on."""
+    rid = conn.execute("SELECT id FROM regions WHERE code=%s", (country.code(),)).fetchone()["id"]
+    row = conn.execute("SELECT id FROM compliance_requirements WHERE region_id=%s AND requirement_code=%s",
+                       (rid, key)).fetchone()
+    if row:
+        return row["id"]
+    basis = conn.execute("""SELECT id FROM regulations WHERE region_id=%s AND position(external_code IN %s) = 1
+                            ORDER BY length(external_code) DESC LIMIT 1""", (rid, legal_basis or "")).fetchone()
+    return conn.execute("INSERT INTO compliance_requirements (region_id, requirement_code, regulation_id) "
+                        "VALUES (%s,%s,%s) RETURNING id", (rid, key, basis["id"] if basis else None)).fetchone()["id"]
 
 
 def insert_mandate(conn: psycopg.Connection, v: dict) -> int:
-    cols = list(v)
-    vals = [Jsonb(x) if k == "conditions" else x for k, x in v.items()]
-    return conn.execute(f"INSERT INTO mandate ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING id",
-                        vals).fetchone()["id"]
+    v = dict(v)
+    key = v.pop("mandate_key")
+    codes = v.pop("vehicle_categories", None) or []
+    cols = {"requirement_id": requirement_id(conn, key, v.get("legal_basis"))}
+    cols["vehicle_category_ids"] = [r["id"] for r in conn.execute(
+        "SELECT id FROM vehicle_categories WHERE region_id=(SELECT id FROM regions WHERE code=%s) AND code = ANY(%s) "
+        "ORDER BY id", (country.code(), list(codes)))]
+    for k, x in v.items():
+        cols[VERSION_COLS.get(k, k)] = Jsonb(x) if k == "conditions" else x
+    return conn.execute(f"INSERT INTO requirement_versions ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) "
+                        "RETURNING id", list(cols.values())).fetchone()["id"]
 
 
 def close(conn: psycopg.Connection, mid: int, valid_to: date, by: int | None) -> None:
-    conn.execute("UPDATE mandate SET valid_to=%s, superseded_by=%s WHERE id=%s AND valid_to IS NULL",
+    conn.execute("UPDATE requirement_versions SET valid_to=%s, superseded_by=%s WHERE id=%s AND valid_to IS NULL",
                  (valid_to, by, mid))
 
 
@@ -313,8 +348,10 @@ def resolve_standard_ids(conn: psycopg.Connection, refs: list[str]) -> list[int]
     ids = []
     for r in refs:
         if r.startswith("AIS-"):
-            row = conn.execute("SELECT id FROM document WHERE canonical_id=%s", (r,)).fetchone() or conn.execute(
-                "SELECT id FROM document WHERE family_key=%s AND is_current", (r.split("(Rev")[0],)).fetchone()
+            row = conn.execute(f"SELECT id FROM regulations WHERE external_code=%s AND {country.region_sql()}",
+                               (r,)).fetchone() or conn.execute(
+                f"SELECT id FROM regulations WHERE family_key=%s AND is_current AND {country.region_sql()}",
+                (r.split("(Rev")[0],)).fetchone()
             if row:
                 ids.append(row["id"])
     return ids
@@ -344,9 +381,9 @@ def mandates_for_document(conn: psycopg.Connection, doc: dict, op: str) -> dict:
         # rows of the named serial numbers whose date equals the old date; if none (an intermediate notification
         # is missing from the corpus), the row's latest-dated open items
         keys = [r["mandate_key"] for r in conn.execute(
-            "SELECT DISTINCT mandate_key FROM mandate WHERE valid_to IS NULL AND NOT is_draft AND "
-            "(mandate_key = ANY(%s) OR mandate_key LIKE ANY(%s))",
-            ([f"{ds.table} Sr.{s}" for s in ds.serials], [f"{ds.table} Sr.{s}(%" for s in ds.serials]))]
+            "SELECT DISTINCT mandate_key FROM (" + version_sql() + " AND v.valid_to IS NULL AND NOT v.is_draft) x "
+            "WHERE mandate_key = ANY(%s) OR mandate_key LIKE ANY(%s)",
+            ([f"{ds.table} Sr.{s}" for s in ds.serials], [f"{ds.table} Sr.{s}(%%" for s in ds.serials]))]
         rows = [r for k in keys for r in open_versions(conn, k)]
         if ds.items:
             rows = [r for r in rows if any(r["mandate_key"].endswith(f"({i})") for i in ds.items)]
@@ -423,8 +460,10 @@ def mandates_for_document(conn: psycopg.Connection, doc: dict, op: str) -> dict:
 def finalise_drafts(conn: psycopg.Connection, final_doc: int, draft_doc: int, notified: date) -> int:
     """When a final arrives, its draft's open mandates are closed (superseded by the final's version if any)."""
     n = 0
-    for r in conn.execute("SELECT * FROM mandate WHERE source_doc_id=%s AND is_draft AND valid_to IS NULL", (draft_doc,)):
-        rep = conn.execute("SELECT id FROM mandate WHERE source_doc_id=%s AND mandate_key=%s", (final_doc, r["mandate_key"])).fetchone()
+    for r in conn.execute(version_sql() + " AND v.source_regulation_id=%s AND v.is_draft AND v.valid_to IS NULL",
+                          (draft_doc,)).fetchall():
+        rep = conn.execute(version_sql() + " AND v.source_regulation_id=%s AND c.requirement_code=%s",
+                           (final_doc, r["mandate_key"])).fetchone()
         close(conn, r["id"], max(notified, r["valid_from"] or notified), rep["id"] if rep else None)
         n += 1
     return n
