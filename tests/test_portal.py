@@ -100,7 +100,7 @@ def test_no_static_values(client):
 
     meta = client.get("/portal/meta").json()
     with connect() as conn:
-        labels = {r["code"]: r["label"] for r in conn.execute("SELECT code, label FROM vehicle_category")}
+        labels = {r["code"]: r["label"] for r in conn.execute("SELECT code, label FROM vehicle_category WHERE country='IN'")}
     assert all(labels[c["code"]].startswith(c["label"].split(" ", 1)[1]) for c in meta["categories"])
     assert {"alive", "heartbeat", "auto_sync"} <= meta["scheduler"].keys()
     ctx = client.get("/portal/ask/context").json()

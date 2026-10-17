@@ -92,6 +92,9 @@ def post_run() -> dict:
         out = {"refs_resolved": L.resolve_refs(conn)}
         S.tap_best_copies(conn)
         out["chunk_filters_synced"] = C.sync_chunk_filters(conn)
+        # country-neutral fields (doc_type, doc_role, legal_force, UNECE categories…): one SQL definition (0006)
+        out["universal_fields"] = conn.execute("SELECT refresh_universal_fields(%s) AS n",
+                                               (country.code(),)).fetchone()["n"]
         out["flags_resolved"] = R.resolve_all(conn)
         conn.commit()
         out["llm_enriched"] = X.enrich_pending(conn)

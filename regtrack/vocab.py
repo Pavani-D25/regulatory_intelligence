@@ -12,6 +12,8 @@ from functools import lru_cache
 from regtrack.config import ROOT
 
 SEED = ROOT / "db" / "seeds" / "0001_vocab.sql"
+# topic codes renamed by a later migration (the seed file is never edited after it was applied)
+RENAMED = {"hsrp": "number_plates"}  # 0006
 _ROW = re.compile(r"\(\s*'([^']+)'\s*,\s*'([^']*)'\s*,\s*ARRAY\[(.*?)\]\s*(?:,\s*(TRUE|FALSE))?\s*\)", re.S)
 
 
@@ -26,7 +28,8 @@ def _parse() -> tuple[dict, dict]:
     dom_sql = sql[sql.index("INSERT INTO domain"):sql.index("INSERT INTO source")]
     cats = {m.group(1): {"label": m.group(2), "synonyms": _arr(m.group(3)), "in_scope": m.group(4) == "TRUE"}
             for m in _ROW.finditer(cat_sql)}
-    doms = {m.group(1): {"label": m.group(2), "keywords": _arr(m.group(3))} for m in _ROW.finditer(dom_sql)}
+    doms = {RENAMED.get(m.group(1), m.group(1)): {"label": m.group(2), "keywords": _arr(m.group(3))}
+            for m in _ROW.finditer(dom_sql)}
     return cats, doms
 
 

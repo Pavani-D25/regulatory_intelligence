@@ -154,7 +154,7 @@ def stage_classify(conn: psycopg.Connection, f: dict) -> str:
 # ---------------------------------------------------------------------- document writes
 def upsert_document(conn: psycopg.Connection, canonical_id: str, values: dict) -> tuple[int, bool]:
     """Insert a document or fill the empty columns of an existing one. Returns (id, created)."""
-    row = conn.execute("SELECT * FROM document WHERE canonical_id=%s", (canonical_id,)).fetchone()
+    row = conn.execute(f"SELECT * FROM document WHERE canonical_id=%s AND {country.sql()}", (canonical_id,)).fetchone()
     if row is None:
         cols = ["canonical_id", "country", *values]
         vals = [canonical_id, country.code(), *[Jsonb(v) if isinstance(v, (dict, list)) and k in JSON_COLS else v

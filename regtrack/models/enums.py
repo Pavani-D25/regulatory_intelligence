@@ -58,6 +58,38 @@ THAI_CLASSES = frozenset({DocClass.TIS_STANDARD, DocClass.GAZETTE_NOTICE, DocCla
 INDIA_CLASSES = [c for c in DocClass if c not in THAI_CLASSES]
 
 
+# ---- country-neutral classification (migration 0006, docs/CLASSIFICATION_DESIGN.md); the per-country mapping
+#      from DocClass lives in the database table local_class, the derived fields in refresh_universal_fields()
+class DocType(StrEnum):
+    LAW = "LAW"
+    REGULATION = "REGULATION"
+    TECHNICAL_STANDARD = "TECHNICAL_STANDARD"
+    PROCEDURE = "PROCEDURE"
+    GUIDANCE = "GUIDANCE"
+    REFERENCE = "REFERENCE"
+    OFF_TOPIC = "OFF_TOPIC"
+    UNKNOWN = "UNKNOWN"
+
+
+class DocRole(StrEnum):
+    BASE = "BASE"
+    AMENDMENT = "AMENDMENT"
+    CORRIGENDUM = "CORRIGENDUM"
+    EXTENSION = "EXTENSION"
+    EXEMPTION = "EXEMPTION"
+    REPEAL = "REPEAL"
+    CONSOLIDATION = "CONSOLIDATION"
+    ANNEX = "ANNEX"
+    INTERPRETATION = "INTERPRETATION"
+
+
+class LegalForce(StrEnum):
+    MANDATORY = "MANDATORY"
+    VOLUNTARY = "VOLUNTARY"
+    INFORMATIVE = "INFORMATIVE"
+    UNKNOWN = "UNKNOWN"
+
+
 class RelationType(StrEnum):
     AMENDS = "amends"
     CORRECTS = "corrects"
@@ -75,6 +107,9 @@ class RelationType(StrEnum):
     INTERPRETS = "interprets"
     REFERENCES = "references"
     SAME_AS = "same_as"
+    ADOPTS = "adopts"                # a national standard takes over an international one (TIS -> UN R)
+    EQUIVALENT_TO = "equivalent_to"
+    REPEALS = "repeals"
 
 
 class Nature(StrEnum):
@@ -128,7 +163,7 @@ class Domain(StrEnum):
     TYPE_APPROVAL = "type_approval"
     DIMENSIONS_WEIGHTS = "dimensions_weights"
     REGISTRATION = "registration"
-    HSRP = "hsrp"
+    NUMBER_PLATES = "number_plates"  # was "hsrp" (India only) until migration 0006
     LICENSING = "licensing"
     PERMIT = "permit"
     FEES = "fees"

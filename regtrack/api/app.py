@@ -321,7 +321,8 @@ def meta(cc: CountryParam = None) -> dict:
         domains = [dict(r) for r in conn.execute(
             f"SELECT d.code, d.label, (SELECT count(*) FROM document x WHERE d.code = ANY(x.domains) AND {country.sql('x', cc)}) AS n "
             "FROM domain d ORDER BY 3 DESC")]
-        cats = [dict(r) for r in conn.execute("SELECT code, label, in_scope FROM vehicle_category ORDER BY code")]
+        cats = [dict(r) for r in conn.execute(f"SELECT code, label, in_scope, un_codes FROM vehicle_category "
+                                              f"WHERE {country.sql(None, cc)} ORDER BY code")]
     return {"country": cc, "stats": stats, "years": years, "doc_classes": classes, "domains": domains, "categories": cats,
             "powertrains": ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"],
             "usage": ["private", "transport"]}

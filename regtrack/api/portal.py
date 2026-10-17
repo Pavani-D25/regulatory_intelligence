@@ -55,7 +55,8 @@ def load_vocab(conn) -> None:
     global _vocab_at
     if _vocab_at and datetime.now() - _vocab_at < timedelta(minutes=10) and CAT_LABEL:
         return
-    cats = {r["code"]: f"{r['code']} {_short(r['label'])}" for r in conn.execute("SELECT code, label FROM vehicle_category")}
+    cats = {r["code"]: f"{r['code']} {_short(r['label'])}"
+            for r in conn.execute(f"SELECT code, label FROM vehicle_category WHERE {country.sql()}")}
     CAT_LABEL.clear()
     CAT_LABEL.update(cats)
     CAT_LABEL.setdefault("ALL", "All vehicles")
@@ -373,7 +374,7 @@ SELECT m.mandate_key, m.legal_basis, m.subject, m.standard_refs, m.vehicle_categ
        m.model_scope, d.canonical_id, d.domains, ci.owner, ci.evidence, coalesce(ci.status, 'Open') AS status,
        coalesce(ci.due_date, m.implementation_date) AS due_date, ci.note, ci.updated_at
 FROM mandate m JOIN document d ON d.id=m.source_doc_id
-LEFT JOIN compliance_item ci ON ci.mandate_key=m.mandate_key
+LEFT JOIN compliance_item ci ON ci.country=m.country AND ci.mandate_key=m.mandate_key
 WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s AND {country}
 ORDER BY coalesce(ci.due_date, m.implementation_date) DESC NULLS LAST, m.mandate_key
 """
@@ -419,14 +420,15 @@ def set_compliance(mandate_key: str, body: dict = Body(...)) -> dict:
     if body.get("status", "Open") not in ("Open", "In Progress", "Compliant", "Not Applicable"):
         raise HTTPException(400, "bad status")
     due = body.get("due_date") or None
+    cc = country.code()
     with connect() as conn:
-        if not conn.execute("SELECT 1 FROM mandate WHERE mandate_key=%s LIMIT 1", (mandate_key,)).fetchone():
+        if not conn.execute("SELECT 1 FROM mandate WHERE country=%s AND mandate_key=%s LIMIT 1", (cc, mandate_key)).fetchone():
             raise HTTPException(404, "unknown requirement")
-        conn.execute("""INSERT INTO compliance_item (mandate_key, owner, evidence, status, due_date, note)
-                        VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (mandate_key) DO UPDATE SET owner=EXCLUDED.owner,
+        conn.execute("""INSERT INTO compliance_item (country, mandate_key, owner, evidence, status, due_date, note)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (country, mandate_key) DO UPDATE SET owner=EXCLUDED.owner,
                         evidence=EXCLUDED.evidence, status=EXCLUDED.status, due_date=EXCLUDED.due_date,
                         note=EXCLUDED.note, updated_at=now()""",
-                     (mandate_key, body.get("owner"), body.get("evidence"), body.get("status", "Open"), due, body.get("note")))
+                     (cc, mandate_key, body.get("owner"), body.get("evidence"), body.get("status", "Open"), due, body.get("note")))
         conn.commit()
     return {"ok": True}
 
@@ -437,8 +439,7 @@ def impact(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     mandate_c = country.doc_sql("source_doc_id", cc)
     event_c = country.event_sql("document_id", cc)
-    # compliance_item is keyed by mandate_key: an item belongs to the country of its mandates
-    item_c = f"mandate_key IN (SELECT mandate_key FROM mandate WHERE {mandate_c})"
+    item_c = country.sql(None, cc)  # compliance_item carries its country (0006)
     with connect() as conn:
         regs = regulations(conn, cc=cc)
         stds = _rows(conn, f"""SELECT s AS name, count(*) AS n FROM mandate m, unnest(m.standard_refs) s
