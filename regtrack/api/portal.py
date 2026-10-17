@@ -964,7 +964,8 @@ def portal_meta(cc: CountryParam = None) -> dict:
                             max(last_run_at) AS last FROM {S.sources(cc)} s WHERE code = ANY(%s)""",
                          (list(crawlers(cc)),)).fetchone()
         settings = S.settings(conn)
-    return {"country": cc, "sources": s["n"], "sources_total": s["total"], "last_sync": s["last"],
+        teams = _rows(conn, "SELECT id, name FROM teams ORDER BY name")
+    return {"country": cc, "sources": s["n"], "sources_total": s["total"], "last_sync": s["last"], "teams": teams,
             "scheduler": scheduler_status(settings),
             "categories": [{"code": c, "label": CAT_LABEL.get(c, c)} for c in CATEGORIES],
             "statuses": STATUSES, "domains": [{"code": k, "label": v} for k, v in DOMAIN_LABEL.items()]}

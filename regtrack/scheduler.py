@@ -98,8 +98,20 @@ def main() -> None:
         log.info("scheduled %s every %sh", s["code"], hours)
     # pipeline catch-up every hour: picks up files left behind while the LLM / embeddings were offline
     sched.add_job(_catch_up, "interval", hours=1, id="pipeline", max_instances=1, coalesce=True)
+    # scheduled reports (portal: Reports > Schedules) whose date has come
+    sched.add_job(_reports, "interval", hours=1, id="reports", max_instances=1, coalesce=True, next_run_time=_staggered(-2))
     sched.add_job(heartbeat, "interval", minutes=HEARTBEAT_MIN, id="heartbeat", next_run_time=_staggered(-1))
     sched.start()
+
+
+def _reports() -> None:
+    from regtrack.api.workspace import run_due_schedules
+
+    try:
+        for name in run_due_schedules():
+            log.info("scheduled report written: %s", name)
+    except Exception:  # noqa: BLE001  a report failure must not stop the scheduler
+        log.exception("scheduled reports failed")
 
 
 def heartbeat() -> None:

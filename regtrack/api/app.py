@@ -352,5 +352,7 @@ def meta(cc: CountryParam = None) -> dict:
 
 # approved portal design (v2): dashboard, library, change monitor, compliance, impact, AI, reports, alerts, admin
 from regtrack.api.portal import router as portal_router  # noqa: E402
+from regtrack.api.workspace import router as workspace_router  # noqa: E402
 
 app.include_router(portal_router)
+app.include_router(workspace_router)  # teams and users, watches, Ask-AI history, report schedules
