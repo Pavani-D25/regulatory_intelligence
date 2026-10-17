@@ -1,8 +1,8 @@
 """Seed corpus import (Phase 2): SEED_CORPUS_DIR is READ-ONLY.
 
 Walks every folder except _logs and _review*, hashes each file, copies it write-once into STORAGE_DIR,
-inserts file_object (stage='downloaded') and a LOCAL_SEED file_sighting. The CSV logs in _logs are
-attached as sightings of their real sources (MORTH_API, ARAI_AIS, INDIACODE, ARAI_TAP).
+inserts a documents row (stage='downloaded') and a LOCAL_SEED listing (raw_ingestion_records). The CSV logs in
+_logs are attached as listings of their real sources (MORTH_API, ARAI_AIS, INDIACODE, ARAI_TAP).
 Re-running adds nothing.
 """
 
@@ -205,6 +205,7 @@ def mime_of(name: str) -> str:
 # ------------------------------------------------------------------ DB import
 def import_seed(limit: int | None = None) -> dict:
     from regtrack.db import Jsonb, transaction
+    from regtrack.sources.common import store_document
 
     files = scan()
     if limit:
@@ -215,20 +216,14 @@ def import_seed(limit: int | None = None) -> dict:
     stats = {"files": len(files), "unique_sha": len({f.sha256 for f in files}), "copied_new": copied,
              "file_object_new": 0, "sighting_new": 0, "log_rows": len(rows), "log_rows_matched": 0}
     with transaction() as conn:
-        src = {r["code"]: r["id"] for r in conn.execute("SELECT id, code FROM source")}
-        run = conn.execute("INSERT INTO crawl_run (source_id, status, stats) VALUES (%s,'running','{}') RETURNING id",
+        src = {r["code"]: r["id"] for r in conn.execute("SELECT id, code FROM sources")}
+        region = conn.execute("SELECT region_id FROM sources WHERE code='LOCAL_SEED'").fetchone()["region_id"]
+        run = conn.execute("INSERT INTO ingestion_runs (source_id, status) VALUES (%s,'running') RETURNING id",
                            (src["LOCAL_SEED"],)).fetchone()["id"]
         for i, sf in enumerate(files):
             spath = storage_uri(sf.sha256, sf.ext)
-            r = conn.execute(
-                """INSERT INTO file_object (sha256, storage_path, mime, ext, size_bytes, stage)
-                   VALUES (%s,%s,%s,%s,%s,'downloaded') ON CONFLICT (sha256) DO NOTHING RETURNING id""",
-                (sf.sha256, str(spath), mime_of(sf.name), sf.ext, sf.size)).fetchone()
-            if r:
-                stats["file_object_new"] += 1
-                fid = r["id"]
-            else:
-                fid = conn.execute("SELECT id FROM file_object WHERE sha256=%s", (sf.sha256,)).fetchone()["id"]
+            fid, new = store_document(conn, region, sf.sha256, str(spath), sf.name, None, sf.ext, mime_of(sf.name), sf.size)
+            stats["file_object_new"] += new
             sightings = [("LOCAL_SEED", sf.rel, sf.name, None, sf.folder, None,
                           {"folder": sf.folder, "path": sf.rel})]
             for lr in matched.get(i, []):
@@ -237,16 +232,17 @@ def import_seed(limit: int | None = None) -> dict:
                                   lr.category, lr.url, {"log": lr.log, "row": lr.raw, "folder": sf.folder, "path": sf.rel}))
             for code, item, title, ldate, cat, url, raw in sightings:
                 r = conn.execute(
-                    """INSERT INTO file_sighting (file_id, source_id, crawl_run_id, source_url, source_item_id,
-                         listing_title, listing_date, listing_category, listing_raw)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                       ON CONFLICT (source_id, source_item_id, file_id) DO NOTHING RETURNING id""",
+                    """INSERT INTO raw_ingestion_records (document_id, source_id, ingestion_run_id, source_url, external_ref,
+                         listing_title, listing_date, listing_category, payload, processing_status)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'downloaded')
+                       ON CONFLICT (source_id, external_ref, document_id) DO NOTHING RETURNING id""",
                     (fid, src[code], run, url, item, title, ldate, cat, Jsonb(raw))).fetchone()
                 stats["sighting_new"] += bool(r)
         if stats["file_object_new"] or stats["sighting_new"]:
-            conn.execute("UPDATE crawl_run SET finished_at=now(), status='ok', stats=%s WHERE id=%s",
-                         (Jsonb(stats), run))
-            conn.execute("UPDATE source SET last_run_at=now(), last_status='ok' WHERE code='LOCAL_SEED'")
+            conn.execute("""UPDATE ingestion_runs SET finished_at=now(), status='success', stats=%s, documents_found=%s,
+                            changes_found=%s WHERE id=%s""",
+                         (Jsonb(stats), stats["files"], stats["file_object_new"], run))
+            conn.execute("UPDATE sources SET last_synced_at=now(), last_sync_status='success' WHERE code='LOCAL_SEED'")
         else:  # idempotent re-run: leave no trace
-            conn.execute("DELETE FROM crawl_run WHERE id=%s", (run,))
+            conn.execute("DELETE FROM ingestion_runs WHERE id=%s", (run,))
     return stats

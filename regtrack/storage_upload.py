@@ -1,8 +1,8 @@
 """One-time upload of the local object store to S3/MinIO: python -m regtrack.cli storage-upload [--switch].
 
-Every file_object whose storage_path is a local file is uploaded under the same key <sha[:2]>/<sha>.<ext>
+Every stored file (documents) whose storage_path is a local file is uploaded under the same key <sha[:2]>/<sha>.<ext>
 (write-once: existing keys are skipped; the local copy's sha256 is checked first). With --switch the
-file_object.storage_path is rewritten to s3://<bucket>/<key> - set STORAGE_BACKEND=s3 in .env at the same time.
+documents.storage_path is rewritten to s3://<bucket>/<key> - set STORAGE_BACKEND=s3 in .env at the same time.
 Local files are never deleted. Re-running uploads nothing new.
 """
 
@@ -25,7 +25,7 @@ def upload_all(limit: int | None = None, switch: bool = False, verify: bool = Tr
     stats = {"bucket": s.s3_bucket, "object_lock": locked, "checked": 0, "uploaded": 0, "already_there": 0,
              "missing_local": 0, "bad_hash": 0, "switched": 0}
     with connect() as conn:
-        rows = conn.execute("SELECT id, sha256, ext, storage_path FROM file_object ORDER BY id"
+        rows = conn.execute("SELECT id, checksum_sha256 AS sha256, file_ext AS ext, storage_path FROM documents ORDER BY id"
                             + (f" LIMIT {int(limit)}" if limit else "")).fetchall()
         for r in rows:
             stats["checked"] += 1
@@ -47,7 +47,7 @@ def upload_all(limit: int | None = None, switch: bool = False, verify: bool = Tr
                 uri, created = s3_put(p, r["sha256"], r["ext"])
                 stats["uploaded"] += created
             if switch:
-                conn.execute("UPDATE file_object SET storage_path=%s WHERE id=%s", (uri, r["id"]))
+                conn.execute("UPDATE documents SET storage_path=%s WHERE id=%s", (uri, r["id"]))
                 stats["switched"] += 1
             if stats["checked"] % 200 == 0:
                 conn.commit()

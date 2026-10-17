@@ -55,8 +55,8 @@ def bitstreams(c, item_uuid: str) -> list[dict]:
 def known(conn, item_id: str, title: str | None) -> bool:
     sid = source_id(conn, "INDIACODE")
     return conn.execute(
-        "SELECT 1 FROM file_sighting WHERE source_id=%s AND (source_item_id LIKE %s OR "
-        "(source_item_id LIKE '%%log.csv:%%' AND listing_title IS NOT DISTINCT FROM %s)) LIMIT 1",
+        "SELECT 1 FROM raw_ingestion_records WHERE source_id=%s AND (external_ref LIKE %s OR "
+        "(external_ref LIKE '%%log.csv:%%' AND listing_title IS NOT DISTINCT FROM %s)) LIMIT 1",
         (sid, item_id + "%", title)).fetchone() is not None
 
 

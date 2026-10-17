@@ -87,13 +87,15 @@ def main() -> None:
 
     sched = BlockingScheduler(timezone="Asia/Kolkata")
     with connect() as conn:
-        sources = conn.execute(f"SELECT code, schedule_hours FROM source WHERE schedule_hours > 0 AND {country.sql()} "
-                               "AND code = ANY(%s) ORDER BY id", (list(crawlers()),)).fetchall()
+        sources = conn.execute("SELECT code, sync_frequency_minutes FROM sources WHERE sync_frequency_minutes > 0 "
+                               f"AND is_active AND {country.region_sql()} AND code = ANY(%s) ORDER BY id",
+                               (list(crawlers()),)).fetchall()
     for i, s in enumerate(sources):
-        sched.add_job(_scheduled_run, "interval", hours=min(s["schedule_hours"], 6), args=[s["code"]], id=s["code"],
+        hours = min(s["sync_frequency_minutes"] / 60, 6)
+        sched.add_job(_scheduled_run, "interval", hours=hours, args=[s["code"]], id=s["code"],
                       max_instances=1, coalesce=True, misfire_grace_time=3600,
                       next_run_time=_staggered(i))
-        log.info("scheduled %s every %sh", s["code"], s["schedule_hours"])
+        log.info("scheduled %s every %sh", s["code"], hours)
     # pipeline catch-up every hour: picks up files left behind while the LLM / embeddings were offline
     sched.add_job(_catch_up, "interval", hours=1, id="pipeline", max_instances=1, coalesce=True)
     sched.add_job(heartbeat, "interval", minutes=HEARTBEAT_MIN, id="heartbeat", next_run_time=_staggered(-1))

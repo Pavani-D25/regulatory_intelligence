@@ -36,6 +36,12 @@ def sql(alias: str | None = None, country: str | None = None) -> str:
     return f"{col} = '{code(country)}'"
 
 
+def region_sql(alias: str | None = None, country: str | None = None) -> str:
+    """`<alias>.region_id = <id of the country's region>` for the v4B tables (documents, regulations, sources…)."""
+    col = f"{alias}.region_id" if alias else "region_id"
+    return f"{col} = (SELECT id FROM regions WHERE code = '{code(country)}')"
+
+
 def doc_sql(column: str, country: str | None = None) -> str:
     """For rows that point at a document (mandate.source_doc_id, chunk.document_id, change_event.document_id)."""
     return f"{column} IN (SELECT id FROM document WHERE {sql(None, country)})"
