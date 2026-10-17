@@ -14,6 +14,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from regtrack import country
 from regtrack.db import connect
+from regtrack.pipeline import alerts as A
 from regtrack.pipeline import chunk as C
 from regtrack.pipeline import events as E
 from regtrack.pipeline import extract as X
@@ -90,8 +91,9 @@ def post_run() -> dict:
     with connect() as conn:
         out = {"refs_resolved": L.resolve_refs(conn)}
         S.tap_best_copies(conn)
-        # country-neutral fields of regulations (doc_type, doc_role, legal_force, local name, language): one SQL
-        # definition in the database (migration 0008); before the chunk sync, which copies doc_type to the chunks
+        # country-neutral fields of regulations (doc_type, doc_role, legal_force, local name, language) and the
+        # rule-based impact: one SQL definition in the database (migrations 0008, 0010); before the chunk sync, which
+        # copies doc_type to the chunks
         out["regulation_fields"] = conn.execute("SELECT refresh_regulation_fields(%s) AS n",
                                                 (country.code(),)).fetchone()["n"]
         out["chunk_filters_synced"] = C.sync_chunk_filters(conn)
@@ -100,6 +102,8 @@ def post_run() -> dict:
         out["llm_enriched"] = X.enrich_pending(conn)
         conn.commit()
         out["events"] = E.emit_events(conn)
+        conn.commit()
+        out["alerts"] = A.run(conn)  # after the changes they react to
         conn.commit()
     return out
 

@@ -372,3 +372,122 @@ def test_assistant_history(v4):
     msgs = conversation(conn, cid)
     assert [m["role"] for m in msgs] == ["user", "assistant", "user", "assistant"]
     assert msgs[1]["citations"][0]["canonical_id"] == "SO-1406(E)-2021" and float(msgs[1]["citations"][0]["score"]) == 0.42
+
+
+# ====================================================================== phase 6: changes, flags, impact, alerts
+def make_live(conn, fid: int) -> None:
+    """Pretend the file came from a live MoRTH crawl (not only the seed import): change events are emitted for it."""
+    from regtrack.sources.common import source_id
+
+    sid = source_id(conn, "MORTH_API")
+    run = conn.execute("INSERT INTO ingestion_runs (source_id, status) VALUES (%s,'success') RETURNING id",
+                       (sid,)).fetchone()["id"]
+    conn.execute("DELETE FROM raw_ingestion_records WHERE document_id=%s", (fid,))
+    conn.execute("INSERT INTO raw_ingestion_records (source_id, ingestion_run_id, document_id, external_ref, "
+                 "processing_status) VALUES (%s,%s,%s,%s,'processed')", (sid, run, fid, f"test-live-{fid}"))
+
+
+def live_chain(conn) -> list[int]:
+    from regtrack.pipeline import link as L
+    from regtrack.pipeline import repo
+
+    fids = [add_seed_file(conn, n) for n in WHEEL_RIM]
+    for fid in fids:
+        make_live(conn, fid)
+        run_all(conn, fid)
+    for fid in fids:
+        L.stage_link(conn, repo.get_file(conn, fid))
+    conn.execute("SELECT refresh_regulation_fields('IN')")
+    return fids
+
+
+def test_changes_from_live_files(v4):
+    from regtrack.pipeline import events as E
+
+    conn = v4
+    live_chain(conn)
+    n = E.emit_events(conn)
+    rows = conn.execute("""SELECT e.*, g.external_code FROM regulation_changes e LEFT JOIN regulations g ON g.id=e.regulation_id
+                           ORDER BY e.id""").fetchall()
+    assert n == len(rows) and rows
+    assert {r["external_code"] for r in rows if r["change_type"] == "new_document"} == \
+        {"SO-1406(E)-2021", "SO-359(E)-2022", "SO-3896(E)-2022"}
+    dates = [r for r in rows if r["change_type"] == "implementation_date_changed"]
+    assert dates and all(r["requirement_version_id"] for r in dates)
+    sr8d = [r for r in dates if r["details"]["key"] == "SO-1365(E)-2004 Table Sr.8(d)"]
+    assert {(r["details"]["old"], r["details"]["new"]) for r in sr8d} == {("2021-09-21", "2022-09-21"),
+                                                                       ("2022-09-21", "2023-06-22")}
+    for r in rows:
+        assert r["review_status"] == "pending" and r["details"]["summary_by"] == "template" and r["region_id"]
+        assert (r["sla_due_at"] - r["detected_at"]).days in (1, 2)
+    assert E.emit_events(conn) == 0  # written once
+
+
+def test_seed_only_files_emit_no_changes(v4):
+    from regtrack.pipeline import events as E
+
+    conn = v4
+    link_chain(conn)  # seed listings only
+    assert E.emit_events(conn) == 0
+
+
+def test_rule_based_impact_and_team_value(v4):
+    conn = v4
+    fids = link_chain(conn)
+    imp = lambda c: conn.execute("SELECT impact_level, impact_basis FROM regulations WHERE external_code=%s",  # noqa: E731
+                                 (c,)).fetchone()
+    conn.execute("SELECT refresh_regulation_fields('IN')")
+    # technical, published years ago, all dates in the past, no re-approval: medium
+    assert dict(imp("SO-1406(E)-2021")) == {"impact_level": "medium", "impact_basis": "rules"}
+    conn.execute("UPDATE regulations SET published_date=current_date - 10 WHERE external_code='SO-1406(E)-2021'")
+    conn.execute("UPDATE regulations SET impact_level='low', impact_basis='team' WHERE external_code='SO-359(E)-2022'")
+    conn.execute("SELECT refresh_regulation_fields('IN')")
+    assert imp("SO-1406(E)-2021")["impact_level"] == "high"  # published in the last 12 months
+    assert dict(imp("SO-359(E)-2022")) == {"impact_level": "low", "impact_basis": "team"}  # the team's value stays
+    assert conn.execute("SELECT refresh_regulation_fields('IN') AS n").fetchone()["n"] == 0
+    assert fids
+
+
+def test_alerts_stored_once_and_closed(v4):
+    from regtrack.pipeline import alerts as A
+    from regtrack.pipeline import events as E
+
+    conn = v4
+    live_chain(conn)
+    E.emit_events(conn)
+    team = conn.execute("SELECT id FROM teams ORDER BY id LIMIT 1").fetchone()["id"]
+    conn.execute("UPDATE alert_rules SET is_enabled=false")
+    new_doc = conn.execute("INSERT INTO alert_rules (name, condition, notify_team_id) VALUES "
+                           "('test new documents', '{\"type\": \"new_document\"}', %s) RETURNING id", (team,)).fetchone()["id"]
+    due = conn.execute("INSERT INTO alert_rules (name, condition, notify_team_id) VALUES "
+                       "('test due', '{\"type\": \"due_within\", \"param\": \"30\"}', %s) RETURNING id", (team,)).fetchone()["id"]
+    # an open rule version due in 10 days
+    v = conn.execute("""SELECT v.id FROM requirement_versions v WHERE v.valid_to IS NULL AND NOT v.is_draft
+                        AND v.vehicle_category_ids <> '{}' LIMIT 1""").fetchone()["id"]
+    conn.execute("UPDATE requirement_versions SET implementation_date=current_date + 10 WHERE id=%s", (v,))
+    got = A.evaluate_rules(conn)
+    # only S.O. 1406(E)-2021 is in scope; the two extensions are tagged E-cart / E-rickshaw
+    assert got[new_doc] == 1 and got[due] >= 1
+    assert sum(A.evaluate_rules(conn).values()) == 0  # stored once
+    ev = conn.execute("SELECT * FROM alert_events WHERE rule_id=%s ORDER BY id", (new_doc,)).fetchall()
+    assert all(e["regulation_change_id"] and e["regulation_id"] and not e["is_resolved"] for e in ev)
+    assert A.close_settled(conn) == 0
+    conn.execute("UPDATE regulation_changes SET review_status='reviewed' WHERE id=%s", (ev[0]["regulation_change_id"],))
+    conn.execute("UPDATE requirement_versions SET implementation_date=current_date - 1 WHERE id=%s", (v,))
+    assert A.close_settled(conn) == 2
+    assert conn.execute("SELECT is_resolved FROM alert_events WHERE requirement_version_id=%s AND rule_id=%s",
+                        (v, due)).fetchone()["is_resolved"]
+
+
+def test_flags_resolved_on_v4b(v4):
+    from regtrack.pipeline import resolve as RS
+    from regtrack.pipeline.dbutil import add_flag
+
+    conn = v4
+    fid = link_chain(conn)[0]
+    add_flag(conn, "document", fid, "placeholder_listing_date", {"date": "2021-01-01"})
+    out = RS.resolve_all(conn)
+    assert out["placeholder_listing_date"] >= 1
+    q = conn.execute("SELECT resolved_at, details FROM quality_flags WHERE entity='document' AND entity_id=%s "
+                     "AND rule='placeholder_listing_date'", (fid,)).fetchone()
+    assert q["resolved_at"] and q["details"]["evidence"]["content_date"] == "2021-03-22"

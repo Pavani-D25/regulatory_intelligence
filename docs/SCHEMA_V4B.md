@@ -531,9 +531,9 @@ Each phase ends with tests, ruff, a phase report in `reports/`, and a commit on 
 | 3 | Classification and extraction → `regulations`, authorities, domains, vehicle categories, `document_parts` | |
 | 4 | Linking → `regulation_relations`, `compliance_requirements`, `requirement_versions` | links, rules and rule versions written in v4B |
 | 5 | Search → `document_chunks`; Ask AI writes `assistant_*` | search and Ask-AI history on v4B; keyword index computed by the database (0009) |
-| 6 | Monitoring → `regulation_changes`, `quality_flags`, `alert_events` | |
+| 6 | Monitoring → `regulation_changes`, `quality_flags`, `alert_events` | changes, flag resolution and stored alerts on v4B; impact stored (0010) |
 | 7 | API and portal on v4B, plus new screens: users and teams, watches, assistant history, report schedules | |
-| 8 | Regression check against the `CLAUDE.md` numbers; a new migration (0010 or later; 0008 and 0009 came from phases 3 and 5) drops the old tables; `CLAUDE.md` and `docs/DB_DESIGN.md` updated | switch-over complete |
+| 8 | Regression check against the `CLAUDE.md` numbers; a new migration (0011 or later; 0008–0010 came from phases 3, 5 and 6) drops the old tables; `CLAUDE.md` and `docs/DB_DESIGN.md` updated | switch-over complete |
 
 **Safety throughout:**
 - The original PDFs and page text are never touched.
