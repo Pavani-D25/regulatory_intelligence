@@ -8,7 +8,9 @@ Design: `docs/DB_DESIGN.md` (authoritative) and `docs/ETL_SPEC.md`. Start with `
 
 ## Quick start (new collaborators start here)
 
-You need **Python 3.11+**, **Docker Desktop** and **Node.js 18+**. Then one command sets everything up and starts it:
+You need **Python 3.11+**, **Node.js 18+**, and the database: **PostgreSQL 16 + pgvector**, either installed on the
+machine (see [Database without Docker](#database-without-docker)) or through **Docker Desktop**. Then one command
+sets everything up and starts it:
 
 | Windows | macOS / Linux / Git Bash |
 |---|---|
@@ -16,7 +18,7 @@ You need **Python 3.11+**, **Docker Desktop** and **Node.js 18+**. Then one comm
 
 The first run takes a few minutes. The script:
 
-1. checks the tools and starts Docker if needed;
+1. checks the tools; starts the local database (`PG_BIN` set in `.env`) or Docker;
 2. creates `.env` from `.env.example`;
 3. creates `.venv` and installs the Python packages;
 4. starts the database and applies the migrations;
@@ -58,13 +60,61 @@ again by their sha256 name, so the snapshot works in any folder.
 py -3.13 -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
 copy .env.example .env          # then set LLM_BASE_URL (ngrok URL of LM Studio) and EMBED_MODEL
-docker compose up -d db         # pgvector/pgvector:pg16 on localhost:5432
+docker compose up -d db         # pgvector/pgvector:pg16 on localhost:5432 (or: regtrack.cli db start, see below)
 .venv\Scripts\python -m regtrack.cli check      # DB, pgvector, LLM, structured output, embedding dim
 .venv\Scripts\python -m regtrack.cli migrate    # db/migrations + db/seeds (idempotent)
 ```
 
 Low disk space on C: stops Docker Desktop (its WSL disk lives on C:) and pip (temp files). If `pip` fails with
-"No space left on device", set `TMP`/`TEMP`/`PIP_CACHE_DIR` to a folder on D: for the install.
+"No space left on device", set `TMP`/`TEMP`/`PIP_CACHE_DIR` to a folder on D: for the install. With C: nearly full,
+use the database without Docker (below), which keeps everything on D:.
+
+## Database without Docker
+
+PostgreSQL 16 and pgvector from conda-forge run directly on Windows; nothing is compiled and nothing goes on C:.
+This is how the main development laptop runs (PostgreSQL 16.15, pgvector 0.8.6, same versions as the Docker image).
+
+```powershell
+# 1. Miniforge (conda-forge installer) to D:, no PATH changes
+#    https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe
+D:\installers\Miniforge3-Windows-x86_64.exe /InstallationType=JustMe /RegisterPython=0 /AddToPath=0 /NoRegistry=1 /NoShortcuts=1 /S /D=D:\miniforge3
+
+# 2. PostgreSQL 16 + pgvector in their own folder
+$env:CONDA_PKGS_DIRS = "D:\miniforge3\pkgs"
+D:\miniforge3\Scripts\conda.exe create -y -p D:\pgsql -c conda-forge --override-channels "postgresql=16.15" "pgvector=0.8.6"
+
+# 3. the data folder (user regtrack, password regtrack, as in DATABASE_URL); this build has no ICU, so en-US + UTF-8
+Set-Content D:\installers\pgpw.txt "regtrack" -NoNewline
+D:\pgsql\Library\bin\initdb.exe -D D:\regulatory_intelligence\data\pg -U regtrack --pwfile=D:\installers\pgpw.txt -E UTF8 --auth=scram-sha-256 --locale=en-US
+Remove-Item D:\installers\pgpw.txt
+```
+
+Then add to `.env`:
+
+```
+PG_BIN=D:\pgsql\Library\bin
+PG_DATA=D:\regulatory_intelligence\data\pg
+```
+
+and start it:
+
+```powershell
+.venv\Scripts\python -m regtrack.cli db start       # also: db stop, db status; start.bat does this for you
+D:\pgsql\Library\bin\createdb.exe -h localhost -U regtrack regtrack     # first time only (password: regtrack)
+.venv\Scripts\python -m regtrack.cli migrate        # or load a snapshot: start.ps1 -Snapshot <file.dump>
+```
+
+The server log is `data\pglog\postgres.log`. With `PG_BIN` set, `start.bat` / `start.sh` start this server instead of
+Docker, and `snapshot-export` / `snapshot-import` use the local `pg_dump` / `pg_restore`. The server does not start with
+Windows on its own: run `start.bat` (or `regtrack.cli db start`), or register it once as a Windows service from an
+administrator PowerShell:
+
+```powershell
+D:\pgsql\Library\bin\pg_ctl.exe register -N RegTrackPostgres -D D:\regulatory_intelligence\data\pg -S auto
+Start-Service RegTrackPostgres
+```
+
+Do not run the Docker database at the same time: both use port 5432.
 
 ## Running
 

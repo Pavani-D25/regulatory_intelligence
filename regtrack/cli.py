@@ -9,6 +9,7 @@
   schedule              start the 6-hour scheduler (blocking)
   report                write reports/VALIDATION_REPORT.md
   api                   start the read-only FastAPI server
+  db start|stop|status  the local PostgreSQL server (PG_BIN / PG_DATA in .env; not used with Docker)
   storage-upload [--limit N] [--switch]   one-time upload of local originals to S3/MinIO
   snapshot-export [--with-files]          database dump (+ files zip) to share with a collaborator
   snapshot-import FILE --yes              load a .dump (replaces the database) or a files .zip
@@ -173,6 +174,20 @@ def cmd_snapshot_import(args) -> int:
     return 0
 
 
+def cmd_db(args) -> int:
+    from regtrack import localdb
+
+    if args.action == "status":
+        if not localdb.local_mode():
+            print("PG_BIN is not set: the database runs in Docker")
+            return 0
+        running = localdb.status()
+        print("running" if running else "not running")
+        return 0 if running else 1
+    print(localdb.start() if args.action == "start" else localdb.stop())
+    return 0
+
+
 def cmd_api(args) -> int:
     import uvicorn
 
@@ -219,6 +234,9 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("file")
     sp.add_argument("--yes", action="store_true", help="confirm replacing the database")
     sp.set_defaults(fn=cmd_snapshot_import)
+    sp = sub.add_parser("db", help="start, stop or check the local PostgreSQL server")
+    sp.add_argument("action", choices=["start", "stop", "status"])
+    sp.set_defaults(fn=cmd_db)
     sp = sub.add_parser("api")
     sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=8000)

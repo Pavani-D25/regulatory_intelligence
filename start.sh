@@ -8,7 +8,8 @@
 #   ./start.sh --no-schedule            do not start the 6-hour auto-sync
 #   ./start.sh --stop                   stop the API, auto-sync and portal (the database keeps running)
 #
-# Needs: Python 3.11+, Docker, Node.js 18+. Logs: data/logs/*.log
+# Needs: Python 3.11+, Node.js 18+, and PostgreSQL 16 + pgvector: installed on this machine (PG_BIN / PG_DATA in .env,
+# see README "Database without Docker") or Docker. Logs: data/logs/*.log
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$(pwd)"
@@ -63,16 +64,23 @@ for c in python3.13 python3.12 python3.11 python3 python; do
 done
 if [ -x .venv/bin/python ]; then PY=.venv/bin/python; elif [ -x .venv/Scripts/python.exe ]; then PY=.venv/Scripts/python.exe; else PY=""; fi
 [ -n "$SYSPY" ] || [ -n "$PY" ] || fail "Python 3.11 or newer is needed: https://www.python.org/downloads/"
-command -v docker >/dev/null || fail "Docker is needed: https://www.docker.com/products/docker-desktop/"
 command -v npm >/dev/null || fail "Node.js 18 or newer is needed: https://nodejs.org/"
-ok "Python, Docker and Node.js found"
-if ! docker info >/dev/null 2>&1; then
-  info "Docker is not running - trying to start it"
-  if [ "$(uname)" = "Darwin" ]; then open -a Docker || true; else docker desktop start >/dev/null 2>&1 || true; fi
-  for _ in $(seq 1 60); do sleep 3; docker info >/dev/null 2>&1 && break; done
-  docker info >/dev/null 2>&1 || fail "Docker did not start. Start Docker, wait until it is running, then run this again."
+ok "Python and Node.js found"
+# database on this machine (PG_BIN set in .env) or in Docker
+LOCALDB=""
+if [ -f .env ] && grep -Eq '^[[:space:]]*PG_BIN[[:space:]]*=[[:space:]]*[^#[:space:]]' .env; then LOCALDB=1; fi
+if [ -n "$LOCALDB" ]; then
+  ok "database: PostgreSQL on this machine (PG_BIN in .env)"
+else
+  command -v docker >/dev/null || fail "Docker is needed (or a local PostgreSQL, see README): https://www.docker.com/products/docker-desktop/"
+  if ! docker info >/dev/null 2>&1; then
+    info "Docker is not running - trying to start it"
+    if [ "$(uname)" = "Darwin" ]; then open -a Docker || true; else docker desktop start >/dev/null 2>&1 || true; fi
+    for _ in $(seq 1 60); do sleep 3; docker info >/dev/null 2>&1 && break; done
+    docker info >/dev/null 2>&1 || fail "Docker did not start. Start Docker, wait until it is running, then run this again."
+  fi
+  ok "Docker engine running"
 fi
-ok "Docker engine running"
 
 # ---------------------------------------------------------------- 2. settings
 step "Settings (.env)"
@@ -102,13 +110,18 @@ if [ ! -f .venv/.installed ] || [ pyproject.toml -nt .venv/.installed ]; then
 else ok "packages up to date"; fi
 
 # ---------------------------------------------------------------- 4. database
-step "Database (PostgreSQL 16 + pgvector in Docker)"
-if [ -n "$(docker ps -a --filter 'name=^regtrack-db$' --format '{{.Names}}')" ]; then docker start regtrack-db >/dev/null
-else docker compose up -d db || fail "could not start the database container"; fi
-for _ in $(seq 1 40); do
-  [ "$(docker inspect -f '{{.State.Health.Status}}' regtrack-db 2>/dev/null)" = "healthy" ] && break; sleep 2
-done
-[ "$(docker inspect -f '{{.State.Health.Status}}' regtrack-db 2>/dev/null)" = "healthy" ] || fail "the database did not become ready (docker logs regtrack-db)"
+if [ -n "$LOCALDB" ]; then
+  step "Database (PostgreSQL 16 + pgvector on this machine)"
+  "$PY" -m regtrack.cli db start || fail "the local database did not start (see data/pglog/postgres.log)"
+else
+  step "Database (PostgreSQL 16 + pgvector in Docker)"
+  if [ -n "$(docker ps -a --filter 'name=^regtrack-db$' --format '{{.Names}}')" ]; then docker start regtrack-db >/dev/null
+  else docker compose up -d db || fail "could not start the database container"; fi
+  for _ in $(seq 1 40); do
+    [ "$(docker inspect -f '{{.State.Health.Status}}' regtrack-db 2>/dev/null)" = "healthy" ] && break; sleep 2
+  done
+  [ "$(docker inspect -f '{{.State.Health.Status}}' regtrack-db 2>/dev/null)" = "healthy" ] || fail "the database did not become ready (docker logs regtrack-db)"
+fi
 ok "database ready on localhost:5432"
 if [ -n "$SNAPSHOT" ]; then
   [ -f "$SNAPSHOT" ] || fail "snapshot not found: $SNAPSHOT"
@@ -119,7 +132,7 @@ if [ -n "$FILES" ]; then [ -f "$FILES" ] || fail "files zip not found: $FILES"; 
 
 # ---------------------------------------------------------------- 5. data
 step "Data"
-DOCS="$(docker exec regtrack-db psql -U regtrack -d regtrack -tAc 'select count(*) from document' 2>/dev/null | tr -d '[:space:]')"
+DOCS="$("$PY" -c "from regtrack.db import connect; print(connect().execute('select count(*) AS n from document').fetchone()['n'])" 2>/dev/null | tr -d '[:space:]')"
 if [ "${DOCS:-0}" -gt 0 ] 2>/dev/null; then ok "$DOCS documents in the database"
 else
   SEED="$("$PY" -c 'from regtrack.config import get_settings; print(get_settings().seed_corpus_dir)')"

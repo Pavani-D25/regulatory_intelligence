@@ -26,7 +26,7 @@ Users need four views: by vehicle, by year, by category and by version. They als
 
 ## Environment
 
-- Python 3.11+ in `.venv`. PostgreSQL 16 + pgvector runs in Docker Desktop, image `pgvector/pgvector:pg16`.
+- Python 3.11+ in `.venv`. PostgreSQL 16 + pgvector runs directly on Windows, without Docker: conda-forge `postgresql=16.15` + `pgvector=0.8.6` in `D:\pgsql`, data in `data\pg`, started with `python -m regtrack.cli db start` (README "Database without Docker"). Docker Desktop (image `pgvector/pgvector:pg16`) remains an option for collaborators: leave `PG_BIN` empty.
 - Config comes from `.env` (never commit it). Keep `.env.example` up to date:
 
 ```
@@ -38,6 +38,8 @@ LLM_MODEL=qwen/qwen3.8-27b
 LLM_API_KEY=lm-studio
 EMBED_MODEL=<embedding model loaded in LM Studio>
 EMBED_DIM=768                                             # must match vector(N) in the migration
+PG_BIN=D:\pgsql\Library\bin                               # local PostgreSQL programs; empty = Docker
+PG_DATA=D:\regulatory_intelligence\data\pg                # local PostgreSQL data folder
 ```
 
 - Use `pathlib` everywhere, never hard-coded `/` paths.

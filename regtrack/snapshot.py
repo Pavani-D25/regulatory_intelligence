@@ -6,8 +6,8 @@
 
 The database dump is enough for the portal, search and Ask AI. The files zip adds "Open original PDF" and lets the
 pipeline re-read documents. Stored file paths from another machine are found again by their sha256 name
-(storage.open_local), so the dump works in any folder. Uses pg_dump / pg_restore inside the Docker container,
-so nothing has to be installed on the host.
+(storage.open_local), so the dump works in any folder. Uses the local pg_dump / pg_restore when PostgreSQL runs on
+the machine (PG_BIN in .env, regtrack/localdb.py), otherwise the ones inside the Docker container.
 """
 
 from __future__ import annotations
@@ -18,21 +18,27 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
+from regtrack import localdb
 from regtrack.config import ROOT, get_settings
 
 CONTAINER = os.getenv("REGTRACK_DB_CONTAINER", "regtrack-db")
 SNAP_DIR = ROOT / "data" / "snapshots"
 
 
-def _docker(args: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(["docker", *args], check=True, **kw)
+def _pg(program: str, args: list[str], **kw) -> subprocess.CompletedProcess:
+    """Run pg_dump / pg_restore against the regtrack database: local programs, or inside the Docker container."""
+    if localdb.local_mode():
+        cmd = [localdb.tool(program), "--dbname", get_settings().psycopg_dsn, *args]
+    else:
+        cmd = ["docker", "exec", "-i", CONTAINER, program, "-U", "regtrack", "--dbname", "regtrack", *args]
+    return subprocess.run(cmd, check=True, **kw)
 
 
 def export(with_files: bool = False, out_dir: Path = SNAP_DIR) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     dump = out_dir / f"regtrack_{date.today():%Y-%m-%d}.dump"
     with dump.open("wb") as fh:  # streamed: the dump never sits in memory
-        _docker(["exec", CONTAINER, "pg_dump", "-U", "regtrack", "-d", "regtrack", "-Fc", "-Z", "6"], stdout=fh)
+        _pg("pg_dump", ["-Fc", "-Z", "6"], stdout=fh)
     out = [dump]
     if with_files:
         s = get_settings()
@@ -67,6 +73,5 @@ def import_(path: Path) -> str:
         return f"{n} files added under {s.storage_dir.parent}"
     with path.open("rb") as fh:
         # --clean replaces what is in the database with the snapshot; ownership is not carried over
-        subprocess.run(["docker", "exec", "-i", CONTAINER, "pg_restore", "-U", "regtrack", "-d", "regtrack",
-                        "--clean", "--if-exists", "--no-owner", "--single-transaction"], stdin=fh, check=True)
+        _pg("pg_restore", ["--clean", "--if-exists", "--no-owner", "--single-transaction"], stdin=fh)
     return f"database restored from {path.name}"

@@ -8,7 +8,8 @@ RegTrack India - one command to set up and start everything (Windows PowerShell 
   .\start.ps1 -NoSchedule           do not start the 6-hour auto-sync
   .\start.ps1 -Stop                 stop the API, auto-sync and portal (the database keeps running)
 
-Or double-click start.bat. Needs: Python 3.11+, Docker Desktop, Node.js 18+.
+Or double-click start.bat. Needs: Python 3.11+, Node.js 18+, and PostgreSQL 16 + pgvector: either installed on this
+machine (PG_BIN / PG_DATA in .env, see README "Database without Docker") or Docker Desktop.
 #>
 [CmdletBinding()]
 param(
@@ -52,6 +53,8 @@ Write-Host "  RegTrack India - setup and start" -ForegroundColor White
 Write-Host "  $Root"
 
 # ---------------------------------------------------------------- 1. tools
+# database on this machine (PG_BIN set in .env) or in Docker
+$LocalDb = (Test-Path ".env") -and (Select-String -Path ".env" -Pattern '^\s*PG_BIN\s*=\s*[^#\s]' -Quiet)
 Step "Checking tools"
 $sysPy = $null
 foreach ($spec in @("py|-3", "python|")) {
@@ -66,10 +69,12 @@ foreach ($spec in @("py|-3", "python|")) {
     } catch {}
 }
 if (-not $sysPy -and -not (Test-Path $Py)) { Fail "Python 3.11 or newer is needed: https://www.python.org/downloads/ (tick 'Add python.exe to PATH')" }
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail "Docker Desktop is needed: https://www.docker.com/products/docker-desktop/" }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "Node.js 18 or newer is needed: https://nodejs.org/" }
-Ok "Docker and Node.js found"
-
+Ok "Node.js found"
+if ($LocalDb) {
+    Ok "database: PostgreSQL on this machine (PG_BIN in .env)"
+} else {
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail "Docker Desktop is needed (or a local PostgreSQL, see README): https://www.docker.com/products/docker-desktop/" }
 docker info *> $null
 if ($LASTEXITCODE -ne 0) {
     Info "Docker Desktop is not running - starting it (this can take a minute)"
@@ -83,6 +88,7 @@ if ($LASTEXITCODE -ne 0) {
     if (-not $ready) { Fail "Docker did not start. Open Docker Desktop, wait until it says 'Engine running', then run this again." }
 }
 Ok "Docker engine running"
+}
 
 # ---------------------------------------------------------------- 2. settings
 Step "Settings (.env)"
@@ -113,16 +119,22 @@ if ($need) {
 } else { Ok "packages up to date" }
 
 # ---------------------------------------------------------------- 4. database
-Step "Database (PostgreSQL 16 + pgvector in Docker)"
-$exists = docker ps -a --filter "name=^regtrack-db$" --format "{{.Names}}"
-if ($exists) { docker start regtrack-db *> $null } else { docker compose up -d db; if ($LASTEXITCODE -ne 0) { Fail "could not start the database container" } }
-$healthy = $false
-for ($i = 0; $i -lt 40; $i++) {
-    $h = docker inspect -f "{{.State.Health.Status}}" regtrack-db 2>$null
-    if ($h -eq "healthy") { $healthy = $true; break }
-    Start-Sleep -Seconds 2
+if ($LocalDb) {
+    Step "Database (PostgreSQL 16 + pgvector on this machine)"
+    & $Py -m regtrack.cli db start
+    if ($LASTEXITCODE -ne 0) { Fail "the local database did not start (see data\pglog\postgres.log)" }
+} else {
+    Step "Database (PostgreSQL 16 + pgvector in Docker)"
+    $exists = docker ps -a --filter "name=^regtrack-db$" --format "{{.Names}}"
+    if ($exists) { docker start regtrack-db *> $null } else { docker compose up -d db; if ($LASTEXITCODE -ne 0) { Fail "could not start the database container" } }
+    $healthy = $false
+    for ($i = 0; $i -lt 40; $i++) {
+        $h = docker inspect -f "{{.State.Health.Status}}" regtrack-db 2>$null
+        if ($h -eq "healthy") { $healthy = $true; break }
+        Start-Sleep -Seconds 2
+    }
+    if (-not $healthy) { Fail "the database did not become ready (docker logs regtrack-db shows why)" }
 }
-if (-not $healthy) { Fail "the database did not become ready (docker logs regtrack-db shows why)" }
 Ok "database ready on localhost:5432"
 
 if ($Snapshot) {
@@ -140,7 +152,7 @@ if ($Files) {
 
 # ---------------------------------------------------------------- 5. data
 Step "Data"
-$docs = docker exec regtrack-db psql -U regtrack -d regtrack -tAc "select count(*) from document" 2>$null
+$docs = & $Py -c "from regtrack.db import connect; print(connect().execute('select count(*) AS n from document').fetchone()['n'])" 2>$null
 if (-not $docs) { $docs = 0 } else { $docs = ("$docs").Trim() }
 if ([int]$docs -gt 0) {
     Ok "$docs documents in the database"
