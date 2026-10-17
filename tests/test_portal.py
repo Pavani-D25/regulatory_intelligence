@@ -89,9 +89,25 @@ def test_compliance_alerts_reports(client):
 
 
 def test_ask_returns_cited_clauses(client):
+    from regtrack.db import connect
+
     r = client.post("/portal/ask", json={"question": "traction battery safety"}).json()
     assert r["mode"] in ("search", "qwen") and r["sources"]
     assert any(s["canonical_id"].startswith("AIS-") for s in r["sources"])
+    # the exchange is kept (v4B assistant tables); a follow-up continues the same conversation
+    cid = r["conversation_id"]
+    try:
+        r2 = client.post("/portal/ask", json={"question": "and for M1?", "conversation_id": cid}).json()
+        assert r2["conversation_id"] == cid
+        h = client.get(f"/portal/ask/conversations/{cid}").json()["messages"]
+        assert [m["role"] for m in h] == ["user", "assistant", "user", "assistant"]
+        assert h[0]["content"] == "traction battery safety" and len(h[1]["citations"]) == len(r["sources"])
+        assert all(c["canonical_id"] for c in h[1]["citations"])
+        assert client.get("/portal/ask/conversations/999999999").status_code == 404
+    finally:
+        with connect() as conn:
+            conn.execute("DELETE FROM assistant_conversations WHERE id=%s", (cid,))  # messages and citations cascade
+            conn.commit()
 
 
 def test_no_static_values(client):

@@ -1,7 +1,7 @@
-"""Filtered vector search over chunks (DB_DESIGN query: category, in_scope, is_current filters).
+"""Filtered vector search over document_chunks (DB_DESIGN query: category, in_scope, is_current filters).
 
 Only the query is embedded at read time. If the embedding endpoint is down, a trigram/ILIKE text search over
-the same filtered chunks is used instead (marked mode='text').
+the same filtered chunks is used instead (marked mode='text'); it uses the chunks' tsv index (migration 0009).
 """
 
 from __future__ import annotations
@@ -15,27 +15,31 @@ from regtrack.db import vec_literal
 def search(conn: psycopg.Connection, q: str, category: str | None = None, in_scope: bool | None = True,
            is_current: bool | None = None, doc_class: str | None = None, limit: int = 10, cc: str | None = None) -> dict:
     """cc: country code (default: the COUNTRY setting); only that country's chunks are searched."""
-    where = ["NOT c.is_boilerplate", country.sql("d", cc)]
+    where = ["NOT c.is_boilerplate", country.region_sql("c", cc)]
     args: list = []
     if category:
-        where.append("c.vehicle_categories && %s")
+        # the category and ALL, as this region's category ids
+        where.append("c.vehicle_category_ids && ARRAY(SELECT vc.id FROM vehicle_categories vc "
+                     "WHERE vc.region_id = c.region_id AND vc.code = ANY(%s))")
         args.append([category, "ALL"])
     if in_scope is not None:
         where.append("c.in_scope = %s")
         args.append(in_scope)
     if is_current is not None:
-        where.append("(c.is_current = %s OR c.doc_class LIKE 'NOTIFICATION%%')")
+        where.append("(c.is_current = %s OR g.local_class LIKE 'NOTIFICATION%%')")
         args.append(is_current)
     if doc_class:
-        where.append("c.doc_class = %s")
+        where.append("g.local_class = %s")
         args.append(doc_class)
     w = " AND ".join(where)
-    cols = ("c.id, d.canonical_id, c.doc_class, c.clause_no, c.heading, c.page_from, c.page_to, "
-            "left(c.content, 600) AS content, d.official_title, d.subject, d.doc_date")
+    cols = ("c.id, c.regulation_id, g.external_code AS canonical_id, g.local_class AS doc_class, c.clause_no, c.heading, "
+            "c.page_from, c.page_to, left(c.content, 600) AS content, g.title AS official_title, g.summary AS subject, "
+            "g.published_date AS doc_date")
     try:
         vec = llm.embed([q])[0]
         rows = conn.execute(
-            f"SELECT {cols}, 1 - (c.embedding <=> %s::vector) AS score FROM chunk c JOIN document d ON d.id=c.document_id "
+            f"SELECT {cols}, 1 - (c.embedding <=> %s::vector) AS score FROM document_chunks c "
+            f"JOIN regulations g ON g.id=c.regulation_id "
             f"WHERE {w} AND c.embedding IS NOT NULL ORDER BY c.embedding <=> %s::vector LIMIT %s",
             [vec_literal(vec), *args, vec_literal(vec), limit]).fetchall()
         mode = "vector"
@@ -77,9 +81,9 @@ def fulltext(conn, q: str, cols: str, w: str, args: list, limit: int) -> list:
     for joiner in (" && ", " || "):
         tsq = joiner.join(groups)
         rows = conn.execute(
-            f"SELECT {cols}, ts_rank_cd(to_tsvector('english', c.content), tsq) AS score "
-            f"FROM chunk c JOIN document d ON d.id=c.document_id, ({'SELECT ' + tsq + ' AS tsq'}) qq "
-            f"WHERE {w} AND to_tsvector('english', c.content) @@ qq.tsq ORDER BY score DESC, c.id LIMIT %s",
+            f"SELECT {cols}, ts_rank_cd(c.tsv, tsq) AS score "
+            f"FROM document_chunks c JOIN regulations g ON g.id=c.regulation_id, ({'SELECT ' + tsq + ' AS tsq'}) qq "
+            f"WHERE {w} AND c.tsv @@ qq.tsq ORDER BY score DESC, c.id LIMIT %s",
             [*params, *args, limit]).fetchall()
         if rows:
             break

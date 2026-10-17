@@ -527,18 +527,38 @@ def ask_context(cc: CountryParam = None) -> dict:
 
 @router.post("/ask")
 def ask(body: dict = Body(...)) -> dict:
+    """Answer from the best-matching clauses (Qwen when connected); the exchange is kept in the assistant history."""
+    from regtrack.assistant import record_exchange
+
+    q = (body.get("question") or "").strip()
+    if not q:
+        raise HTTPException(400, "empty question")
+    with connect() as conn:
+        out, hits = _answer(conn, q)
+        out["conversation_id"] = record_exchange(conn, q, out["answer"], hits, body.get("conversation_id"))
+        conn.commit()
+    return out
+
+
+@router.get("/ask/conversations/{conversation_id}")
+def ask_conversation(conversation_id: int) -> dict:
+    from regtrack.assistant import conversation
+
+    with connect() as conn:
+        msgs = conversation(conn, conversation_id)
+    if not msgs:
+        raise HTTPException(404, "unknown conversation")
+    return {"conversation_id": conversation_id, "messages": msgs}
+
+
+def _answer(conn, q: str) -> tuple[dict, list[dict]]:
     from pydantic import BaseModel
 
     from regtrack import llm
     from regtrack.pipeline.search import search as chunk_search
 
-    q = (body.get("question") or "").strip()
-    if not q:
-        raise HTTPException(400, "empty question")
     cat = next((c for c in CATEGORIES if c.lower() in q.lower().split() or c in q), None)
-    with connect() as conn:
-        res = chunk_search(conn, q, cat, None, None, None, 8, cc=country.code())
-    hits = res["results"]
+    hits = chunk_search(conn, q, cat, None, None, None, 8, cc=country.code())["results"]
     sources = [{"canonical_id": h["canonical_id"], "clause": h["clause_no"], "pages": f"{h['page_from']}-{h['page_to']}",
                 "title": h["official_title"] or h["subject"], "snippet": " ".join((h["content"] or "").split())[:300]} for h in hits]
     ok, _ = llm.reachable()
@@ -551,18 +571,19 @@ def ask(body: dict = Body(...)) -> dict:
             a = llm.structured(Answer, "Answer questions about Indian vehicle regulations using only the numbered sources. "
                                        "Cite sources as [n]. Say so if the sources do not answer the question.",
                                f"Question: {q}\n\nSources:\n{ctx}", timeout=180)
-            return {"mode": "qwen", "answer": a.answer, "sources": sources}
+            return {"mode": "qwen", "answer": a.answer, "sources": sources}, hits
         except Exception as e:  # noqa: BLE001
             note = f"AI answer failed ({type(e).__name__}); showing the matching clauses instead."
     else:
         note = "AI answers start once LM Studio is connected; until then these are the best-matching clauses."
     if not hits:
-        return {"mode": "search", "answer": "No matching clauses found in the indexed regulations.", "sources": [], "note": note}
+        return {"mode": "search", "answer": "No matching clauses found in the indexed regulations.", "sources": [],
+                "note": note}, hits
     lines = [f"Found {len(hits)} matching clause(s) in {len({h['canonical_id'] for h in hits})} document(s):", ""]
     for h in hits[:5]:
         lines.append(f"• {h['canonical_id']}" + (f" clause {h['clause_no']}" if h["clause_no"] else "")
                      + f": {' '.join((h['content'] or '').split())[:200]}…")
-    return {"mode": "search", "answer": "\n".join(lines), "sources": sources, "note": note}
+    return {"mode": "search", "answer": "\n".join(lines), "sources": sources, "note": note}, hits
 
 
 # ====================================================================== reports

@@ -2,7 +2,8 @@
 
 Clause-level chunks from English pages, split at clause numbers (1, 1.2, 6.12.3), ANNEX headings and
 notification paragraphs. Boilerplate (committee lists, status charts, Gazette mastheads, printer lines) is kept
-but flagged. Filter columns are copied from the document so vector search can filter without joins.
+but flagged. Filter columns are copied from the regulation so vector search can filter without joins.
+Stored in document_chunks (v4B); the keyword index (tsv) is computed by the database (migration 0009).
 OFF_TOPIC documents get no chunks. Hindi is never embedded.
 """
 
@@ -18,6 +19,7 @@ import psycopg
 from regtrack import country, llm
 from regtrack.db import vec_literal
 from regtrack.models.enums import DocClass
+from regtrack.pipeline import repo as R
 from regtrack.pipeline.dbutil import set_stage
 from regtrack.pipeline.text import PageText, load_pages
 
@@ -105,19 +107,19 @@ def _cut(text: str) -> list[str]:
 
 def stage_chunk(conn: psycopg.Connection, f: dict) -> str:
     pages = load_pages(f["sha256"])
-    for df in conn.execute("SELECT * FROM document_file WHERE file_id=%s AND (is_best_copy OR role='consolidated_segment')",
-                           (f["id"],)).fetchall():
-        doc = conn.execute("SELECT * FROM document WHERE id=%s", (df["document_id"],)).fetchone()
+    for df in R.parts_of_file(conn, f["id"], readable_only=True):
+        doc = R.get_document(conn, df["document_id"])
         if doc["doc_class"] == DocClass.OFF_TOPIC:
             continue
         a, b = df["page_from"] or 1, df["page_to"] or (pages[-1].page if pages else 1)
         sel = [p for p in pages if a <= p.page <= b]
         chunks = chunk_pages(sel, notification=doc["doc_class"].startswith("NOTIFICATION"))
         old = [r["content"] for r in conn.execute(
-            "SELECT content FROM chunk WHERE document_id=%s AND file_id=%s ORDER BY chunk_index", (doc["id"], f["id"]))]
+            "SELECT content FROM document_chunks WHERE regulation_id=%s AND document_id=%s ORDER BY chunk_index",
+            (doc["id"], f["id"]))]
         if old and old != [c.content for c in chunks]:
             # the document's page range changed (e.g. a re-split found another amendment): rebuild its chunks
-            conn.execute("DELETE FROM chunk WHERE document_id=%s AND file_id=%s", (doc["id"], f["id"]))
+            conn.execute("DELETE FROM document_chunks WHERE regulation_id=%s AND document_id=%s", (doc["id"], f["id"]))
         write_chunks(conn, doc, f["id"], chunks, offset_for(conn, doc["id"], f["id"]))
     set_stage(conn, f["id"], "chunked")
     return "chunked"
@@ -125,39 +127,50 @@ def stage_chunk(conn: psycopg.Connection, f: dict) -> str:
 
 def offset_for(conn: psycopg.Connection, doc_id: int, file_id: int) -> int:
     """TAP has many files per document: each file's chunks get their own index range."""
-    row = conn.execute("SELECT min(chunk_index) AS m FROM chunk WHERE document_id=%s AND file_id=%s", (doc_id, file_id)).fetchone()
+    row = conn.execute("SELECT min(chunk_index) AS m FROM document_chunks WHERE regulation_id=%s AND document_id=%s",
+                       (doc_id, file_id)).fetchone()
     if row["m"] is not None:
         return row["m"]
-    row = conn.execute("SELECT coalesce(max(chunk_index)+1, 0) AS n FROM chunk WHERE document_id=%s", (doc_id,)).fetchone()
+    row = conn.execute("SELECT coalesce(max(chunk_index)+1, 0) AS n FROM document_chunks WHERE regulation_id=%s",
+                       (doc_id,)).fetchone()
     return row["n"]
 
 
+# filter copies of the regulation on each chunk, so search needs no joins (the same values 0007 copied)
+FILTERS = """
+SELECT g.id, g.region_id, g.doc_type, g.legal_status, g.is_current, g.in_scope,
+       coalesce(extract(year FROM g.published_date)::int, g.year) AS year,
+       coalesce((SELECT array_agg(l.vehicle_category_id ORDER BY l.vehicle_category_id)
+                 FROM regulation_vehicle_categories l WHERE l.regulation_id = g.id), '{}') AS vehicle_category_ids,
+       coalesce((SELECT array_agg(l.domain_id ORDER BY l.domain_id)
+                 FROM regulation_domains l WHERE l.regulation_id = g.id), '{}') AS domain_ids
+FROM regulations g"""
+FILTER_COLS = ("region_id", "doc_type", "legal_status", "is_current", "in_scope", "year", "vehicle_category_ids",
+               "domain_ids")
+
+
 def write_chunks(conn: psycopg.Connection, doc: dict, file_id: int, chunks: list[Chunk], offset: int) -> int:
+    flt = conn.execute(FILTERS + " WHERE g.id=%s", (doc["id"],)).fetchone()
     n = 0
     for c in chunks:
         r = conn.execute(
-            """INSERT INTO chunk (document_id, file_id, chunk_index, clause_no, heading, page_from, page_to, language,
-                                  is_boilerplate, content, doc_class, family_key, vehicle_categories, domains, doc_year,
-                                  status, is_current, in_scope)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,'en',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-               ON CONFLICT (document_id, chunk_index) DO NOTHING RETURNING id""",
+            f"""INSERT INTO document_chunks (regulation_id, document_id, chunk_index, clause_no, heading, page_from, page_to,
+                                             language, is_boilerplate, content, {', '.join(FILTER_COLS)})
+               VALUES (%s,%s,%s,%s,%s,%s,%s,'en',%s,%s,{', '.join(['%s'] * len(FILTER_COLS))})
+               ON CONFLICT (regulation_id, chunk_index) DO NOTHING RETURNING id""",
             (doc["id"], file_id, offset + c.index, c.clause_no, c.heading, c.page_from, c.page_to, c.is_boilerplate,
-             c.content, doc["doc_class"], doc["family_key"], doc["vehicle_categories"] or [], doc["domains"] or [],
-             doc["doc_date"].year if doc["doc_date"] else doc["year"], doc["status"], doc["is_current"],
-             doc["in_scope"])).fetchone()
+             c.content, *[flt[k] for k in FILTER_COLS])).fetchone()
         n += bool(r)
     return n
 
 
 def sync_chunk_filters(conn: psycopg.Connection) -> int:
-    """Copy changed filter columns (is_current/status/categories/in_scope) from document to its chunks."""
+    """Copy changed filter values (current, status, scope, year, categories, topics, type) from regulations to chunks."""
     cur = conn.execute(
-        """UPDATE chunk c SET doc_class=d.doc_class, family_key=d.family_key, vehicle_categories=d.vehicle_categories,
-                  domains=d.domains, status=d.status, is_current=d.is_current, in_scope=d.in_scope
-           FROM document d WHERE d.id=c.document_id AND """ + country.sql("d") + """ AND (c.is_current IS DISTINCT FROM d.is_current
-                OR c.status IS DISTINCT FROM d.status OR c.in_scope IS DISTINCT FROM d.in_scope
-                OR c.vehicle_categories IS DISTINCT FROM d.vehicle_categories OR c.domains IS DISTINCT FROM d.domains
-                OR c.family_key IS DISTINCT FROM d.family_key OR c.doc_class IS DISTINCT FROM d.doc_class)""")
+        f"""UPDATE document_chunks c SET {', '.join(f'{k}=f.{k}' for k in FILTER_COLS)}
+            FROM ({FILTERS} WHERE {country.region_sql('g')}) f
+            WHERE f.id = c.regulation_id
+              AND ({' OR '.join(f'c.{k} IS DISTINCT FROM f.{k}' for k in FILTER_COLS)})""")
     return cur.rowcount
 
 
@@ -166,7 +179,8 @@ def embed_pending(conn: psycopg.Connection, batch: int = 64, limit: int | None =
     """Embed chunks without a vector (non-boilerplate first). Raises nothing when the LLM is down."""
     done = 0
     while True:
-        rows = conn.execute(f"SELECT id, content, heading FROM chunk WHERE embedding IS NULL AND {country.doc_sql('document_id')} "
+        rows = conn.execute(f"SELECT id, content, heading FROM document_chunks c WHERE embedding IS NULL "
+                            f"AND language='en' AND {country.region_sql('c')} "
                             "ORDER BY is_boilerplate, id LIMIT %s", (batch,)).fetchall()
         if not rows:
             break
@@ -176,7 +190,7 @@ def embed_pending(conn: psycopg.Connection, batch: int = 64, limit: int | None =
             log.info("embedding unavailable: %s", e)
             break
         for r, v in zip(rows, vecs, strict=True):
-            conn.execute("UPDATE chunk SET embedding=%s::vector WHERE id=%s", (vec_literal(v), r["id"]))
+            conn.execute("UPDATE document_chunks SET embedding=%s::vector WHERE id=%s", (vec_literal(v), r["id"]))
         conn.commit()
         done += len(rows)
         if limit and done >= limit:
@@ -185,10 +199,11 @@ def embed_pending(conn: psycopg.Connection, batch: int = 64, limit: int | None =
 
 
 def advance_embedded(conn: psycopg.Connection) -> int:
-    """Files whose chunks all have vectors (or that have no chunks) move chunked -> embedded -> done."""
+    """Files whose English chunks all have vectors (or that have no chunks) move chunked -> embedded -> done."""
     cur = conn.execute(
-        """UPDATE file_object f SET stage='done', stage_error=NULL WHERE f.stage IN ('chunked','embedded')
-           AND """ + country.sql("f") + """ AND NOT EXISTS (SELECT 1 FROM chunk c WHERE c.file_id=f.id AND c.embedding IS NULL)""")
+        """UPDATE documents f SET stage='done', stage_error=NULL WHERE f.stage IN ('chunked','embedded')
+           AND """ + country.region_sql("f") + """ AND NOT EXISTS (SELECT 1 FROM document_chunks c
+               WHERE c.document_id=f.id AND c.embedding IS NULL AND c.language='en')""")
     return cur.rowcount
 
 

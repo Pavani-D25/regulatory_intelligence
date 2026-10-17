@@ -37,7 +37,16 @@ def two_countries(migrated, monkeypatch):
             v4 = conn.execute("INSERT INTO documents (region_id, checksum_sha256, storage_path, file_ext, stage) "
                               "VALUES ((SELECT id FROM regions WHERE code=%s), %s, %s, 'pdf', 'downloaded') RETURNING id",
                               (cc, cc.lower() * 32, f"test/{cc}.pdf")).fetchone()["id"]
-            ids[cc] = {"file": fid, "doc": did, "v4file": v4}
+            # search reads the v4B tables (phase 5): the same regulation and chunk there
+            reg = conn.execute(
+                "INSERT INTO regulations (region_id, external_code, local_class, legal_status, in_scope) "
+                "SELECT r.id, %s, (SELECT code FROM document_classes WHERE region_id=r.id ORDER BY (code=%s) DESC, code "
+                "LIMIT 1), 'final', true FROM regions r WHERE r.code=%s RETURNING id, region_id", (cid, dc, cc)).fetchone()
+            conn.execute("INSERT INTO document_chunks (document_id, regulation_id, chunk_index, content, region_id, "
+                         "in_scope, is_current, vehicle_category_ids) VALUES (%s, %s, 0, %s, %s, true, true, "
+                         "ARRAY(SELECT id FROM vehicle_categories WHERE region_id=%s AND code='M1'))",
+                         (v4, reg["id"], f"{WORD} braking requirement for {cc}", reg["region_id"], reg["region_id"]))
+            ids[cc] = {"file": fid, "doc": did, "v4file": v4, "reg": reg["id"]}
         conn.commit()
     yield ids
     with connect(dsn=dsn) as conn:
@@ -45,6 +54,7 @@ def two_countries(migrated, monkeypatch):
         conn.execute("DELETE FROM chunk WHERE document_id = ANY(%s)", (docs,))
         conn.execute("DELETE FROM document WHERE id = ANY(%s)", (docs,))
         conn.execute("DELETE FROM file_object WHERE id = ANY(%s)", (files,))
+        conn.execute("DELETE FROM regulations WHERE id = ANY(%s)", ([v["reg"] for v in ids.values()],))  # + chunks
         conn.execute("DELETE FROM documents WHERE id = ANY(%s)", ([v["v4file"] for v in ids.values()],))
         conn.commit()
     config.get_settings.cache_clear()

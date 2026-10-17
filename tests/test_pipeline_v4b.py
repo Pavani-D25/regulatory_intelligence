@@ -281,3 +281,94 @@ def test_final_closes_its_drafts_versions(v4):
     v = conn.execute("SELECT valid_to, superseded_by FROM requirement_versions WHERE id=%s", (d_id,)).fetchone()
     assert v["valid_to"] == date(2030, 1, 1) and v["superseded_by"] == f_id
     assert M.open_versions(conn, "CMVR Rule 999 :: test")[0]["vehicle_categories"] == ["M1"]
+
+
+# ====================================================================== phase 5: chunks, search, assistant history
+def chunked(conn) -> tuple[int, int]:
+    """The S.O. 1406(E)-2021 file through text ... link -> chunk; returns (file id, regulation id)."""
+    from regtrack.pipeline import chunk as C
+    from regtrack.pipeline import link as L
+    from regtrack.pipeline import repo
+
+    fid = add_seed_file(conn, "so_1406_2021_wheel_rim.pdf")
+    run_all(conn, fid)
+    L.stage_link(conn, repo.get_file(conn, fid))
+    conn.execute("SELECT refresh_regulation_fields('IN')")
+    C.stage_chunk(conn, repo.get_file(conn, fid))
+    return fid, repo.find_document(conn, "SO-1406(E)-2021")["id"]
+
+
+def test_chunks_carry_the_regulation_filters(v4):
+    from regtrack.pipeline import chunk as C
+    from regtrack.pipeline import repo
+
+    conn = v4
+    fid, rid = chunked(conn)
+    assert repo.get_file(conn, fid)["stage"] == "chunked"
+    rows = conn.execute("SELECT * FROM document_chunks WHERE regulation_id=%s ORDER BY chunk_index", (rid,)).fetchall()
+    assert rows and [r["chunk_index"] for r in rows] == list(range(len(rows)))
+    g = conn.execute("SELECT region_id, doc_type, legal_status, extract(year FROM published_date)::int AS y "
+                     "FROM regulations WHERE id=%s", (rid,)).fetchone()
+    cats = [r["vehicle_category_id"] for r in conn.execute(
+        "SELECT vehicle_category_id FROM regulation_vehicle_categories WHERE regulation_id=%s ORDER BY 1", (rid,))]
+    for r in rows:
+        assert r["document_id"] == fid and r["region_id"] == g["region_id"] and r["year"] == g["y"] == 2021
+        assert r["doc_type"] == g["doc_type"] == "REGULATION" and r["legal_status"] == "final"
+        assert r["vehicle_category_ids"] == cats and r["language"] == "en"
+        assert r["tsv"]  # filled by the database (migration 0009)
+    # chunking again writes nothing; a changed regulation reaches its chunks through the sync, once
+    before = writes(conn)
+    conn.execute("UPDATE documents SET stage='linked' WHERE id=%s", (fid,))
+    C.stage_chunk(conn, repo.get_file(conn, fid))
+    assert writes(conn) - before == 2
+    assert C.sync_chunk_filters(conn) == 0
+    conn.execute("UPDATE regulations SET legal_status='superseded' WHERE id=%s", (rid,))
+    assert C.sync_chunk_filters(conn) == len(rows)
+    assert C.sync_chunk_filters(conn) == 0
+
+
+def test_search_keyword_and_vector(v4, monkeypatch):
+    from regtrack import llm
+    from regtrack.pipeline import chunk as C
+    from regtrack.pipeline.search import search
+
+    conn = v4
+    fid, rid = chunked(conn)
+
+    def offline(_texts):
+        raise llm.LLMUnavailable("test")
+
+    monkeypatch.setattr(llm, "embed", offline)
+    r = search(conn, "wheel rims", in_scope=None)
+    assert r["mode"].startswith("text") and r["results"]
+    top = r["results"][0]
+    assert top["canonical_id"] == "SO-1406(E)-2021" and top["regulation_id"] == rid and top["doc_date"].year == 2021
+    # it applies to ALL vehicles, so any category finds it; without ALL (and without L1) an L1 search does not
+    assert any(h["regulation_id"] == rid for h in search(conn, "wheel rims", category="L1", in_scope=None)["results"])
+    conn.execute("DELETE FROM regulation_vehicle_categories l USING vehicle_categories vc WHERE vc.id=l.vehicle_category_id "
+                 "AND l.regulation_id=%s AND vc.code IN ('ALL','L1')", (rid,))
+    assert C.sync_chunk_filters(conn) > 0
+    assert all(h["regulation_id"] != rid for h in search(conn, "wheel rims", category="L1", in_scope=None)["results"])
+    assert any(h["regulation_id"] == rid for h in search(conn, "wheel rims", category="N3", in_scope=None)["results"])
+    # embeddings: every chunk gets a vector, the file moves to done, and vector search answers
+    monkeypatch.setattr(llm, "embed", lambda texts: [[0.1] * 768 for _ in texts])
+    monkeypatch.setattr(conn, "commit", lambda: None)  # keep the test inside its transaction
+    assert C.embed_pending(conn) >= 1
+    assert C.advance_embedded(conn) >= 1
+    assert conn.execute("SELECT stage FROM documents WHERE id=%s", (fid,)).fetchone()["stage"] == "done"
+    v = search(conn, "wheel rims", in_scope=None)
+    assert v["mode"] == "vector" and v["results"] and v["results"][0]["score"] is not None
+
+
+def test_assistant_history(v4):
+    from regtrack.assistant import conversation, record_exchange
+
+    conn = v4
+    fid, rid = chunked(conn)
+    chunk = conn.execute("SELECT id FROM document_chunks WHERE regulation_id=%s LIMIT 1", (rid,)).fetchone()["id"]
+    cid = record_exchange(conn, "wheel rims?", "See [1].", [{"id": chunk, "regulation_id": rid, "score": 0.42}])
+    assert record_exchange(conn, "and L2?", "No.", [], conversation_id=cid) == cid
+    assert record_exchange(conn, "new", "x", [], conversation_id=-1) != cid  # unknown id: a new conversation
+    msgs = conversation(conn, cid)
+    assert [m["role"] for m in msgs] == ["user", "assistant", "user", "assistant"]
+    assert msgs[1]["citations"][0]["canonical_id"] == "SO-1406(E)-2021" and float(msgs[1]["citations"][0]["score"]) == 0.42

@@ -90,11 +90,11 @@ def post_run() -> dict:
     with connect() as conn:
         out = {"refs_resolved": L.resolve_refs(conn)}
         S.tap_best_copies(conn)
-        out["chunk_filters_synced"] = C.sync_chunk_filters(conn)
         # country-neutral fields of regulations (doc_type, doc_role, legal_force, local name, language): one SQL
-        # definition in the database (migration 0008)
+        # definition in the database (migration 0008); before the chunk sync, which copies doc_type to the chunks
         out["regulation_fields"] = conn.execute("SELECT refresh_regulation_fields(%s) AS n",
                                                 (country.code(),)).fetchone()["n"]
+        out["chunk_filters_synced"] = C.sync_chunk_filters(conn)
         out["flags_resolved"] = R.resolve_all(conn)
         conn.commit()
         out["llm_enriched"] = X.enrich_pending(conn)
