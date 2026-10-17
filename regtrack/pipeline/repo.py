@@ -95,10 +95,19 @@ def mark_listings_classified(conn: psycopg.Connection, file_id: int) -> int:
 
 
 # ====================================================================== documents (regulations)
+def authority_code(issuer: str) -> str:
+    """'AISC/ARAI' -> 'AISC_ARAI' (the same rule as migration 0007)."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", issuer).strip("_").upper()[:20]
+
+
+ISSUER_BY_CODE = {authority_code(name): name for name, _rx in _CLASSIFY_ISSUERS}
+# the short issuer name the pipeline reads from document headers ("MoRTH", "AISC/ARAI"); other authorities by name
+ISSUER_SQL = ("CASE a.code " + " ".join(f"WHEN '{c}' THEN '{n}'" for c, n in ISSUER_BY_CODE.items())
+              + " ELSE a.name END")
 REG_SQL = """
 SELECT g.id, g.external_code AS canonical_id, g.local_class AS doc_class, g.legal_status AS status,
        g.title AS official_title, g.summary AS subject, g.published_date AS doc_date,
-       g.published_date_precision AS doc_date_precision, a.code AS authority_code, a.name AS authority_name,
+       g.published_date_precision AS doc_date_precision, """ + ISSUER_SQL + """ AS issuer,
        g.series, g.number, g.year, g.part, g.revision, g.amendment_no, g.corrigendum_no, g.family_key, g.version_seq,
        g.is_current, g.nature, g.usage, g.powertrains, g.in_scope, g.relevance, g.data, g.extraction, g.language,
        g.effective_date, g.doc_type, g.doc_role, g.legal_force, g.local_type, rg.code AS country,
@@ -116,22 +125,9 @@ REG_COLS = {"canonical_id": "external_code", "doc_class": "local_class", "status
 LINKED = ("vehicle_categories", "domains", "issuer")
 
 
-def authority_code(issuer: str) -> str:
-    """'AISC/ARAI' -> 'AISC_ARAI' (the same rule as migration 0007)."""
-    return re.sub(r"[^A-Za-z0-9]+", "_", issuer).strip("_").upper()[:20]
-
-
-ISSUER_BY_CODE = {authority_code(name): name for name, _rx in _CLASSIFY_ISSUERS}
-
 
 def _doc(row) -> dict | None:
-    if row is None:
-        return None
-    d = dict(row)
-    code = d.pop("authority_code")
-    name = d.pop("authority_name")
-    d["issuer"] = ISSUER_BY_CODE.get(code, name) if code else None
-    return d
+    return dict(row) if row is not None else None
 
 
 def get_document(conn: psycopg.Connection, doc_id: int) -> dict | None:

@@ -3,13 +3,16 @@
 Scope: India only, vehicle categories L1 / L2 / M1 / N1 (and regulations for ALL vehicles). In the design,
 'Region' becomes the vehicle category; 'Authority' is the issuer; 'Domain' the topic.
 
-Impact and status are rule-based until the Qwen pass runs (each row says impact_basis='rules'):
-  impact  High   = technical and (an open obligation still to come, a revision needing re-approval,
+Impact and status are rule-based until the team sets them (each row says impact_basis 'rules' or 'team'):
+  impact  stored in regulations.impact_level by the pipeline (migration 0010, refresh_regulation_fields):
+          High   = technical and (an open obligation still to come, a revision needing re-approval,
                    or published in the last 12 months)
           Medium = other technical documents        Low = administrative / procedural
   status  team-set value if any; else Under Review (unreviewed change in the last 30 days or a draft),
           Action Required (High with an obligation still to come), Impact Analysis (other High), Tracked.
-Writes (review, compliance, alerts, settings, sync) go to the workflow tables of migration 0002 only.
+Reads and writes the v4B tables (docs/SCHEMA_V4B.md) through regtrack/api/sql.py, which keeps the response shape.
+Team decisions are stored where v4 keeps them: regulations (workflow_status, impact_level/impact_basis, owner team,
+review_note), compliance_requirements (owner team, status, due date, evidence, note), alert_rules, reports.
 Every view shows one country: ?country= if given, else the COUNTRY setting (regtrack/country.py).
 """
 
@@ -26,8 +29,9 @@ from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import Response
 
 from regtrack import country
+from regtrack.api import sql as S
 from regtrack.api.params import CountryParam, resolve_country
-from regtrack.db import connect
+from regtrack.db import Jsonb, connect
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -56,12 +60,13 @@ def load_vocab(conn) -> None:
     if _vocab_at and datetime.now() - _vocab_at < timedelta(minutes=10) and CAT_LABEL:
         return
     cats = {r["code"]: f"{r['code']} {_short(r['label'])}"
-            for r in conn.execute(f"SELECT code, label FROM vehicle_category WHERE {country.sql()}")}
+            for r in conn.execute(f"SELECT code, label FROM vehicle_categories v WHERE {country.region_sql('v')}")}
     CAT_LABEL.clear()
     CAT_LABEL.update(cats)
     CAT_LABEL.setdefault("ALL", "All vehicles")
     DOMAIN_LABEL.clear()
-    DOMAIN_LABEL.update({r["code"]: r["label"] for r in conn.execute("SELECT code, label FROM domain ORDER BY code")})
+    DOMAIN_LABEL.update({r["code"]: r["label"] for r in conn.execute(
+        "SELECT lower(code) AS code, name AS label FROM domains ORDER BY code")})
     _vocab_at = datetime.now()
 
 
@@ -70,8 +75,21 @@ def _rows(conn, sql: str, args=None) -> list[dict]:
 
 
 def _setting(conn, key: str, default: str = "") -> str:
-    r = conn.execute("SELECT value FROM app_setting WHERE key=%s", (key,)).fetchone()
-    return r["value"] if r else default
+    return S.settings(conn).get(key, default)
+
+
+def team_id(conn, name: str | None) -> int | None:
+    """The team called `name` (created on first use, as migration 0007 did for free-text owners); None for blank."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    row = conn.execute("SELECT id FROM teams WHERE name=%s", (name,)).fetchone()
+    if row:
+        return row["id"]
+    code = (re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper() or "TEAM")[:30]
+    if conn.execute("SELECT 1 FROM teams WHERE code=%s", (code,)).fetchone():
+        code = f"{code[:22]}_{abs(hash(name)) % 10**7}"
+    return conn.execute("INSERT INTO teams (code, name) VALUES (%s,%s) RETURNING id", (code, name)).fetchone()["id"]
 
 
 # ====================================================================== regulations (shared)
@@ -79,18 +97,22 @@ REG_SQL = """
 SELECT d.id, d.canonical_id, d.doc_class, d.official_title, d.subject, d.issuer, d.status AS doc_status, d.doc_date,
        d.nature, d.vehicle_categories, d.domains, d.family_key, d.is_current,
        coalesce((d.extraction->>'llm_pending')::boolean, false) AS ai_pending,
-       (SELECT min(m.implementation_date) FROM mandate m WHERE m.source_doc_id=d.id AND m.valid_to IS NULL
-          AND NOT m.is_draft AND m.implementation_date >= current_date) AS next_obligation,
-       (SELECT count(*) FROM mandate m WHERE m.source_doc_id=d.id AND m.valid_to IS NULL) AS open_mandates,
-       EXISTS (SELECT 1 FROM doc_relation r WHERE r.from_doc=d.id AND r.requires_reapproval) AS reapproval,
-       ce.event_type AS last_event, ce.detected_at AS last_event_at, ce.summary AS last_event_summary,
-       ce.review_status AS last_event_review,
-       rv.status AS review_status, rv.impact AS review_impact, rv.owner AS review_owner, rv.note AS review_note
-FROM document d
-LEFT JOIN LATERAL (SELECT event_type, detected_at, summary, review_status FROM change_event e
-                   WHERE e.document_id=d.id ORDER BY detected_at DESC LIMIT 1) ce ON true
-LEFT JOIN document_review rv ON rv.document_id=d.id
-WHERE d.doc_class <> 'OFF_TOPIC' AND d.vehicle_categories && %s AND {country} {where}
+       (SELECT min(v.implementation_date) FROM requirement_versions v WHERE v.source_regulation_id=d.id
+          AND v.valid_to IS NULL AND NOT v.is_draft AND v.implementation_date >= current_date) AS next_obligation,
+       (SELECT count(*) FROM requirement_versions v WHERE v.source_regulation_id=d.id AND v.valid_to IS NULL) AS open_mandates,
+       EXISTS (SELECT 1 FROM regulation_relations r WHERE r.from_regulation_id=d.id AND r.requires_reapproval) AS reapproval,
+       ce.change_type AS last_event, ce.detected_at AS last_event_at, ce.summary AS last_event_summary,
+       ce.review AS last_event_review,
+       initcap(replace(g.workflow_status, '_', ' ')) AS review_status,
+       CASE WHEN g.impact_basis = 'team' THEN initcap(g.impact_level) END AS review_impact,
+       CASE WHEN g.impact_basis = 'rules' THEN initcap(g.impact_level) END AS rule_impact,
+       t.name AS review_owner, g.review_note
+FROM {docs} d
+JOIN regulations g ON g.id = d.id
+LEFT JOIN teams t ON t.id = g.owner_team_id
+LEFT JOIN LATERAL (SELECT e.change_type, e.detected_at, e.summary, {review} AS review FROM regulation_changes e
+                   WHERE e.regulation_id=d.id ORDER BY e.detected_at DESC LIMIT 1) ce ON true
+WHERE d.doc_class <> 'OFF_TOPIC' AND d.vehicle_categories && %s {where}
 """
 
 
@@ -101,6 +123,8 @@ def classify_row(r: dict, today: date | None = None) -> dict:
     upcoming = r["next_obligation"] is not None
     if r.get("review_impact"):
         impact, basis = r["review_impact"], "team"
+    elif r.get("rule_impact"):  # stored by the pipeline (migration 0010); the rule below mirrors it for rows not yet refreshed
+        impact, basis = r["rule_impact"], "rules"
     elif technical and (upcoming or r["reapproval"] or recent):
         impact, basis = "High", "rules"
     elif technical:
@@ -147,7 +171,7 @@ def regulations(conn, category: str | None = None, extra_where: str = "", args: 
     cats = [category] if category in CATEGORIES else SCOPE
     if category in CATEGORIES:
         cats = [category, "ALL"]
-    rows = _rows(conn, REG_SQL.format(where=extra_where, country=country.sql("d", cc)), (cats, *args))
+    rows = _rows(conn, REG_SQL.format(where=extra_where, docs=S.docs(cc), review=S.REVIEW.format(e="e")), (cats, *args))
     return [classify_row(r) for r in rows]
 
 
@@ -171,8 +195,9 @@ def follow_up(r: dict) -> str:
 
 
 def detected_change(conn, doc_id: int) -> str:
-    rels = _rows(conn, """SELECT r.type, coalesce(t.canonical_id, r.to_ref) AS target, r.details FROM doc_relation r
-                          LEFT JOIN document t ON t.id=r.to_doc WHERE r.from_doc=%s AND r.type <> 'references'
+    rels = _rows(conn, """SELECT r.type, coalesce(t.external_code, r.to_ref) AS target, r.details FROM regulation_relations r
+                          LEFT JOIN regulations t ON t.id=r.to_regulation_id
+                          WHERE r.from_regulation_id=%s AND r.type <> 'references'
                           ORDER BY r.id LIMIT 6""", (doc_id,))
     parts = []
     for r in rels:
@@ -192,30 +217,29 @@ def detected_change(conn, doc_id: int) -> str:
 def summary(cc: CountryParam = None) -> dict:
     today = date.today()
     cc = resolve_country(cc)
-    dc = country.sql("d", cc)
     with connect() as conn:
         regs = regulations(conn, cc=cc)
         months = _rows(conn, f"""SELECT to_char(m, 'Mon') AS label, to_char(m, 'YYYY-MM') AS ym,
-                   (SELECT count(*) FROM document d WHERE d.doc_class<>'OFF_TOPIC' AND d.vehicle_categories && %s
-                      AND date_trunc('month', d.doc_date)=m AND {dc}) AS n
+                   (SELECT count(*) FROM {S.docs(cc)} d WHERE d.doc_class<>'OFF_TOPIC' AND d.vehicle_categories && %s
+                      AND date_trunc('month', d.doc_date)=m) AS n
                    FROM generate_series(date_trunc('month', current_date) - interval '11 months',
                                         date_trunc('month', current_date), interval '1 month') m ORDER BY m""", (SCOPE,))
         changes = _rows(conn, f"""SELECT count(*) AS n, count(*) FILTER (WHERE e.review_status<>'confirmed') AS open
-                                 FROM change_event e JOIN document d ON d.id=e.document_id
+                                 FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
                                  WHERE e.detected_at > now() - interval '30 days' AND d.doc_class <> 'OFF_TOPIC'
-                                   AND d.vehicle_categories && %s AND {dc}""", (SCOPE,))[0]
+                                   AND d.vehicle_categories && %s""", (SCOPE,))[0]
         # upcoming obligations: notified (final) and proposed (draft notifications), soonest first
         deadlines = _rows(conn, f"""SELECT m.mandate_key, m.subject, m.implementation_date, m.vehicle_categories,
-                   m.is_draft, d.canonical_id FROM mandate m JOIN document d ON d.id=m.source_doc_id
-                   WHERE m.valid_to IS NULL AND m.vehicle_categories && %s AND {dc}
-                     AND m.implementation_date >= current_date ORDER BY m.implementation_date, m.is_draft LIMIT 6""", (SCOPE,))
+                   m.is_draft, d.external_code AS canonical_id FROM {S.mandates(cc)} m JOIN regulations d ON d.id=m.source_doc_id
+                   WHERE m.valid_to IS NULL AND m.vehicle_categories && %s
+                     AND m.implementation_date >= current_date ORDER BY m.implementation_date, m.is_draft, m.mandate_key LIMIT 6""", (SCOPE,))
         recent_deadlines = _rows(conn, f"""SELECT m.mandate_key, m.subject, m.implementation_date, m.vehicle_categories,
-                   m.is_draft, d.canonical_id FROM mandate m JOIN document d ON d.id=m.source_doc_id
-                   WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s AND {dc}
+                   m.is_draft, d.external_code AS canonical_id FROM {S.mandates(cc)} m JOIN regulations d ON d.id=m.source_doc_id
+                   WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
                      AND m.implementation_date <= current_date
-                   ORDER BY m.implementation_date DESC LIMIT 6""", (SCOPE,))
-        sources = _rows(conn, f"SELECT count(*) AS n, max(last_run_at) AS last FROM source WHERE code<>'LOCAL_SEED' "
-                              f"AND {country.sql(None, cc)}")[0]
+                   ORDER BY m.implementation_date DESC, m.mandate_key LIMIT 6""", (SCOPE,))
+        sources = _rows(conn, f"SELECT count(*) AS n, max(last_run_at) AS last FROM {S.sources(cc)} s "
+                              "WHERE code<>'LOCAL_SEED'")[0]
     sev = {k: sum(1 for r in regs if r["impact"] == k) for k in ("High", "Medium", "Low")}
     changed = [r for r in regs if r["last_event_at"] and r["last_event_at"].date() >= today - timedelta(days=30)]
     by_cat = [{"name": CAT_LABEL[c], "code": c, "n": sum(1 for r in regs if c in r["categories"])} for c in CATEGORIES]
@@ -224,7 +248,7 @@ def summary(cc: CountryParam = None) -> dict:
         for d in r["domains"] or []:
             dom[d] = dom.get(d, 0) + 1
     top_dom = [{"name": DOMAIN_LABEL.get(k, k), "code": k, "n": v} for k, v in sorted(dom.items(), key=lambda kv: -kv[1])[:5]]
-    latest = sorted([r for r in regs if r["doc_date"]], key=lambda r: r["doc_date"], reverse=True)[:6]
+    latest = sorted([r for r in regs if r["doc_date"]], key=lambda r: (r["doc_date"], r["canonical_id"]), reverse=True)[:6]
     return {
         "kpis": {"tracked": len(regs), "new_this_quarter": sum(1 for r in regs if r["doc_date"] and r["doc_date"] >= today - timedelta(days=90)),
                  "changes_30d": changes["n"], "changes_open": changes["open"], "high": sev["High"],
@@ -251,16 +275,16 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
     cc = resolve_country(cc)
     with connect() as conn:
         regs = regulations(conn, category, history=history, reference=reference, cc=cc)
-        n_reference = conn.execute(f"""SELECT count(*) AS n FROM document WHERE vehicle_categories && %s AND {country.sql(None, cc)}
+        n_reference = conn.execute(f"""SELECT count(*) AS n FROM {S.docs(cc)} d WHERE vehicle_categories && %s
                                       AND doc_class = ANY(%s) AND status NOT IN ('superseded','withdrawn')""",
                                    (SCOPE, list(REFERENCE_CLASSES))).fetchone()["n"]
-        superseded = conn.execute(f"""SELECT count(*) AS n FROM document WHERE doc_class<>'OFF_TOPIC' AND vehicle_categories && %s
-                                     AND status IN ('superseded','withdrawn') AND {country.sql(None, cc)}""",
+        superseded = conn.execute(f"""SELECT count(*) AS n FROM {S.docs(cc)} d WHERE doc_class<>'OFF_TOPIC'
+                                     AND vehicle_categories && %s AND status IN ('superseded','withdrawn')""",
                                   (SCOPE,)).fetchone()["n"]
     by_issuer: dict[str, int] = {}
     for r in regs:
         by_issuer[r["issuer"] or "Unknown"] = by_issuer.get(r["issuer"] or "Unknown", 0) + 1
-    comp = [{"name": k, "n": v} for k, v in sorted(by_issuer.items(), key=lambda kv: -kv[1])[:6]]
+    comp = [{"name": k, "n": v} for k, v in sorted(by_issuer.items(), key=lambda kv: (-kv[1], kv[0]))[:6]]
     rows = regs
     if q:
         ql = q.lower()
@@ -286,8 +310,9 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
         if not regs:
             raise HTTPException(404, "not an in-scope regulation")
         r = regs[0]
-        files = _rows(conn, """SELECT fo.sha256, fo.ext FROM document_file df JOIN file_object fo ON fo.id=df.file_id
-                               WHERE df.document_id=%s ORDER BY df.is_best_copy DESC LIMIT 1""", (r["id"],))
+        files = _rows(conn, """SELECT fo.checksum_sha256 AS sha256, fo.file_ext AS ext FROM document_parts p
+                               JOIN documents fo ON fo.id=p.document_id
+                               WHERE p.regulation_id=%s ORDER BY p.is_best_copy DESC LIMIT 1""", (r["id"],))
         out = _reg_out(r)
         out.update(summary=r["subject"] or r["official_title"] or "No summary yet (AI pending).",
                    change=r["last_event_summary"] and f"{r['last_event'].replace('_', ' ')}: {r['last_event_summary']}"
@@ -304,13 +329,19 @@ def set_review(canonical_id: str, body: dict = Body(...)) -> dict:
     if body.get("impact") and body["impact"] not in ("High", "Medium", "Low"):
         raise HTTPException(400, "bad impact")
     with connect() as conn:
-        d = conn.execute("SELECT id FROM document WHERE canonical_id=%s", (canonical_id,)).fetchone()
+        d = conn.execute(f"SELECT id FROM regulations g WHERE external_code=%s AND {country.region_sql('g')}",
+                         (canonical_id,)).fetchone()
         if not d:
             raise HTTPException(404, "unknown document")
-        conn.execute("""INSERT INTO document_review (document_id, status, impact, owner, note) VALUES (%s,%s,%s,%s,%s)
-                        ON CONFLICT (document_id) DO UPDATE SET status=EXCLUDED.status, impact=EXCLUDED.impact,
-                        owner=EXCLUDED.owner, note=EXCLUDED.note, updated_at=now()""",
-                     (d["id"], body.get("status") or "Tracked", body.get("impact"), body.get("owner"), body.get("note")))
+        status = (body.get("status") or "Tracked").lower().replace(" ", "_")
+        impact = body.get("impact")
+        conn.execute("""UPDATE regulations SET workflow_status=%s, owner_team_id=%s, review_note=%s, reviewed_at=now(),
+                               impact_level = CASE WHEN %s::text IS NOT NULL THEN lower(%s) ELSE impact_level END,
+                               impact_basis = CASE WHEN %s::text IS NOT NULL THEN 'team' ELSE 'rules' END
+                        WHERE id=%s""",
+                     (status, team_id(conn, body.get("owner")), body.get("note"), impact, impact, impact, d["id"]))
+        if not impact:  # back to the rule-based impact at once
+            conn.execute("SELECT refresh_regulation_fields(%s)", (country.code(),))
         conn.commit()
     return {"ok": True}
 
@@ -322,8 +353,9 @@ def change_monitor(days: int = 365, cc: CountryParam = None) -> dict:
     with connect() as conn:
         sla = int(_setting(conn, "review_sla_days", "2"))
         events = _rows(conn, f"""SELECT e.id, e.event_type, e.detected_at, e.summary, e.review_status, e.details,
-                   d.canonical_id, d.id AS doc_id, d.doc_date, d.doc_class FROM change_event e LEFT JOIN document d ON d.id=e.document_id
-                   WHERE e.detected_at > now() - make_interval(days => %s) AND {country.event_sql('e.document_id', cc)}
+                   d.external_code AS canonical_id, d.id AS doc_id, d.published_date AS doc_date, d.local_class AS doc_class
+                   FROM {S.changes(cc)} e LEFT JOIN regulations d ON d.id=e.document_id
+                   WHERE e.detected_at > now() - make_interval(days => %s)
                    ORDER BY e.detected_at DESC, e.id DESC""", (days,))
         regs = {r["id"]: r for r in regulations(conn, history=True, cc=cc)}
     for e in events:
@@ -361,22 +393,33 @@ def change_monitor(days: int = 365, cc: CountryParam = None) -> dict:
 def review_changes(body: dict = Body(...)) -> dict:
     ids = [int(i) for i in body.get("ids", [])]
     with connect() as conn:
-        n = conn.execute("""UPDATE change_event SET review_status='confirmed',
-                            details = coalesce(details,'{}'::jsonb) || jsonb_build_object('reviewed_at', now())
-                            WHERE id = ANY(%s) AND review_status <> 'confirmed'""", (ids,)).rowcount
+        from regtrack.pipeline.alerts import close_settled
+
+        n = conn.execute("""UPDATE regulation_changes SET review_status='reviewed', reviewed_at=now()
+                            WHERE id = ANY(%s) AND review_status <> 'reviewed'""", (ids,)).rowcount
+        close_settled(conn)  # alerts on these changes are settled
         conn.commit()
     return {"reviewed": n}
 
 
 # ====================================================================== compliance matrix
+# the team's tracking of a rule lives on compliance_requirements; a rule nobody has touched yet has no owner, status
+# open, no due date, evidence or note, and shows updated_at NULL ("not tracked")
+TRACKED = ("(cr.owner_team_id IS NOT NULL OR cr.status <> 'open' OR cr.due_date IS NOT NULL OR cr.note IS NOT NULL "
+           "OR cr.evidence_links <> '[]'::jsonb)")
+COMP_STATUS = {"open": "Open", "in_progress": "In Progress", "compliant": "Compliant", "not_applicable": "Not Applicable"}
 COMP_SQL = """
 SELECT m.mandate_key, m.legal_basis, m.subject, m.standard_refs, m.vehicle_categories, m.implementation_date,
-       m.model_scope, d.canonical_id, d.domains, ci.owner, ci.evidence, coalesce(ci.status, 'Open') AS status,
-       coalesce(ci.due_date, m.implementation_date) AS due_date, ci.note, ci.updated_at
-FROM mandate m JOIN document d ON d.id=m.source_doc_id
-LEFT JOIN compliance_item ci ON ci.country=m.country AND ci.mandate_key=m.mandate_key
-WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s AND {country}
-ORDER BY coalesce(ci.due_date, m.implementation_date) DESC NULLS LAST, m.mandate_key
+       m.model_scope, d.canonical_id, d.domains, t.name AS owner, cr.evidence_links->0->>'label' AS evidence,
+       initcap(replace(cr.status, '_', ' ')) AS status,
+       coalesce(cr.due_date, m.implementation_date) AS due_date, cr.note,
+       CASE WHEN {tracked} THEN cr.updated_at END AS updated_at
+FROM {mandates} m JOIN {docs} d ON d.id=m.source_doc_id
+JOIN compliance_requirements cr ON cr.requirement_code=m.mandate_key
+     AND cr.region_id=(SELECT id FROM regions WHERE code=m.country)
+LEFT JOIN teams t ON t.id=cr.owner_team_id
+WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
+ORDER BY coalesce(cr.due_date, m.implementation_date) DESC NULLS LAST, m.mandate_key
 """
 
 
@@ -386,7 +429,7 @@ def compliance(category: str | None = None, cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
         load_vocab(conn)
-        rows = _rows(conn, COMP_SQL.format(country=country.sql("d", cc)), (cats,))
+        rows = _rows(conn, COMP_SQL.format(tracked=TRACKED, mandates=S.mandates(cc), docs=S.docs(cc)), (cats,))
         default_owner = _setting(conn, "default_owner", "Regulatory Affairs Team")
     for r in rows:
         r["domain"] = DOMAIN_LABEL.get((r["domains"] or [None])[0], "General") if r["domains"] else "General"
@@ -421,14 +464,16 @@ def set_compliance(mandate_key: str, body: dict = Body(...)) -> dict:
         raise HTTPException(400, "bad status")
     due = body.get("due_date") or None
     cc = country.code()
+    status = body.get("status", "Open").lower().replace(" ", "_")
+    evidence = [{"type": "note", "label": body["evidence"]}] if body.get("evidence") else []
     with connect() as conn:
-        if not conn.execute("SELECT 1 FROM mandate WHERE country=%s AND mandate_key=%s LIMIT 1", (cc, mandate_key)).fetchone():
+        cur = conn.execute(
+            """UPDATE compliance_requirements SET owner_team_id=%s, evidence_links=%s, status=%s, due_date=%s, note=%s,
+                      updated_at=now()
+               WHERE region_id=(SELECT id FROM regions WHERE code=%s) AND requirement_code=%s""",
+            (team_id(conn, body.get("owner")), Jsonb(evidence), status, due, body.get("note"), cc, mandate_key))
+        if not cur.rowcount:
             raise HTTPException(404, "unknown requirement")
-        conn.execute("""INSERT INTO compliance_item (country, mandate_key, owner, evidence, status, due_date, note)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (country, mandate_key) DO UPDATE SET owner=EXCLUDED.owner,
-                        evidence=EXCLUDED.evidence, status=EXCLUDED.status, due_date=EXCLUDED.due_date,
-                        note=EXCLUDED.note, updated_at=now()""",
-                     (cc, mandate_key, body.get("owner"), body.get("evidence"), body.get("status", "Open"), due, body.get("note")))
         conn.commit()
     return {"ok": True}
 
@@ -437,27 +482,25 @@ def set_compliance(mandate_key: str, body: dict = Body(...)) -> dict:
 @router.get("/impact")
 def impact(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
-    mandate_c = country.doc_sql("source_doc_id", cc)
-    event_c = country.event_sql("document_id", cc)
-    item_c = country.sql(None, cc)  # compliance_item carries its country (0006)
+    region = country.region_sql("x", cc)
     with connect() as conn:
         regs = regulations(conn, cc=cc)
-        stds = _rows(conn, f"""SELECT s AS name, count(*) AS n FROM mandate m, unnest(m.standard_refs) s
+        stds = _rows(conn, f"""SELECT s AS name, count(*) AS n FROM {S.mandates(cc)} m, unnest(m.standard_refs) s
                               WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
-                                AND {country.doc_sql('m.source_doc_id', cc)}
                               GROUP BY 1 ORDER BY 2 DESC LIMIT 5""", (SCOPE,))
-        owners = conn.execute("SELECT count(DISTINCT owner) AS n FROM compliance_item WHERE owner IS NOT NULL AND owner<>'' "
-                              f"AND {item_c}").fetchone()["n"]
+        owners = conn.execute(f"SELECT count(DISTINCT owner_team_id) AS n FROM compliance_requirements x "
+                              f"WHERE owner_team_id IS NOT NULL AND {region}").fetchone()["n"]
         wf = conn.execute(f"""SELECT
-              (SELECT count(*) FROM change_event WHERE detected_at > now() - interval '30 days' AND {event_c}) AS detected,
-              (SELECT count(*) FROM file_object WHERE stage NOT IN ('downloaded','text') AND {country.sql(None, cc)}) AS classified,
-              (SELECT count(*) FROM file_object WHERE {country.sql(None, cc)}) AS files,
-              (SELECT count(*) FROM document_review WHERE {country.doc_sql('document_id', cc)}) AS assessed,
-              (SELECT count(*) FROM compliance_item WHERE coalesce(owner,'')<>'' AND {item_c}) AS mapped,
-              (SELECT count(*) FROM mandate WHERE valid_to IS NULL AND NOT is_draft AND vehicle_categories && %s
-                 AND {mandate_c}) AS obligations,
-              (SELECT count(*) FROM change_event WHERE review_status='confirmed' AND {event_c}) AS closed,
-              (SELECT count(*) FROM change_event WHERE {event_c}) AS changes""", (SCOPE,)).fetchone()
+              (SELECT count(*) FROM regulation_changes x WHERE detected_at > now() - interval '30 days' AND {region}) AS detected,
+              (SELECT count(*) FROM documents x WHERE stage NOT IN ('downloaded','text') AND {region}) AS classified,
+              (SELECT count(*) FROM documents x WHERE {region}) AS files,
+              (SELECT count(*) FROM regulations x WHERE (workflow_status IS NOT NULL OR impact_basis = 'team'
+                 OR owner_team_id IS NOT NULL OR review_note IS NOT NULL) AND {region}) AS assessed,
+              (SELECT count(*) FROM compliance_requirements x WHERE owner_team_id IS NOT NULL AND {region}) AS mapped,
+              (SELECT count(*) FROM {S.mandates(cc)} m WHERE valid_to IS NULL AND NOT is_draft
+                 AND vehicle_categories && %s) AS obligations,
+              (SELECT count(*) FROM regulation_changes x WHERE review_status='reviewed' AND {region}) AS closed,
+              (SELECT count(*) FROM regulation_changes x WHERE {region}) AS changes""", (SCOPE,)).fetchone()
     dom: dict[str, int] = {}
     for r in regs:
         for d in r["domains"] or []:
@@ -503,12 +546,12 @@ def ask_context(cc: CountryParam = None) -> dict:
     with connect() as conn:
         regs = regulations(conn, cc=cc)
         sources = _rows(conn, f"""SELECT s.code, s.name, s.last_run_at, s.last_status,
-                   (SELECT count(DISTINCT d.id) FROM file_sighting f JOIN document_file df ON df.file_id=f.file_id
-                      JOIN document d ON d.id=df.document_id WHERE f.source_id=s.id AND d.vehicle_categories && %s
-                      AND {country.sql('d', cc)}) AS documents
-                   FROM source s WHERE {country.sql('s', cc)} ORDER BY s.id""", (SCOPE,))
-        chunks = conn.execute(f"SELECT count(*) AS n FROM chunk WHERE in_scope AND NOT is_boilerplate "
-                              f"AND {country.doc_sql('document_id', cc)}").fetchone()["n"]
+                   (SELECT count(DISTINCT d.id) FROM raw_ingestion_records f JOIN document_parts p ON p.document_id=f.document_id
+                      JOIN {S.docs(cc)} d ON d.id=p.regulation_id WHERE f.source_id=s.id AND d.vehicle_categories && %s)
+                     AS documents
+                   FROM {S.sources(cc)} s ORDER BY s.id""", (SCOPE,))
+        chunks = conn.execute(f"SELECT count(*) AS n FROM document_chunks c WHERE in_scope AND NOT is_boilerplate "
+                              f"AND {country.region_sql('c', cc)}").fetchone()["n"]
     suggest: list[str] = []
     for c in CATEGORIES:  # most-regulated topic per category (type approval is everywhere, so skipped)
         dom: dict[str, int] = {}
@@ -594,16 +637,23 @@ REPORTS = {
 }
 
 
+# generated reports as the report log the page shows (kind = template name, owner = team name)
+REPORT_LOG_SQL = """SELECT r.id, rt.name AS kind, r.parameters->>'scope' AS scope, t.name AS owner,
+                           (r.parameters->>'rows')::int AS rows, r.generated_at, rg.code AS country
+                    FROM reports r JOIN report_templates rt ON rt.id=r.template_id JOIN teams t ON t.id=r.owner_team_id
+                    LEFT JOIN regions rg ON rg.id=r.scope_region_id"""
+
+
 @router.get("/reports")
 def reports(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
-        recent = _rows(conn, "SELECT * FROM report_log ORDER BY generated_at DESC LIMIT 20")
-        month = conn.execute("SELECT count(*) AS n FROM report_log WHERE generated_at > date_trunc('month', now())").fetchone()["n"]
-        awaiting = conn.execute(f"""SELECT count(*) AS n FROM change_event e JOIN document d ON d.id=e.document_id
+        recent = _rows(conn, REPORT_LOG_SQL + " ORDER BY r.generated_at DESC LIMIT 20")
+        month = conn.execute("SELECT count(*) AS n FROM reports WHERE generated_at > date_trunc('month', now())").fetchone()["n"]
+        awaiting = conn.execute(f"""SELECT count(*) AS n FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
                                    WHERE e.review_status<>'confirmed' AND d.doc_class <> 'OFF_TOPIC'
-                                     AND d.vehicle_categories && %s AND {country.sql('d', cc)}""", (SCOPE,)).fetchone()["n"]
-        last = conn.execute("SELECT max(generated_at) AS t FROM report_log").fetchone()["t"]
+                                     AND d.vehicle_categories && %s""", (SCOPE,)).fetchone()["n"]
+        last = conn.execute("SELECT max(generated_at) AS t FROM reports").fetchone()["t"]
     return {"kpis": {"generated_month": month, "last_generated": last, "awaiting_review": awaiting, "templates": len(REPORTS)},
             "scope": ", ".join(CATEGORIES),
             "templates": [{"kind": k, "name": v} for k, v in REPORTS.items()], "recent": recent}
@@ -666,8 +716,11 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
                        "yes" if e["review_status"] == "confirmed" else "no", e["summary"]] for e in ch["events"]])]
         head, rows = sections[1][1], sections[1][2]
     with connect() as conn:
-        conn.execute("INSERT INTO report_log (kind, scope, owner, rows) VALUES (%s,%s,%s,%s)",
-                     (title, "India · " + "/".join(CATEGORIES), owner, len(rows)))
+        conn.execute("""INSERT INTO reports (template_id, scope_region_id, owner_team_id, parameters)
+                        VALUES ((SELECT id FROM report_templates WHERE name=%s), (SELECT id FROM regions WHERE code=%s),
+                                %s, %s)""",
+                     (title, cc, team_id(conn, owner) or team_id(conn, _setting(conn, "default_owner", "Regulatory Affairs Team")),
+                      Jsonb({"scope": "India · " + "/".join(CATEGORIES), "rows": len(rows)})))
         conn.commit()
     fname = f"{title.replace(' ', '_')}_{date.today().isoformat()}"
     if fmt == "csv":
@@ -683,41 +736,40 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
 
 
 # ====================================================================== alerts
-def _evaluate(conn, rule: dict, regs: dict, cc: str | None = None) -> list[dict]:
-    scope = rule["scope"]
+# Rules live in alert_rules; the pipeline stores each match once in alert_events (regtrack/pipeline/alerts.py) and
+# closes it when the change is reviewed or the date has passed. The page shows the open ones.
+RULE_SQL = """SELECT r.id, r.name,
+                     coalesce(vc.code, 'All categories') AS scope, r.condition->>'type' AS condition,
+                     coalesce(r.condition->>'param', lower(dm.code)) AS param, r.is_enabled AS enabled, r.created_at,
+                     (SELECT count(*) FROM alert_events a WHERE a.rule_id=r.id AND NOT a.is_resolved) AS matches
+              FROM alert_rules r LEFT JOIN vehicle_categories vc ON vc.id=r.scope_vehicle_category_id
+              LEFT JOIN domains dm ON dm.id=r.scope_domain_id
+              WHERE r.scope_region_id IS NULL OR r.scope_region_id=(SELECT id FROM regions WHERE code=%s)
+              ORDER BY r.id"""
 
-    def in_scope(cats) -> bool:
-        return scope == "All categories" or scope in (cats or []) or "ALL" in (cats or [])
 
+def _notifications(conn, cc: str) -> list[dict]:
+    rows = _rows(conn, """SELECT r.name, r.condition, e.detected_at, e.summary, g.external_code AS canonical_id,
+                                 v.implementation_date, v.is_draft, v.subject AS v_subject, c.requirement_code
+                          FROM alert_events a JOIN alert_rules r ON r.id=a.rule_id
+                          LEFT JOIN regulations g ON g.id=a.regulation_id
+                          LEFT JOIN regulation_changes e ON e.id=a.regulation_change_id
+                          LEFT JOIN requirement_versions v ON v.id=a.requirement_version_id
+                          LEFT JOIN compliance_requirements c ON c.id=v.requirement_id
+                          WHERE NOT a.is_resolved AND r.is_enabled
+                            AND (r.scope_region_id IS NULL OR r.scope_region_id=(SELECT id FROM regions WHERE code=%s))""",
+                  (cc,))
     out = []
-    if rule["condition"] == "due_within":
-        days = int(rule["param"] or 60)
-        for m in _rows(conn, f"""SELECT m.mandate_key, m.subject, m.implementation_date, m.vehicle_categories, d.canonical_id,
-                                m.is_draft FROM mandate m JOIN document d ON d.id=m.source_doc_id WHERE m.valid_to IS NULL
-                                AND {country.sql('d', cc)}
-                                AND m.vehicle_categories && %s AND m.implementation_date BETWEEN current_date AND current_date + %s""",
-                           (SCOPE, days)):
-            if in_scope(m["vehicle_categories"]):
-                out.append({"when": m["implementation_date"].isoformat(),
-                            "title": f"{'Proposed' if m['is_draft'] else 'Implementation'} date within {days} days",
-                            "text": f"{m['mandate_key']}: {m['subject'] or ''}"[:200], "canonical_id": m["canonical_id"]})
-        return out
-    events = _rows(conn, f"""SELECT e.id, e.event_type, e.detected_at, e.summary, e.document_id, d.canonical_id
-                            FROM change_event e LEFT JOIN document d ON d.id=e.document_id
-                            WHERE e.detected_at > now() - interval '30 days' AND {country.event_sql('e.document_id', cc)}
-                            ORDER BY e.detected_at DESC""")
-    want = {"new_document": "new_document", "draft_published": "draft_published", "draft_finalised": "draft_finalised",
-            "date_changed": "implementation_date_changed"}
-    for e in events:
-        r = regs.get(e["document_id"])
-        if not r or not in_scope(r["vehicle_categories"]):
-            continue
-        cond = rule["condition"]
-        hit = (cond == "high_impact" and r["impact"] == "High") or (cond in want and e["event_type"] == want[cond]) \
-            or (cond == "domain" and rule["param"] in (r["domains"] or []))
-        if hit:
-            out.append({"when": e["detected_at"].strftime("%Y-%m-%d %H:%M"), "title": rule["name"],
-                        "text": (e["summary"] or e["canonical_id"] or "")[:200], "canonical_id": e["canonical_id"]})
+    for n in rows:
+        if n["implementation_date"]:
+            days = int((n["condition"] or {}).get("param") or 60)
+            out.append({"when": n["implementation_date"].isoformat(),
+                        "title": f"{'Proposed' if n['is_draft'] else 'Implementation'} date within {days} days",
+                        "text": f"{n['requirement_code']}: {n['v_subject'] or ''}"[:200], "canonical_id": n["canonical_id"]})
+        else:
+            out.append({"when": n["detected_at"].strftime("%Y-%m-%d %H:%M") if n["detected_at"] else "",
+                        "title": n["name"], "text": (n["summary"] or n["canonical_id"] or "")[:200],
+                        "canonical_id": n["canonical_id"]})
     return out
 
 
@@ -725,22 +777,15 @@ def _evaluate(conn, rule: dict, regs: dict, cc: str | None = None) -> list[dict]
 def alerts(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
-        rules = _rows(conn, "SELECT * FROM alert_rule ORDER BY id")
-        regs = {r["id"]: r for r in regulations(conn, cc=cc)}
-        notes = []
-        for rule in rules:
-            if rule["enabled"]:
-                n = _evaluate(conn, rule, regs, cc)
-                rule["matches"] = len(n)
-                notes += n
-            else:
-                rule["matches"] = 0
-        due60 = conn.execute(f"""SELECT count(*) AS n FROM mandate WHERE valid_to IS NULL AND vehicle_categories && %s
-                                AND implementation_date BETWEEN current_date AND current_date + 60
-                                AND {country.doc_sql('source_doc_id', cc)}""", (SCOPE,)).fetchone()["n"]
-        resolved = conn.execute(f"""SELECT count(*) AS n FROM change_event WHERE review_status='confirmed'
-                                   AND (details->>'reviewed_at')::timestamptz > date_trunc('month', now())
-                                   AND {country.event_sql('document_id', cc)}""").fetchone()["n"]
+        load_vocab(conn)
+        rules = _rows(conn, RULE_SQL, (cc,))
+        for r in rules:
+            r["matches"] = r["matches"] if r["enabled"] else 0
+        notes = _notifications(conn, cc)
+        due60 = conn.execute(f"""SELECT count(*) AS n FROM {S.mandates(cc)} m WHERE valid_to IS NULL AND vehicle_categories && %s
+                                AND implementation_date BETWEEN current_date AND current_date + 60""", (SCOPE,)).fetchone()["n"]
+        resolved = conn.execute(f"""SELECT count(*) AS n FROM regulation_changes x WHERE review_status='reviewed'
+                                   AND reviewed_at > date_trunc('month', now()) AND {country.region_sql('x', cc)}""").fetchone()["n"]
     seen, uniq = set(), []
     for n in sorted(notes, key=lambda x: x["when"], reverse=True):
         k = (n["title"], n["canonical_id"], n["when"])
@@ -753,12 +798,30 @@ def alerts(cc: CountryParam = None) -> dict:
             "domains": [{"code": k, "label": v} for k, v in DOMAIN_LABEL.items()]}
 
 
+def _refresh_alerts(conn) -> None:
+    """A new or re-enabled rule shows its matches at once, not only after the next pipeline run."""
+    from regtrack.pipeline.alerts import run
+
+    run(conn)
+
+
 @router.post("/alerts")
 def add_alert(body: dict = Body(...)) -> dict:
+    cond = body.get("condition") or "new_document"
+    param = body.get("param")
+    cc = country.code()
     with connect() as conn:
-        r = conn.execute("INSERT INTO alert_rule (name, scope, condition, param) VALUES (%s,%s,%s,%s) RETURNING id",
-                         (body.get("name") or "New regulatory watch", body.get("scope") or "All categories",
-                          body.get("condition") or "new_document", body.get("param"))).fetchone()
+        r = conn.execute(
+            """INSERT INTO alert_rules (name, scope_region_id, scope_domain_id, scope_vehicle_category_id, condition,
+                                        notify_team_id)
+               VALUES (%s, (SELECT id FROM regions WHERE code=%s),
+                       (SELECT id FROM domains WHERE %s = 'domain' AND code = upper(%s)),
+                       (SELECT id FROM vehicle_categories WHERE region_id=(SELECT id FROM regions WHERE code=%s) AND code=%s),
+                       %s, (SELECT id FROM teams WHERE code='REG_AFFAIRS'))
+               RETURNING id""",
+            (body.get("name") or "New regulatory watch", cc, cond, param, cc, body.get("scope"),
+             Jsonb({"type": cond, **({"param": str(param)} if param and cond != "domain" else {})}))).fetchone()
+        _refresh_alerts(conn)
         conn.commit()
     return {"id": r["id"]}
 
@@ -766,7 +829,8 @@ def add_alert(body: dict = Body(...)) -> dict:
 @router.patch("/alerts/{rule_id}")
 def toggle_alert(rule_id: int, body: dict = Body(...)) -> dict:
     with connect() as conn:
-        conn.execute("UPDATE alert_rule SET enabled=%s WHERE id=%s", (bool(body.get("enabled")), rule_id))
+        conn.execute("UPDATE alert_rules SET is_enabled=%s WHERE id=%s", (bool(body.get("enabled")), rule_id))
+        _refresh_alerts(conn)
         conn.commit()
     return {"ok": True}
 
@@ -774,7 +838,7 @@ def toggle_alert(rule_id: int, body: dict = Body(...)) -> dict:
 @router.delete("/alerts/{rule_id}")
 def delete_alert(rule_id: int) -> dict:
     with connect() as conn:
-        conn.execute("DELETE FROM alert_rule WHERE id=%s", (rule_id,))
+        conn.execute("DELETE FROM alert_rules WHERE id=%s", (rule_id,))  # its alert events go with it
         conn.commit()
     return {"ok": True}
 
@@ -789,18 +853,20 @@ def admin(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
         sources = _rows(conn, f"""SELECT s.code, s.name, s.base_url, s.schedule_hours, s.last_run_at, s.last_status,
-                   (SELECT count(*) FROM file_sighting f WHERE f.source_id=s.id) AS sightings
-                   FROM source s WHERE {country.sql('s', cc)} ORDER BY s.id""")
-        runs = _rows(conn, f"""SELECT r.id, s.code, r.started_at, r.finished_at, r.status, r.stats FROM crawl_run r
-                              JOIN source s ON s.id=r.source_id WHERE {country.sql('s', cc)} ORDER BY r.id DESC LIMIT 15""")
+                   (SELECT count(*) FROM raw_ingestion_records f WHERE f.source_id=s.id) AS sightings
+                   FROM {S.sources(cc)} s ORDER BY s.id""")
+        runs = _rows(conn, f"""SELECT r.id, s.code, r.started_at, r.finished_at, r.status, r.stats FROM {S.runs(cc)} r
+                              JOIN sources s ON s.id=r.source_id ORDER BY r.id DESC LIMIT 15""")
         tot = conn.execute(f"""SELECT count(*) AS n, count(*) FILTER (WHERE status IN ('ok','partial')) AS good,
                               count(*) FILTER (WHERE status='partial') AS partial
-                              FROM crawl_run WHERE started_at > now() - interval '30 days'
-                                AND {country.source_sql('source_id', cc)}""").fetchone()
-        warnings = conn.execute(f"""SELECT count(*) AS n FROM quality_flag WHERE resolved_at IS NULL
+                              FROM {S.runs(cc)} r WHERE started_at > now() - interval '30 days'""").fetchone()
+        warnings = conn.execute(f"""SELECT count(*) AS n FROM quality_flags q WHERE resolved_at IS NULL
                                    AND rule IN ('low_ocr_confidence','schema_violation','identity_not_found')
-                                   AND {country.flag_sql(None, cc)}""").fetchone()["n"]
-        settings = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM app_setting")}
+                                   AND ((q.entity='regulation' AND q.entity_id IN (SELECT id FROM regulations x
+                                                                                   WHERE {country.region_sql('x', cc)}))
+                                     OR (q.entity='document' AND q.entity_id IN (SELECT id FROM documents x
+                                                                                 WHERE {country.region_sql('x', cc)})))""").fetchone()["n"]
+        settings = S.settings(conn)
     from regtrack.scheduler import crawlers
 
     mods = crawlers(cc)
@@ -843,8 +909,7 @@ def put_settings(body: dict = Body(...)) -> dict:
     with connect() as conn:
         for k, v in body.items():
             if k in allowed:
-                conn.execute("INSERT INTO app_setting (key, value) VALUES (%s,%s) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
-                             (k, str(v)))
+                S.put_setting(conn, k, str(v))
         conn.commit()
     return {"ok": True}
 
@@ -896,9 +961,9 @@ def portal_meta(cc: CountryParam = None) -> dict:
     with connect() as conn:
         load_vocab(conn)
         s = conn.execute(f"""SELECT count(*) FILTER (WHERE last_status IN ('ok','partial')) AS n, count(*) AS total,
-                            max(last_run_at) AS last FROM source WHERE code = ANY(%s) AND {country.sql(None, cc)}""",
+                            max(last_run_at) AS last FROM {S.sources(cc)} s WHERE code = ANY(%s)""",
                          (list(crawlers(cc)),)).fetchone()
-        settings = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM app_setting")}
+        settings = S.settings(conn)
     return {"country": cc, "sources": s["n"], "sources_total": s["total"], "last_sync": s["last"],
             "scheduler": scheduler_status(settings),
             "categories": [{"code": c, "label": CAT_LABEL.get(c, c)} for c in CATEGORIES],

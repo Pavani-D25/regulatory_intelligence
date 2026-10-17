@@ -12,7 +12,7 @@ WORD = "zyxquokka"  # appears only in this test's chunks, so search hits are our
 
 @pytest.fixture()
 def two_countries(migrated, monkeypatch):
-    """An India and a Thai file (stage 'downloaded'), document and chunk, committed so the API can see them."""
+    """An India and a Thai file (stage 'downloaded'), regulation and chunk (v4B), committed so the API can see them."""
     from regtrack import config
     from regtrack.db import connect
 
@@ -23,39 +23,31 @@ def two_countries(migrated, monkeypatch):
     ids: dict[str, dict[str, int]] = {}
     with connect(dsn=dsn) as conn:
         for cc, cid, dc in (("IN", "TEST-IN-0001", "AIS_STANDARD"), ("TH", "TEST-TH-0001", "TIS_STANDARD")):
-            fid = conn.execute("INSERT INTO file_object (sha256, storage_path, ext, stage, country) "
-                               "VALUES (%s, %s, 'pdf', 'downloaded', %s) RETURNING id",
-                               (cc.lower() * 32, f"test/{cc}.pdf", cc)).fetchone()["id"]
-            did = conn.execute("INSERT INTO document (canonical_id, doc_class, status, doc_date, vehicle_categories, "
-                               "in_scope, nature, official_title, country) "
-                               "VALUES (%s, %s, 'final', current_date, ARRAY['M1'], true, 'technical', %s, %s) RETURNING id",
-                               (cid, dc, f"{cc} test brake standard", cc)).fetchone()["id"]
-            conn.execute("INSERT INTO chunk (document_id, file_id, chunk_index, content, doc_class, vehicle_categories, "
-                         "in_scope, is_current) VALUES (%s, %s, 0, %s, %s, ARRAY['M1'], true, true)",
-                         (did, fid, f"{WORD} braking requirement for {cc}", dc))
-            # the pipeline reads stored files from the v4B table (phase 3); the API still reads the old ones
-            v4 = conn.execute("INSERT INTO documents (region_id, checksum_sha256, storage_path, file_ext, stage) "
-                              "VALUES ((SELECT id FROM regions WHERE code=%s), %s, %s, 'pdf', 'downloaded') RETURNING id",
-                              (cc, cc.lower() * 32, f"test/{cc}.pdf")).fetchone()["id"]
-            # search reads the v4B tables (phase 5): the same regulation and chunk there
+            rid = conn.execute("SELECT id FROM regions WHERE code=%s", (cc,)).fetchone()["id"]
+            # Thailand has no vehicle categories seeded yet (multi-country rollout): a test one, removed afterwards
+            conn.execute("INSERT INTO vehicle_categories (region_id, code, label, un_codes) "
+                         "VALUES (%s, 'M1', 'test passenger car', '{M1}') ON CONFLICT DO NOTHING", (rid,))
+            fid = conn.execute("INSERT INTO documents (region_id, checksum_sha256, storage_path, file_ext, stage) "
+                               "VALUES (%s, %s, %s, 'pdf', 'downloaded') RETURNING id",
+                               (rid, cc.lower() * 32, f"test/{cc}.pdf")).fetchone()["id"]
             reg = conn.execute(
-                "INSERT INTO regulations (region_id, external_code, local_class, legal_status, in_scope) "
-                "SELECT r.id, %s, (SELECT code FROM document_classes WHERE region_id=r.id ORDER BY (code=%s) DESC, code "
-                "LIMIT 1), 'final', true FROM regions r WHERE r.code=%s RETURNING id, region_id", (cid, dc, cc)).fetchone()
+                "INSERT INTO regulations (region_id, external_code, local_class, legal_status, published_date, in_scope, "
+                "nature, title) VALUES (%s, %s, (SELECT code FROM document_classes WHERE region_id=%s "
+                "ORDER BY (code=%s) DESC, code LIMIT 1), 'final', current_date, true, 'technical', %s) RETURNING id",
+                (rid, cid, rid, dc, f"{cc} test brake standard")).fetchone()["id"]
+            conn.execute("INSERT INTO regulation_vehicle_categories SELECT %s, id FROM vehicle_categories "
+                         "WHERE region_id=%s AND code='M1'", (reg, rid))
             conn.execute("INSERT INTO document_chunks (document_id, regulation_id, chunk_index, content, region_id, "
                          "in_scope, is_current, vehicle_category_ids) VALUES (%s, %s, 0, %s, %s, true, true, "
                          "ARRAY(SELECT id FROM vehicle_categories WHERE region_id=%s AND code='M1'))",
-                         (v4, reg["id"], f"{WORD} braking requirement for {cc}", reg["region_id"], reg["region_id"]))
-            ids[cc] = {"file": fid, "doc": did, "v4file": v4, "reg": reg["id"]}
+                         (fid, reg, f"{WORD} braking requirement for {cc}", rid, rid))
+            ids[cc] = {"file": fid, "reg": reg}
         conn.commit()
     yield ids
     with connect(dsn=dsn) as conn:
-        docs, files = [v["doc"] for v in ids.values()], [v["file"] for v in ids.values()]
-        conn.execute("DELETE FROM chunk WHERE document_id = ANY(%s)", (docs,))
-        conn.execute("DELETE FROM document WHERE id = ANY(%s)", (docs,))
-        conn.execute("DELETE FROM file_object WHERE id = ANY(%s)", (files,))
-        conn.execute("DELETE FROM regulations WHERE id = ANY(%s)", ([v["reg"] for v in ids.values()],))  # + chunks
-        conn.execute("DELETE FROM documents WHERE id = ANY(%s)", ([v["v4file"] for v in ids.values()],))
+        conn.execute("DELETE FROM regulations WHERE id = ANY(%s)", ([v["reg"] for v in ids.values()],))  # + chunks, links
+        conn.execute("DELETE FROM documents WHERE id = ANY(%s)", ([v["file"] for v in ids.values()],))
+        conn.execute("DELETE FROM vehicle_categories WHERE label='test passenger car'")
         conn.commit()
     config.get_settings.cache_clear()
 
@@ -74,7 +66,7 @@ def test_pipeline_does_not_pick_thai_files(two_countries, monkeypatch):
     from regtrack.pipeline import runner
     from regtrack.pipeline import stages as S
 
-    th, india = two_countries["TH"]["v4file"], two_countries["IN"]["v4file"]
+    th, india = two_countries["TH"]["file"], two_countries["IN"]["file"]
     with connect() as conn:
         picked = {f["id"] for f in runner._files(conn, "downloaded", None)}
     assert india in picked and th not in picked

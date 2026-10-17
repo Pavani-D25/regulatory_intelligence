@@ -1,4 +1,5 @@
-"""Portal API (approved design v2) on the main database; writes are made on test rows and removed again."""
+"""Portal API (approved design v2) on DATABASE_URL (on branch v4-schema: regtrack_dev, the v4B tables).
+Writes are made on real rows and put back exactly as they were, or on test rows that are removed again."""
 
 from __future__ import annotations
 
@@ -6,7 +7,7 @@ from datetime import date
 
 import pytest
 
-from regtrack.db import is_reachable
+from regtrack.db import Jsonb, is_reachable
 
 pytestmark = [pytest.mark.db, pytest.mark.skipif(not is_reachable()[0], reason="PostgreSQL not reachable")]
 
@@ -54,13 +55,22 @@ def test_drawer_and_review_roundtrip(client):
     cid = client.get("/portal/regulations").json()["rows"][0]["canonical_id"]
     d = client.get(f"/portal/regulations/{cid}/detail").json()
     assert d["summary"] and d["change"] and d["action"]
+    cols = "workflow_status, impact_level, impact_basis, owner_team_id, review_note, reviewed_at"
+    with connect() as conn:
+        saved = conn.execute(f"SELECT id, {cols} FROM regulations WHERE external_code=%s", (cid,)).fetchone()
     try:
+        assert client.put(f"/portal/regulations/{cid}/review",
+                          json={"status": "Tracked", "owner": "pytest", "impact": "Low"}).status_code == 200
+        d = client.get(f"/portal/regulations/{cid}/detail").json()
+        assert (d["status"], d["impact"], d["impact_basis"], d["owner"]) == ("Tracked", "Low", "team", "pytest")
         assert client.put(f"/portal/regulations/{cid}/review", json={"status": "Tracked", "owner": "pytest"}).status_code == 200
-        assert client.get(f"/portal/regulations/{cid}/detail").json()["status"] == "Tracked"
+        assert client.get(f"/portal/regulations/{cid}/detail").json()["impact_basis"] == "rules"  # back to the rule
         assert client.put(f"/portal/regulations/{cid}/review", json={"status": "Bogus"}).status_code == 400
     finally:
         with connect() as conn:
-            conn.execute("DELETE FROM document_review WHERE owner='pytest'")
+            conn.execute(f"UPDATE regulations SET ({cols}) = (%s,%s,%s,%s,%s,%s) WHERE id=%s",
+                         (*[saved[c.strip()] for c in cols.split(",")], saved["id"]))
+            conn.execute("DELETE FROM teams WHERE name='pytest'")
             conn.commit()
 
 
@@ -70,21 +80,33 @@ def test_compliance_alerts_reports(client):
     rows = client.get("/portal/compliance").json()["rows"]
     assert rows
     key = rows[0]["mandate_key"]
+    cols = "owner_team_id, evidence_links, status, due_date, note, updated_at"
+    with connect() as conn:
+        saved = conn.execute(f"SELECT id, {cols} FROM compliance_requirements WHERE requirement_code=%s", (key,)).fetchone()
     try:
         r = client.put(f"/portal/compliance/{key}", json={"owner": "pytest", "status": "Compliant"})
         assert r.status_code == 200
         assert client.get("/portal/compliance").json()["kpis"]["compliant_pct"] > 0
-        rid = client.post("/portal/alerts", json={"name": "pytest rule", "condition": "new_document"}).json()["id"]
+        row = next(r for r in client.get("/portal/compliance").json()["rows"] if r["mandate_key"] == key)
+        assert (row["owner"], row["status"]) == ("pytest", "Compliant") and row["updated_at"]
+        rid = client.post("/portal/alerts", json={"name": "pytest rule", "condition": "new_document", "scope": "L2"}).json()["id"]
+        rule = next(r for r in client.get("/portal/alerts").json()["rules"] if r["id"] == rid)
+        assert (rule["scope"], rule["condition"], rule["enabled"]) == ("L2", "new_document", True)
         assert client.patch(f"/portal/alerts/{rid}", json={"enabled": False}).status_code == 200
         assert client.delete(f"/portal/alerts/{rid}").status_code == 200
         rep = client.get("/portal/reports/executive?owner=pytest")
         assert rep.status_code == 200 and "attachment" in rep.headers["content-disposition"]
         assert client.get("/portal/reports/compliance_gap?fmt=csv&owner=pytest").text.startswith("Requirement,")
+        recent = client.get("/portal/reports").json()["recent"]
+        assert [r["owner"] for r in recent[:2]] == ["pytest", "pytest"] and recent[0]["kind"] == "Compliance Gap Report"
     finally:
         with connect() as conn:
-            conn.execute("DELETE FROM compliance_item WHERE owner='pytest'")
-            conn.execute("DELETE FROM alert_rule WHERE name='pytest rule'")
-            conn.execute("DELETE FROM report_log WHERE owner='pytest'")
+            conn.execute(f"UPDATE compliance_requirements SET ({cols}) = (%s,%s,%s,%s,%s,%s) WHERE id=%s",
+                         (*[Jsonb(saved[c.strip()]) if c.strip() == "evidence_links" else saved[c.strip()]
+                            for c in cols.split(",")], saved["id"]))
+            conn.execute("DELETE FROM alert_rules WHERE name='pytest rule'")
+            conn.execute("DELETE FROM reports WHERE owner_team_id=(SELECT id FROM teams WHERE name='pytest')")
+            conn.execute("DELETE FROM teams WHERE name='pytest'")
             conn.commit()
 
 
@@ -116,7 +138,8 @@ def test_no_static_values(client):
 
     meta = client.get("/portal/meta").json()
     with connect() as conn:
-        labels = {r["code"]: r["label"] for r in conn.execute("SELECT code, label FROM vehicle_category WHERE country='IN'")}
+        labels = {r["code"]: r["label"] for r in conn.execute(
+            "SELECT code, label FROM vehicle_categories WHERE region_id=(SELECT id FROM regions WHERE code='IN')")}
     assert all(labels[c["code"]].startswith(c["label"].split(" ", 1)[1]) for c in meta["categories"])
     assert {"alive", "heartbeat", "auto_sync"} <= meta["scheduler"].keys()
     ctx = client.get("/portal/ask/context").json()
@@ -185,7 +208,8 @@ def test_drafts_are_not_published_standards():
     from regtrack.db import connect
 
     with connect() as conn:
-        bad = conn.execute("""SELECT count(*) AS n FROM document d JOIN document_file df ON df.document_id=d.id AND df.is_best_copy
-                              JOIN file_sighting fs ON fs.file_id=df.file_id JOIN source s ON s.id=fs.source_id AND s.code='ARAI_AIS'
-                              WHERE d.doc_class='AIS_STANDARD' AND fs.listing_raw->>'code' ILIKE 'Draft%%'""").fetchone()["n"]
+        bad = conn.execute("""SELECT count(*) AS n FROM regulations d JOIN document_parts p ON p.regulation_id=d.id AND p.is_best_copy
+                              JOIN raw_ingestion_records fs ON fs.document_id=p.document_id
+                              JOIN sources s ON s.id=fs.source_id AND s.code='ARAI_AIS'
+                              WHERE d.local_class='AIS_STANDARD' AND fs.payload->>'code' ILIKE 'Draft%%'""").fetchone()["n"]
     assert bad == 0

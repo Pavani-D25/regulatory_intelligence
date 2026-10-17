@@ -282,14 +282,14 @@ def parse_rule_obligations(op: str) -> list[RuleObligation]:
 # ---------------------------------------------------------------------- DB writes
 # A rule ("mandate" in this module) is a compliance_requirements row (requirement_code = mandate_key) per region;
 # each version of it is a requirement_versions row. Versions come back under the names this module uses.
-def version_sql() -> str:  # built per call: the current country can change (tests, REGTRACK_COUNTRY)
+def version_sql(cc: str | None = None) -> str:  # built per call: the current country can change (tests, REGTRACK_COUNTRY)
     return f"""
 SELECT v.*, c.requirement_code AS mandate_key, v.source_regulation_id AS source_doc_id,
        v.standard_regulation_ids AS standard_doc_ids,
        coalesce((SELECT array_agg(vc.code ORDER BY vc.code) FROM vehicle_categories vc
                  WHERE vc.id = ANY(v.vehicle_category_ids)), '{{}}') AS vehicle_categories
 FROM requirement_versions v JOIN compliance_requirements c ON c.id = v.requirement_id
-WHERE {country.region_sql('c')}"""
+WHERE {country.region_sql('c', cc)}"""
 VERSION_COLS = {"source_doc_id": "source_regulation_id", "standard_doc_ids": "standard_regulation_ids"}
 
 

@@ -4,8 +4,8 @@ a pipeline run that moves new files through all stages. Runs never fail because 
     python -m regtrack.cli schedule          # blocking APScheduler loop
     python -m regtrack.cli crawl MORTH_API   # one run now (what Windows Task Scheduler calls)
 
-The loop writes app_setting 'scheduler_heartbeat' every 5 minutes so the portal can show whether it is alive, and
-skips scheduled crawls while app_setting 'auto_sync' is 'false' (the Admin switch). Manual runs are not affected.
+The loop writes app_settings 'scheduler_heartbeat' every 5 minutes so the portal can show whether it is alive, and
+skips scheduled crawls while app_settings 'auto_sync' is 'false' (the Admin switch). Manual runs are not affected.
 Only the current country's sources (regtrack/country.py) are scheduled or crawled.
 """
 
@@ -104,14 +104,14 @@ def main() -> None:
 
 def heartbeat() -> None:
     with connect() as conn:
-        conn.execute("INSERT INTO app_setting (key, value) VALUES ('scheduler_heartbeat', now()::text) "
+        conn.execute("INSERT INTO app_settings (key, value) VALUES ('scheduler_heartbeat', to_jsonb(now()::text)) "
                      "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")
         conn.commit()
 
 
 def auto_sync_enabled() -> bool:
     with connect() as conn:
-        r = conn.execute("SELECT value FROM app_setting WHERE key='auto_sync'").fetchone()
+        r = conn.execute("SELECT value #>> '{}' AS value FROM app_settings WHERE key='auto_sync'").fetchone()
     return not r or r["value"] != "false"
 
 
