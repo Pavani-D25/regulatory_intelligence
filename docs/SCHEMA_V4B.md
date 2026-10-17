@@ -533,7 +533,7 @@ Each phase ends with tests, ruff, a phase report in `reports/`, and a commit on 
 | 5 | Search → `document_chunks`; Ask AI writes `assistant_*` | |
 | 6 | Monitoring → `regulation_changes`, `quality_flags`, `alert_events` | |
 | 7 | API and portal on v4B, plus new screens: users and teams, watches, assistant history, report schedules | |
-| 8 | Regression check against the `CLAUDE.md` numbers; migration 0008 drops the old tables; `CLAUDE.md` and `docs/DB_DESIGN.md` updated | switch-over complete |
+| 8 | Regression check against the `CLAUDE.md` numbers; a new migration (0009 or later; 0008 is the regulation-fields function from phase 3) drops the old tables; `CLAUDE.md` and `docs/DB_DESIGN.md` updated | switch-over complete |
 
 **Safety throughout:**
 - The original PDFs and page text are never touched.

@@ -24,7 +24,8 @@ from regtrack.db import Jsonb
 from regtrack.models import model_for
 from regtrack.models.enums import DocClass, FlagRule, Status
 from regtrack.pipeline import patterns as P
-from regtrack.pipeline.dbutil import add_flag, update_if_changed
+from regtrack.pipeline import repo as R
+from regtrack.pipeline.dbutil import add_flag
 from regtrack.pipeline.text import PageText, english_text, load_pages
 from regtrack.storage import open_local
 from regtrack.validators import in_scope, validate_data
@@ -485,12 +486,9 @@ def merge_llm(dc: DocClass, data: dict, cols: dict, conf: dict, r) -> list[str]:
 # ====================================================================== stage
 def stage_extract(conn: psycopg.Connection, f: dict, use_llm: bool = True) -> str:
     pages = load_pages(f["sha256"])
-    names = [r["listing_title"] for r in conn.execute(
-        "SELECT fs.listing_title FROM file_sighting fs JOIN source s ON s.id=fs.source_id "
-        "WHERE fs.file_id=%s AND s.code='LOCAL_SEED' ORDER BY fs.id", (f["id"],))]
-    dfs = conn.execute("SELECT * FROM document_file WHERE file_id=%s ORDER BY page_from", (f["id"],)).fetchall()
-    for df in dfs:
-        doc = conn.execute("SELECT * FROM document WHERE id=%s", (df["document_id"],)).fetchone()
+    names = [r["listing_title"] for r in R.listings_of_file(conn, f["id"]) if r["code"] == "LOCAL_SEED"]
+    for df in R.parts_of_file(conn, f["id"]):
+        doc = R.get_document(conn, df["document_id"])
         if not df["is_best_copy"] and doc["extraction"]:
             continue  # extract from the best copy only; other copies are kept as files
         extract_document(conn, doc, df, f, pages, names, use_llm)
@@ -530,7 +528,7 @@ def listing_subject(conn: psycopg.Connection, doc: dict, file_id: int) -> str | 
     document's own is skipped."""
     from regtrack.pipeline.identity import title_notification_ids
 
-    rows = conn.execute("SELECT listing_title, listing_raw FROM file_sighting WHERE file_id=%s", (file_id,)).fetchall()
+    rows = R.listings_of_file(conn, file_id)
     num = re.match(r"\d+", str(doc.get("number") or ""))
     own = (P.series_code(doc["series"]) if doc.get("series") else None, str(int(num.group(0))) if num else None)
     numbered = doc.get("series") in ("G.S.R.", "S.O.", "GSR", "SO") and own[1] is not None
@@ -575,8 +573,7 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
             conf["subject"] = 0.4
     if dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and not cols.get("vehicle_categories") and data.get("amends"):
         # an amendment applies to the vehicles of the standard it amends (same rule as link.link_ais)
-        base = conn.execute("SELECT vehicle_categories, in_scope, domains, powertrains FROM document WHERE canonical_id=%s",
-                            (data["amends"],)).fetchone()
+        base = R.find_document(conn, data["amends"])
         if base and base["vehicle_categories"]:
             cols.update(vehicle_categories=base["vehicle_categories"], in_scope=base["in_scope"],
                         domains=cols.get("domains") or base["domains"], powertrains=cols.get("powertrains") or base["powertrains"])
@@ -609,11 +606,11 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
     errors = validate_data(dc.value, data)
     if errors:
         extraction["needs_check"].append("data")
-        add_flag(conn, "document", doc["id"], FlagRule.SCHEMA_VIOLATION, {"errors": errors[:10]})
+        add_flag(conn, "regulation", doc["id"], FlagRule.SCHEMA_VIOLATION, {"errors": errors[:10]})
     cats = cols.get("vehicle_categories") or []
     if not cats and (dc.is_notification or dc in (DocClass.AIS_STANDARD,)):
         extraction["needs_check"].append("vehicle_categories")
-        add_flag(conn, "document", doc["id"], FlagRule.NO_VEHICLE_CATEGORY, {})
+        add_flag(conn, "regulation", doc["id"], FlagRule.NO_VEHICLE_CATEGORY, {})
     extraction["needs_check"] = sorted(set(extraction["needs_check"]))
     values = {**{k: v for k, v in cols.items() if v is not None or k == "in_scope"}, "data": Jsonb(data),
               "extraction": Jsonb(extraction)}
@@ -626,15 +623,12 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
     if final_date and final_date > date.today():
         extraction["needs_check"] = sorted(set(extraction["needs_check"]) | {"doc_date"})
         values["extraction"] = Jsonb(extraction)
-        add_flag(conn, "document", doc["id"], FlagRule.DOC_DATE_IN_FUTURE, {"doc_date": str(final_date)})
+        add_flag(conn, "regulation", doc["id"], FlagRule.DOC_DATE_IN_FUTURE, {"doc_date": str(final_date)})
     if not doc.get("issuer"):
         # no ministry header in the text: the publishing source is the issuer (provenance, not identity)
-        srcs = {r["code"] for r in conn.execute(
-            "SELECT DISTINCT so.code FROM document_file df JOIN file_sighting s ON s.file_id=df.file_id "
-            "JOIN source so ON so.id=s.source_id WHERE df.document_id=%s", (doc["id"],))}
-        folders = {r["f"] for r in conn.execute(
-            "SELECT DISTINCT left(s.listing_raw->>'folder', 2) AS f FROM document_file df JOIN file_sighting s "
-            "ON s.file_id=df.file_id WHERE df.document_id=%s", (doc["id"],))}
+        listed = R.listings_of_document(conn, doc["id"])
+        srcs = {r["code"] for r in listed}
+        folders = {((r["listing_raw"] or {}).get("folder") or "")[:2] or None for r in listed}
         issuer = ("AISC/ARAI" if srcs & {"ARAI_AIS", "ARAI_TAP"} or folders & {"07", "17", "18"} else
                   "BIS" if "21" in folders else "MoPNG" if "29" in folders else
                   "MoRTH" if srcs & {"MORTH_API", "EGAZETTE"} or folders & {"05", "06", "11", "27", "28"} else None)
@@ -645,7 +639,7 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
     for k in ("subject", "official_title"):
         if values.get(k) in (None, "") and doc.get(k):
             values.pop(k, None)
-    update_if_changed(conn, "document", {"id": doc["id"]}, values, touch=True)
+    R.update_document(conn, doc["id"], values, touch=True)
 
 
 def double_check(doc: dict, eng: str, data: dict) -> dict:
@@ -663,13 +657,15 @@ def enrich_pending(conn: psycopg.Connection, limit: int = 200) -> int:
     if not llm.reachable()[0]:
         return 0
     rows = conn.execute(
-        """SELECT d.*, df.file_id, df.page_from, df.page_to FROM document d
-           JOIN document_file df ON df.document_id=d.id AND df.is_best_copy
-           WHERE (d.extraction->>'llm_pending')::boolean AND """ + country.sql("d") + " LIMIT %s", (limit,)).fetchall()
+        """SELECT p.regulation_id, p.document_id AS file_id, p.page_from, p.page_to FROM regulations g
+           JOIN document_parts p ON p.regulation_id=g.id AND p.is_best_copy
+           WHERE (g.extraction->>'llm_pending')::boolean AND """ + country.region_sql("g") + " LIMIT %s",
+        (limit,)).fetchall()
     n = 0
-    for doc in rows:
-        f = conn.execute("SELECT * FROM file_object WHERE id=%s", (doc["file_id"],)).fetchone()
-        df = {"page_from": doc["page_from"], "page_to": doc["page_to"], "is_best_copy": True}
+    for row in rows:
+        doc = R.get_document(conn, row["regulation_id"])
+        f = R.get_file(conn, row["file_id"])
+        df = {"page_from": row["page_from"], "page_to": row["page_to"], "is_best_copy": True}
         d = dict(doc)
         d["extraction"] = {**(doc["extraction"] or {}), "model": None}
         extract_document(conn, d, df, f, load_pages(f["sha256"]), [], use_llm=True)

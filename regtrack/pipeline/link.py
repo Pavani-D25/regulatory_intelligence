@@ -69,9 +69,9 @@ def link_notification(conn: psycopg.Connection, doc: dict, op: str) -> None:
                      evidence=f"draft published vide {dref['canonical_id']}", method="regex")
         t = doc_by_cid(conn, dref["canonical_id"])
         if t is None:
-            add_flag(conn, "document", doc["id"], FlagRule.UNRESOLVED_REFERENCE, {"draft": dref["canonical_id"]})
+            add_flag(conn, "regulation", doc["id"], FlagRule.UNRESOLVED_REFERENCE, {"draft": dref["canonical_id"]})
         elif dref.get("date") and t["doc_date"] and str(t["doc_date"]) != dref["date"]:
-            add_flag(conn, "document", doc["id"], FlagRule.DRAFT_FINAL_DATE_MISMATCH,
+            add_flag(conn, "regulation", doc["id"], FlagRule.DRAFT_FINAL_DATE_MISMATCH,
                      {"cited": dref["date"], "draft_doc_date": str(t["doc_date"]), "draft": dref["canonical_id"]})
     elif doc["status"] == "final" and data.get("file_no"):
         for d in conn.execute("SELECT id, canonical_id FROM document WHERE status='draft' AND data->>'file_no'=%s "
@@ -227,11 +227,11 @@ def stage_link(conn: psycopg.Connection, f: dict) -> str:
 def record_date_changes(conn: psycopg.Connection, doc: dict, stats: dict) -> None:
     for ch in stats.get("date_changes", []):
         if ch.get("old_date_mismatch"):
-            add_flag(conn, "mandate", ch["mandate_id"], "old_date_mismatch",
+            add_flag(conn, "requirement_version", ch["mandate_id"], "old_date_mismatch",
                      {"key": ch["key"], "stated_old": ch["stated_old"], "replaced": ch["old"],
                       "note": "an intermediate amendment is probably missing from the corpus"})
         if doc["doc_date"] and ch["new"] and ch["new"] < str(doc["doc_date"]):
-            add_flag(conn, "mandate", ch["mandate_id"], FlagRule.IMPLEMENTATION_BEFORE_NOTIFICATION, ch)
+            add_flag(conn, "requirement_version", ch["mandate_id"], FlagRule.IMPLEMENTATION_BEFORE_NOTIFICATION, ch)
 
 
 def resolve_refs(conn: psycopg.Connection) -> int:

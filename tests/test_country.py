@@ -33,7 +33,11 @@ def two_countries(migrated, monkeypatch):
             conn.execute("INSERT INTO chunk (document_id, file_id, chunk_index, content, doc_class, vehicle_categories, "
                          "in_scope, is_current) VALUES (%s, %s, 0, %s, %s, ARRAY['M1'], true, true)",
                          (did, fid, f"{WORD} braking requirement for {cc}", dc))
-            ids[cc] = {"file": fid, "doc": did}
+            # the pipeline reads stored files from the v4B table (phase 3); the API still reads the old ones
+            v4 = conn.execute("INSERT INTO documents (region_id, checksum_sha256, storage_path, file_ext, stage) "
+                              "VALUES ((SELECT id FROM regions WHERE code=%s), %s, %s, 'pdf', 'downloaded') RETURNING id",
+                              (cc, cc.lower() * 32, f"test/{cc}.pdf")).fetchone()["id"]
+            ids[cc] = {"file": fid, "doc": did, "v4file": v4}
         conn.commit()
     yield ids
     with connect(dsn=dsn) as conn:
@@ -41,6 +45,7 @@ def two_countries(migrated, monkeypatch):
         conn.execute("DELETE FROM chunk WHERE document_id = ANY(%s)", (docs,))
         conn.execute("DELETE FROM document WHERE id = ANY(%s)", (docs,))
         conn.execute("DELETE FROM file_object WHERE id = ANY(%s)", (files,))
+        conn.execute("DELETE FROM documents WHERE id = ANY(%s)", ([v["v4file"] for v in ids.values()],))
         conn.commit()
     config.get_settings.cache_clear()
 
@@ -59,7 +64,7 @@ def test_pipeline_does_not_pick_thai_files(two_countries, monkeypatch):
     from regtrack.pipeline import runner
     from regtrack.pipeline import stages as S
 
-    th, india = two_countries["TH"]["file"], two_countries["IN"]["file"]
+    th, india = two_countries["TH"]["v4file"], two_countries["IN"]["v4file"]
     with connect() as conn:
         picked = {f["id"] for f in runner._files(conn, "downloaded", None)}
     assert india in picked and th not in picked
@@ -68,7 +73,7 @@ def test_pipeline_does_not_pick_thai_files(two_countries, monkeypatch):
     out = runner.run_stage("text", workers=1)
     assert seen == [india] and out["files"] == 1
     with connect() as conn:
-        f = conn.execute("SELECT stage, stage_error FROM file_object WHERE id=%s", (th,)).fetchone()
+        f = conn.execute("SELECT stage, stage_error FROM documents WHERE id=%s", (th,)).fetchone()
     assert f["stage"] == "downloaded" and f["stage_error"] is None
 
 

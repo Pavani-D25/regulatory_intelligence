@@ -1,7 +1,7 @@
 """DB stages for one file: text -> classified (incl. split). Each function runs inside one transaction and
 writes only what changed, so re-running with no upstream change writes zero rows.
 
-Stage map (file_object.stage):
+Stage map (documents.stage, one stored file):
   downloaded --text--> text --classify+split--> classified --extract--> parsed --link--> linked
   --chunk--> chunked --embed--> embedded -> done
 """
@@ -21,9 +21,10 @@ from regtrack.models import model_for
 from regtrack.models.enums import DocClass, FlagRule, Role
 from regtrack.pipeline import ocr
 from regtrack.pipeline import patterns as P
+from regtrack.pipeline import repo as R
 from regtrack.pipeline.analysis import FileAnalysis, identify
 from regtrack.pipeline.classify import FileCtx
-from regtrack.pipeline.dbutil import add_flag, set_stage, update_if_changed
+from regtrack.pipeline.dbutil import add_flag, set_stage
 from regtrack.pipeline.identity import Identity, parse_arai_code
 from regtrack.pipeline.split import ais_table_ref, amendment_gaps, split_ais, tap_part_label
 from regtrack.pipeline.text import (
@@ -42,7 +43,7 @@ LOW_OCR = 0.6
 
 # ====================================================================== text
 def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str:
-    """Extract page text (cached by sha), OCR scanned pages, fill file_object. Returns the new stage."""
+    """Extract page text (cached by sha), OCR scanned pages, fill the documents row. Returns the new stage."""
     path = open_local(f["storage_path"])
     meta = extract_cached(f["sha256"], path, f["ext"])
     # PostgreSQL JSONB rejects NUL characters (seen in 'Adobe PSL ... for Canon\x00' producers)
@@ -50,7 +51,7 @@ def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str
     pages = load_pages(f["sha256"])
     engine, conf = f.get("ocr_engine"), f.get("ocr_confidence")
     if meta["error"]:
-        update_if_changed(conn, "file_object", {"id": f["id"]}, {"pdf_meta": Jsonb({**meta["pdf_meta"], "error": meta["error"]})})
+        R.update_file(conn, f["id"], {"pdf_meta": Jsonb({**meta["pdf_meta"], "error": meta["error"]})})
         set_stage(conn, f["id"], "failed", meta["error"][:500])
         return "failed"
     need_ocr = f["ext"] == "pdf" and not meta["text_layer"] and meta["scanned_pages"] and not engine
@@ -62,11 +63,11 @@ def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str
     values = {"page_count": meta["page_count"], "text_layer": meta["text_layer"],
               "scanned_pages": meta["scanned_pages"], "language_mix": Jsonb(lm), "pdf_meta": Jsonb(meta["pdf_meta"]),
               "ocr_engine": engine, "ocr_confidence": conf, "mime": f.get("mime")}
-    update_if_changed(conn, "file_object", {"id": f["id"]}, values)
+    R.update_file(conn, f["id"], values)
     if engine and conf is not None and float(conf) < LOW_OCR:
-        add_flag(conn, "file_object", f["id"], FlagRule.LOW_OCR_CONFIDENCE, {"engine": engine, "confidence": float(conf)})
+        add_flag(conn, "document", f["id"], FlagRule.LOW_OCR_CONFIDENCE, {"engine": engine, "confidence": float(conf)})
     if need_ocr and not engine:
-        add_flag(conn, "file_object", f["id"], FlagRule.OCR_PENDING, {"scanned_pages": len(meta["scanned_pages"])})
+        add_flag(conn, "document", f["id"], FlagRule.OCR_PENDING, {"scanned_pages": len(meta["scanned_pages"])})
     set_stage(conn, f["id"], "text")
     return "text"
 
@@ -96,10 +97,7 @@ def ocr_pages(f: dict, pages: list[PageText], targets: list[int], engine: str) -
 
 # ====================================================================== classify (+ split)
 def file_ctx(conn: psycopg.Connection, f: dict, pages: list[PageText] | None = None) -> FileCtx:
-    rows = conn.execute(
-        """SELECT s.code, fs.listing_title, fs.listing_date, fs.listing_category, fs.listing_raw
-           FROM file_sighting fs JOIN source s ON s.id = fs.source_id WHERE fs.file_id=%s ORDER BY fs.id""",
-        (f["id"],)).fetchall()
+    rows = R.listings_of_file(conn, f["id"])
     folders, names, listings = [], [], []
     for r in rows:
         raw = r["listing_raw"] or {}
@@ -144,24 +142,19 @@ def stage_classify(conn: psycopg.Connection, f: dict) -> str:
             if e:
                 ctx = file_ctx(conn, f, pages)
                 fa = identify(ctx)
-                update_if_changed(conn, "file_object", {"id": f["id"]},
-                                  {"ocr_engine": f.get("ocr_engine") or e, "language_mix": Jsonb(language_mix(pages))})
+                R.update_file(conn, f["id"], {"ocr_engine": f.get("ocr_engine") or e, "language_mix": Jsonb(language_mix(pages))})
     write_documents(conn, f, ctx, fa)
+    R.mark_listings_classified(conn, f["id"])
     set_stage(conn, f["id"], "classified")
     return "classified"
 
 
 # ---------------------------------------------------------------------- document writes
 def upsert_document(conn: psycopg.Connection, canonical_id: str, values: dict) -> tuple[int, bool]:
-    """Insert a document or fill the empty columns of an existing one. Returns (id, created)."""
-    row = conn.execute(f"SELECT * FROM document WHERE canonical_id=%s AND {country.sql()}", (canonical_id,)).fetchone()
+    """Insert a document (regulation) or fill the empty fields of an existing one. Returns (id, created)."""
+    row = R.find_document(conn, canonical_id)
     if row is None:
-        cols = ["canonical_id", "country", *values]
-        vals = [canonical_id, country.code(), *[Jsonb(v) if isinstance(v, (dict, list)) and k in JSON_COLS else v
-                                for k, v in values.items()]]
-        new = conn.execute(f"INSERT INTO document ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING id",
-                           vals).fetchone()
-        return new["id"], True
+        return R.insert_document(conn, canonical_id, values), True
     fill = {}
     for k, v in values.items():
         cur = row[k]
@@ -175,30 +168,16 @@ def upsert_document(conn: psycopg.Connection, canonical_id: str, values: dict) -
             if merged != cur:
                 fill[k] = Jsonb(merged)
         elif empty and v not in (None, [], {}):
-            fill[k] = Jsonb(v) if k in JSON_COLS else v
+            fill[k] = v
     if fill:
-        update_if_changed(conn, "document", {"id": row["id"]}, fill, touch=True)
+        R.update_document(conn, row["id"], fill, touch=True)
     return row["id"], False
-
-
-JSON_COLS = {"data", "relevance", "extraction"}
 
 
 def attach(conn: psycopg.Connection, doc_id: int, file_id: int, page_from: int = 1, page_to: int | None = None,
            eng: tuple[int | None, int | None] = (None, None), part_label: str | None = None,
            role: str = Role.MAIN) -> None:
-    conn.execute(
-        """INSERT INTO document_file (document_id, file_id, page_from, page_to, english_page_from, english_page_to,
-                                      part_label, role)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-           ON CONFLICT (document_id, file_id, page_from) DO UPDATE
-             SET page_to=EXCLUDED.page_to, english_page_from=EXCLUDED.english_page_from,
-                 english_page_to=EXCLUDED.english_page_to, part_label=EXCLUDED.part_label, role=EXCLUDED.role
-             WHERE (document_file.page_to, document_file.english_page_from, document_file.english_page_to,
-                    document_file.part_label, document_file.role)
-                   IS DISTINCT FROM (EXCLUDED.page_to, EXCLUDED.english_page_from, EXCLUDED.english_page_to,
-                                     EXCLUDED.part_label, EXCLUDED.role)""",
-        (doc_id, file_id, page_from, page_to, eng[0], eng[1], part_label, role))
+    R.attach(conn, doc_id, file_id, page_from, page_to, eng, part_label, role)
 
 
 def _eng_range(pages: list[PageText], a: int, b: int) -> tuple[int | None, int | None]:
@@ -273,7 +252,7 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
             data = form_data(ctx, ident)
         vals = {**base_values(fa, dc, ident), "official_title": fa.official_title, "data": _valid(dc, data)}
         vals = {k: v for k, v in vals.items() if v is not None}
-        existing = conn.execute("SELECT id, doc_class, data FROM document WHERE canonical_id=%s", (cid,)).fetchone()
+        existing = R.find_document(conn, cid)
         did, created = upsert_document(conn, cid, vals)
         if existing and existing["doc_class"] != dc.value:
             flags.append((FlagRule.DUPLICATE_IDENTITY_DIFF_HEADER,
@@ -286,14 +265,14 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
             flags.append((FlagRule.OFF_TOPIC, {"reason": fa.cls.reason}))
 
     for m in fa.title_mismatch:
-        add_flag(conn, "file_object", f["id"], FlagRule.TITLE_FILE_MISMATCH, m)
+        add_flag(conn, "document", f["id"], FlagRule.TITLE_FILE_MISMATCH, m)
     for m in fa.placeholder_dates:
-        add_flag(conn, "file_object", f["id"], FlagRule.PLACEHOLDER_LISTING_DATE, m)
+        add_flag(conn, "document", f["id"], FlagRule.PLACEHOLDER_LISTING_DATE, m)
     if fa.year_note:
         flags.append((FlagRule.IDENTITY_YEAR_INFERRED, fa.year_note))
     for rule, details in flags:
         for did in doc_ids[:1]:
-            add_flag(conn, "document", did, rule, details)
+            add_flag(conn, "regulation", did, rule, details)
     unlink_other_documents(conn, f["id"], doc_ids)
     recompute_best_copies(conn, doc_ids)
     return doc_ids
@@ -302,24 +281,17 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
 def unlink_other_documents(conn: psycopg.Connection, file_id: int, doc_ids: list[int]) -> int:
     """A re-classified file keeps only the documents it produces now; a document left without any file is retired
     (relations to it fall back to their text reference, its flags are resolved as superseded)."""
-    stale = conn.execute("SELECT DISTINCT document_id FROM document_file WHERE file_id=%s AND NOT (document_id = ANY(%s))",
-                         (file_id, doc_ids)).fetchall()
+    stale = conn.execute("SELECT DISTINCT regulation_id FROM document_parts WHERE document_id=%s "
+                         "AND NOT (regulation_id = ANY(%s))", (file_id, doc_ids)).fetchall()
     n = 0
     for r in stale:
-        did = r["document_id"]
-        conn.execute("DELETE FROM chunk WHERE document_id=%s AND file_id=%s", (did, file_id))
-        conn.execute("DELETE FROM document_file WHERE document_id=%s AND file_id=%s", (did, file_id))
+        did = r["regulation_id"]
+        R.detach(conn, did, file_id)
         n += 1
-        still = conn.execute("SELECT 1 FROM document_file WHERE document_id=%s LIMIT 1", (did,)).fetchone()
-        used = conn.execute("SELECT 1 FROM mandate WHERE source_doc_id=%s LIMIT 1", (did,)).fetchone()
+        still = conn.execute("SELECT 1 FROM document_parts WHERE regulation_id=%s LIMIT 1", (did,)).fetchone()
+        used = conn.execute("SELECT 1 FROM requirement_versions WHERE source_regulation_id=%s LIMIT 1", (did,)).fetchone()
         if not still and not used:
-            conn.execute("UPDATE doc_relation SET to_doc=NULL, to_ref=coalesce(to_ref, (SELECT canonical_id FROM document "
-                         "WHERE id=%s)) WHERE to_doc=%s", (did, did))
-            conn.execute("UPDATE quality_flag SET resolved_at=now(), details=coalesce(details,'{}'::jsonb) || "
-                         "'{\"resolution\": \"document retired after re-classification\"}'::jsonb "
-                         "WHERE entity='document' AND entity_id=%s AND resolved_at IS NULL", (did,))
-            conn.execute("UPDATE change_event SET document_id=NULL WHERE document_id=%s", (did,))
-            conn.execute("DELETE FROM document WHERE id=%s", (did,))
+            R.retire_document(conn, did)
     return n
 
 
@@ -373,7 +345,7 @@ def write_ais(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAnalysis)
         did, _ = upsert_document(conn, cid, {**base_values(fa, DocClass.AIS_STANDARD, None),
                                              "data": {"arai_code_raw": arai_codes[0]} if arai_codes else {}})
         attach(conn, did, f["id"], 1, n, eng=_eng_range(pages, 1, n))
-        add_flag(conn, "document", did, FlagRule.IDENTITY_NOT_FOUND, {"reason": "no AIS code on cover", "file": ctx.sha})
+        add_flag(conn, "regulation", did, FlagRule.IDENTITY_NOT_FOUND, {"reason": "no AIS code on cover", "file": ctx.sha})
         return [did]
     segs = split_ais(pages) if fa.cls.doc_class != DocClass.SAFETY_STANDARD_LEGACY else []
     ident = identity_from_headers(ident, segs)
@@ -441,13 +413,11 @@ def write_ais(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAnalysis)
 def drop_stale_segments(conn: psycopg.Connection, file_id: int, starts: set[int]) -> int:
     """After a re-split, remove this file's segment rows whose start page is no longer a segment start
     (their chunks go with them; the pages now belong to a new segment document)."""
-    rows = conn.execute("SELECT document_id, page_from FROM document_file WHERE file_id=%s", (file_id,)).fetchall()
+    rows = conn.execute("SELECT regulation_id, page_from FROM document_parts WHERE document_id=%s", (file_id,)).fetchall()
     n = 0
     for r in rows:
         if r["page_from"] not in starts:
-            conn.execute("DELETE FROM chunk WHERE document_id=%s AND file_id=%s", (r["document_id"], file_id))
-            conn.execute("DELETE FROM document_file WHERE document_id=%s AND file_id=%s AND page_from=%s",
-                         (r["document_id"], file_id, r["page_from"]))
+            R.detach(conn, r["regulation_id"], file_id, r["page_from"])
             n += 1
     return n
 
@@ -482,30 +452,31 @@ def check_amendment_gaps(conn: psycopg.Connection, family_key: str | None) -> No
     if not family_key:
         return
     rows = conn.execute(
-        """SELECT d.data->>'amends' AS target, array_agg(d.amendment_no ORDER BY d.amendment_no) AS nos
-           FROM document d WHERE d.family_key=%s AND d.doc_class='AIS_AMENDMENT' AND d.amendment_no IS NOT NULL
-           GROUP BY 1""", (family_key,)).fetchall()
+        f"""SELECT g.data->>'amends' AS target, array_agg(g.amendment_no ORDER BY g.amendment_no) AS nos
+            FROM regulations g WHERE g.family_key=%s AND g.local_class='AIS_AMENDMENT' AND g.amendment_no IS NOT NULL
+              AND {country.region_sql('g')}
+            GROUP BY 1""", (family_key,)).fetchall()
     for r in rows:
         gaps = amendment_gaps([x for x in r["nos"] if x is not None])
-        base = conn.execute("SELECT id FROM document WHERE canonical_id=%s", (r["target"],)).fetchone()
+        base = R.find_document(conn, r["target"])
         if not base:
             continue
         # a gap flag is identified by (target, missing); notes added later (explained / evidence) do not change it
         same = "details->'target' = %s::jsonb AND details->'missing' = %s::jsonb"
         args = (json.dumps(r["target"]), json.dumps(gaps))
         # close open flags that describe an older state of the family, with the reason
-        conn.execute(f"UPDATE quality_flag SET resolved_at=now(), details = details || "
+        conn.execute(f"UPDATE quality_flags SET resolved_at=now(), details = details || "
                      f"'{{\"resolution\": \"superseded: the amendment list of this standard changed\"}}'::jsonb "
-                     f"WHERE entity='document' AND entity_id=%s AND rule=%s AND resolved_at IS NULL AND NOT ({same})",
+                     f"WHERE entity='regulation' AND entity_id=%s AND rule=%s AND resolved_at IS NULL AND NOT ({same})",
                      (base["id"], FlagRule.AMENDMENT_GAP.value, *args))
         if not gaps:
             continue
         # raise once: not while an equal flag is open, nor after an equal flag was resolved with evidence
-        known = conn.execute(f"SELECT 1 FROM quality_flag WHERE entity='document' AND entity_id=%s AND rule=%s AND {same} "
+        known = conn.execute(f"SELECT 1 FROM quality_flags WHERE entity='regulation' AND entity_id=%s AND rule=%s AND {same} "
                              f"AND (resolved_at IS NULL OR details ? 'evidence') LIMIT 1",
                              (base["id"], FlagRule.AMENDMENT_GAP.value, *args)).fetchone()
         if not known:
-            add_flag(conn, "document", base["id"], FlagRule.AMENDMENT_GAP, {"target": r["target"], "missing": gaps})
+            add_flag(conn, "regulation", base["id"], FlagRule.AMENDMENT_GAP, {"target": r["target"], "missing": gaps})
 
 
 # ---------------------------------------------------------------------- best copy
@@ -516,17 +487,19 @@ def recompute_best_copies(conn: psycopg.Connection, doc_ids: list[int]) -> None:
     """One is_best_copy per document: text layer > ARAI source > not a historical copy > newest > more English."""
     for did in doc_ids:
         rows = conn.execute(
-            """SELECT df.file_id, df.page_from, df.role, df.is_best_copy, fo.text_layer, fo.ocr_engine, fo.first_seen_at,
-                      coalesce((fo.language_mix->>'en_pages')::int,0) AS en_pages,
-                      EXISTS (SELECT 1 FROM file_sighting s JOIN source so ON so.id=s.source_id
-                              WHERE s.file_id=fo.id AND so.code IN ('ARAI_AIS','ARAI_TAP')) AS arai,
-                      (SELECT max(s.listing_date) FROM file_sighting s WHERE s.file_id=fo.id) AS listed
-               FROM document_file df JOIN file_object fo ON fo.id=df.file_id WHERE df.document_id=%s""",
+            """SELECT p.document_id AS file_id, p.page_from,
+                      CASE p.role WHEN 'other_language_only' THEN 'hindi_only' ELSE p.role END AS role, p.is_best_copy,
+                      d.text_layer, d.ocr_engine, d.downloaded_at AS first_seen_at,
+                      coalesce((d.language_mix->>'en_pages')::int,0) AS en_pages,
+                      EXISTS (SELECT 1 FROM raw_ingestion_records s JOIN sources so ON so.id=s.source_id
+                              WHERE s.document_id=d.id AND so.code IN ('ARAI_AIS','ARAI_TAP')) AS arai,
+                      (SELECT max(s.listing_date) FROM raw_ingestion_records s WHERE s.document_id=d.id) AS listed
+               FROM document_parts p JOIN documents d ON d.id=p.document_id WHERE p.regulation_id=%s""",
             (did,)).fetchall()
         if not rows:
             continue
-        doc = conn.execute("SELECT doc_class FROM document WHERE id=%s", (did,)).fetchone()
-        if doc["doc_class"] == "TAP_DOCUMENT":
+        doc = conn.execute("SELECT local_class FROM regulations WHERE id=%s", (did,)).fetchone()
+        if doc["local_class"] == "TAP_DOCUMENT":
             continue  # every TAP part file is needed; best copy is per part, all true
         best = sorted(rows, key=lambda r: (not r["text_layer"], not r["arai"], ROLE_RANK.get(r["role"], 1),
                                            -(r["listed"].toordinal() if r["listed"] else 0), -r["en_pages"],
@@ -534,14 +507,14 @@ def recompute_best_copies(conn: psycopg.Connection, doc_ids: list[int]) -> None:
         for r in rows:
             want = r["file_id"] == best["file_id"] and r["page_from"] == best["page_from"]
             if r["is_best_copy"] != want:
-                conn.execute("UPDATE document_file SET is_best_copy=%s WHERE document_id=%s AND file_id=%s AND page_from=%s",
-                             (want, did, r["file_id"], r["page_from"]))
+                conn.execute("UPDATE document_parts SET is_best_copy=%s WHERE regulation_id=%s AND document_id=%s "
+                             "AND page_from=%s", (want, did, r["file_id"], r["page_from"]))
 
 
 def tap_best_copies(conn: psycopg.Connection) -> None:
-    conn.execute("""UPDATE document_file df SET is_best_copy=true FROM document d
-                    WHERE d.id=df.document_id AND d.doc_class='TAP_DOCUMENT' AND NOT df.is_best_copy
-                      AND """ + country.sql("d"))
+    conn.execute("""UPDATE document_parts p SET is_best_copy=true FROM regulations g
+                    WHERE g.id=p.regulation_id AND g.local_class='TAP_DOCUMENT' AND NOT p.is_best_copy
+                      AND """ + country.region_sql("g"))
 
 
 def jdump(v) -> str:

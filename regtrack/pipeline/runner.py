@@ -1,4 +1,4 @@
-"""Pipeline runner: moves every file forward from its file_object.stage (the resume point).
+"""Pipeline runner: moves every stored file forward from its documents.stage (the resume point).
 
 Each file/stage runs in its own transaction; a failure records stage_error and the run continues.
 Stages run over all pending files before the next stage starts (classification settles best copies before
@@ -18,6 +18,7 @@ from regtrack.pipeline import chunk as C
 from regtrack.pipeline import events as E
 from regtrack.pipeline import extract as X
 from regtrack.pipeline import link as L
+from regtrack.pipeline import repo
 from regtrack.pipeline import resolve as R
 from regtrack.pipeline import stages as S
 
@@ -26,15 +27,13 @@ ALL_STAGES = ["text", "classify", "extract", "link", "chunk", "embed"]
 SOURCE_STAGE = {"text": "downloaded", "classify": "text", "extract": "classified", "link": "parsed", "chunk": "linked"}
 
 
-def _files(conn, stage: str, limit: int | None, order: str = "f.id") -> list[dict]:
-    q = (f"SELECT f.* FROM file_object f WHERE f.stage=%s AND {country.sql('f')} ORDER BY {order}"
-         + (" LIMIT %s" if limit else ""))
-    return conn.execute(q, (stage, limit) if limit else (stage,)).fetchall()
+def _files(conn, stage: str, limit: int | None) -> list[dict]:
+    return repo.files_at_stage(conn, stage, limit)
 
 
 def _run_one(fn, file_id: int) -> tuple[int, str | None]:
     with connect() as conn:
-        f = conn.execute("SELECT * FROM file_object WHERE id=%s", (file_id,)).fetchone()
+        f = repo.get_file(conn, file_id)
         try:
             fn(conn, f)
             conn.commit()
@@ -43,7 +42,7 @@ def _run_one(fn, file_id: int) -> tuple[int, str | None]:
             conn.rollback()
             msg = f"{type(e).__name__}: {str(e)[:400]}"
             log.exception("file %s failed in %s", file_id, fn.__name__)
-            conn.execute("UPDATE file_object SET stage_error=%s WHERE id=%s", (msg, file_id))
+            conn.execute("UPDATE documents SET stage_error=%s WHERE id=%s", (msg, file_id))
             conn.commit()
             return file_id, msg
 
@@ -59,9 +58,9 @@ def run_stage(stage: str, limit: int | None = None, workers: int = 1) -> dict:
         if stage == "link":
             # notifications in date order so mandate replays are chronological
             files = conn.execute(
-                """SELECT f.id FROM file_object f LEFT JOIN document_file df ON df.file_id=f.id
-                   LEFT JOIN document d ON d.id=df.document_id WHERE f.stage='parsed' AND """ + country.sql("f") + """
-                   GROUP BY f.id ORDER BY min(d.doc_date) NULLS LAST, f.id""" + (f" LIMIT {int(limit)}" if limit else "")
+                """SELECT f.id FROM documents f LEFT JOIN document_parts p ON p.document_id=f.id
+                   LEFT JOIN regulations g ON g.id=p.regulation_id WHERE f.stage='parsed' AND """ + country.region_sql("f") + """
+                   GROUP BY f.id ORDER BY min(g.published_date) NULLS LAST, f.id""" + (f" LIMIT {int(limit)}" if limit else "")
             ).fetchall()
         else:
             files = _files(conn, SOURCE_STAGE[stage], limit)
@@ -92,9 +91,10 @@ def post_run() -> dict:
         out = {"refs_resolved": L.resolve_refs(conn)}
         S.tap_best_copies(conn)
         out["chunk_filters_synced"] = C.sync_chunk_filters(conn)
-        # country-neutral fields (doc_type, doc_role, legal_force, UNECE categories…): one SQL definition (0006)
-        out["universal_fields"] = conn.execute("SELECT refresh_universal_fields(%s) AS n",
-                                               (country.code(),)).fetchone()["n"]
+        # country-neutral fields of regulations (doc_type, doc_role, legal_force, local name, language): one SQL
+        # definition in the database (migration 0008)
+        out["regulation_fields"] = conn.execute("SELECT refresh_regulation_fields(%s) AS n",
+                                                (country.code(),)).fetchone()["n"]
         out["flags_resolved"] = R.resolve_all(conn)
         conn.commit()
         out["llm_enriched"] = X.enrich_pending(conn)
