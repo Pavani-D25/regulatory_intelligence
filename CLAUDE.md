@@ -2,9 +2,12 @@
 
 You are Claude Code, building this project end to end on a **Windows** laptop (PowerShell, VS Code).
 
-- The database design is decided. Read `docs/DB_DESIGN.md` first; it is authoritative.
+- The database design is decided.
+  - The tables are those of `docs/SCHEMA_V4B.md` (ERD v4 + RegTrack additions, migrations 0007–0011); it is authoritative for table and column names.
+  - `docs/DB_DESIGN.md` is authoritative for the design decisions, vocabularies and `data` shapes; its §4 lists the first schema's tables, kept for history (name map at its top).
 - `docs/ETL_SPEC.md` has source details: the MoRTH JSON API, the ARAI list, e-Gazette, and notification structure.
-- If the two disagree, DB_DESIGN wins.
+- If they disagree: SCHEMA_V4B wins on tables, DB_DESIGN on everything else, both over ETL_SPEC.
+- In code, a regulation keeps the pipeline's names (`canonical_id`, `doc_class`, `status`, `vehicle_categories[]`); `regtrack/pipeline/repo.py` and `regtrack/api/sql.py` map them to v4B in one place each.
 - Work phase by phase from `PROMPTS.md`. Do not start a phase before the previous phase's checks pass.
 
 ## Goal
@@ -59,18 +62,18 @@ PG_DATA=D:\regulatory_intelligence\data\pg                # local PostgreSQL dat
    - In the corpus, 6 MoRTH titles name the wrong notification, and 14 listing dates are placeholders (1 Jan).
    - G.S.R./S.O. numbers repeat across years, so the year is part of the ID: `GSR-659(E)-2022`.
 6. **One definition per shape.**
-   - Each doc_class's `document.data` is a Pydantic model in `regtrack/models/`.
+   - Each doc_class's `regulations.data` is a Pydantic model in `regtrack/models/`.
    - The JSON Schema is generated from that model, Qwen fills that model, and the DB validates against it.
    - The DB schema changes only through a new numbered SQL migration in `db/migrations/`.
 7. **Resumable and idempotent.**
-   - `file_object.stage` is the resume point.
+   - `documents.stage` (one row per stored file) is the resume point.
    - Re-running with no upstream change must write zero rows. Test this.
 8. **Qwen use:**
    - Call it only via `ChatOpenAI(base_url=LLM_BASE_URL, model=LLM_MODEL, api_key=LLM_API_KEY, temperature=0).with_structured_output(Model, method="json_schema")`. No agents.
    - Send only the pages the task needs (English pages first).
-   - Store model, prompt version and per-field confidence in `document.extraction`.
+   - Store model, prompt version and per-field confidence in `regulations.extraction`.
    - If the LLM is unreachable (laptop off, ngrok URL changed), leave files at their current stage and continue other work. Never fail the run.
-9. **No manual review step.** A failed check writes a `quality_flag`; the value is kept and marked `needs_check`.
+9. **No manual review step.** A failed check writes a `quality_flags` row; the value is kept and marked `needs_check`.
 
 ## Repository layout (create as you go)
 
@@ -86,14 +89,16 @@ regulatory_intelligence/
     models/        pydantic models per doc_class (+ json schema export)
     sources/       arai.py morth.py egazette.py indiacode.py seed_corpus.py
     pipeline/      text.py classify.py identity.py split.py extract.py link.py mandates.py version.py chunk.py report.py
-    validators.py  scheduler.py  api/ (FastAPI, read-only)
+                   repo.py (v4B data access) events.py resolve.py alerts.py search.py
+    validators.py  scheduler.py  assistant.py
+    api/           app.py portal.py workspace.py sql.py (v4B in the dashboard's shape)
   tests/       unit tests + fixtures (small PDFs copied from the seed corpus)
   data/raw/    object storage (gitignored)
 ```
 
 ## Conventions (from DB_DESIGN.md)
 
-**`canonical_id` formats:**
+**`canonical_id` formats** (stored as `regulations.external_code`, unique per region):
 
 | Kind | Format | Example |
 |---|---|---|
@@ -109,9 +114,9 @@ regulatory_intelligence/
 - `doc_class`, `relation_type`, `nature` and `domain` values are exactly the lists in DB_DESIGN §3. Enforce them in Python enums.
 - Vehicle categories: the seed groups trailers as `O` and tractors as `T`. Map O1–O4 → `O` and T1–T5 → `T`.
 - `in_scope` = `vehicle_categories` overlaps {L1, L2, M1, N1, ALL}.
-- If a notification names no category but applies to "all motor vehicles", use `ALL`. If nothing can be inferred, leave the list empty and raise a `quality_flag`.
-- Mandates are never updated in place. A change closes the old row (`valid_to`, `superseded_by`) and inserts a new row with the same `mandate_key`.
-- Exactly one `is_current = true` per `family_key`; the DB enforces this with a partial unique index.
+- If a notification names no category but applies to "all motor vehicles", use `ALL`. If nothing can be inferred, leave the list empty and raise a `quality_flags` row.
+- Mandates (rule versions, `requirement_versions`) are never updated in place. A change closes the old row (`valid_to`, `superseded_by`) and inserts a new row for the same rule (`compliance_requirements.requirement_code`, the mandate key).
+- Exactly one `is_current = true` per `family_key` and region (`regulations`); the DB enforces this with a partial unique index.
 
 ## Regression numbers (seed corpus, measured)
 

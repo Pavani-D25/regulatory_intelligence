@@ -533,7 +533,7 @@ Each phase ends with tests, ruff, a phase report in `reports/`, and a commit on 
 | 5 | Search → `document_chunks`; Ask AI writes `assistant_*` | search and Ask-AI history on v4B; keyword index computed by the database (0009) |
 | 6 | Monitoring → `regulation_changes`, `quality_flags`, `alert_events` | changes, flag resolution and stored alerts on v4B; impact stored (0010) |
 | 7 | API and portal on v4B, plus new screens: users and teams, watches, assistant history, report schedules | same answers from v4B (37 endpoints compared); Teams page, watches, Ask-AI history, report schedules |
-| 8 | Regression check against the `CLAUDE.md` numbers; a new migration (0011 or later; 0008–0010 came from phases 3, 5 and 6) drops the old tables; `CLAUDE.md` and `docs/DB_DESIGN.md` updated | switch-over complete |
+| 8 | Regression check against the `CLAUDE.md` numbers; migration 0011 drops the old tables (guarded: only after `scripts/v4b_verify.py --mark-verified`); `CLAUDE.md` and `docs/DB_DESIGN.md` updated | switch-over complete |
 
 **Safety throughout:**
 - The original PDFs and page text are never touched.

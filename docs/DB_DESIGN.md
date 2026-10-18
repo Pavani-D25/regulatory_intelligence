@@ -9,6 +9,27 @@
 > Scope of the app: India; L1/L2 (two-wheelers); M1 (cars, private and commercial use); N1 (light goods).
 > This file replaces `ETL_SPEC.md` §2.
 
+> **Tables since the v4B switch-over (October 2026, migrations 0007–0011).** The design decisions, vocabularies and
+> `data` shapes in this file still hold. The tables of §4 were moved into the v4B schema (`docs/SCHEMA_V4B.md`, which
+> is authoritative for table and column names) and dropped by migration 0011. §4 is kept as the record of the first
+> schema. Where this file says:
+>
+> | Here (first schema) | v4B |
+> |---|---|
+> | `file_object` (a stored file, `stage`) | `documents` |
+> | `file_sighting` (a listing) | `raw_ingestion_records` |
+> | `document` (`canonical_id`, `doc_class`, `status`, `doc_date`, `official_title`, `subject`, `issuer`) | `regulations` (`external_code`, `local_class`, `legal_status`, `published_date`, `title`, `summary`, `authority_id`) |
+> | `document.vehicle_categories[]`, `domains[]`, `issuer` | `regulation_vehicle_categories`, `regulation_domains`, `regulation_authorities` |
+> | `document_file` | `document_parts` |
+> | `doc_relation` | `regulation_relations` |
+> | `mandate` (`mandate_key`) | `requirement_versions` under `compliance_requirements` (`requirement_code`) |
+> | `chunk` | `document_chunks` |
+> | `change_event`, `quality_flag`, `crawl_run`, `source` | `regulation_changes`, `quality_flags`, `ingestion_runs`, `sources` |
+> | `country`, `vehicle_category`, `domain`, `local_class` | `regions`, `vehicle_categories`, `domains`, `document_classes` |
+>
+> The pipeline keeps the first schema's names for a regulation in code (`canonical_id`, `doc_class`, …); the mapping
+> lives in `regtrack/pipeline/repo.py` and `regtrack/api/sql.py`.
+
 ---
 
 ## 0. Corpus profile (measured)
@@ -100,7 +121,7 @@ document  ── family_key / version ──  doc_relation (amends, revises, cor
 
 ---
 
-## 4. Schema (PostgreSQL 16 + pgvector)
+## 4. Schema (PostgreSQL 16 + pgvector) — first schema, replaced by v4B (see the note at the top)
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
