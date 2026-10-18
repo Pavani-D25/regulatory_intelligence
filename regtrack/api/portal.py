@@ -293,7 +293,7 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
         rows = [r for r in rows if r["impact"] == impact]
     if status in STATUSES:
         rows = [r for r in rows if r["status"] == status]
-    rows.sort(key=lambda r: (r["effective"] or date(1900, 1, 1)), reverse=True)
+    rows.sort(key=lambda r: (r["effective"] or date(1900, 1, 1), r["canonical_id"]), reverse=True)
     return {
         "kpis": {"records": len(regs), "new_quarter": sum(1 for r in regs if r["doc_date"] and r["doc_date"] >= today - timedelta(days=90)),
                  "drafts": sum(1 for r in regs if r["doc_class"] in DRAFTS or r["doc_status"] == "draft"),
@@ -487,7 +487,7 @@ def impact(cc: CountryParam = None) -> dict:
         regs = regulations(conn, cc=cc)
         stds = _rows(conn, f"""SELECT s AS name, count(*) AS n FROM {S.mandates(cc)} m, unnest(m.standard_refs) s
                               WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
-                              GROUP BY 1 ORDER BY 2 DESC LIMIT 5""", (SCOPE,))
+                              GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 5""", (SCOPE,))
         owners = conn.execute(f"SELECT count(DISTINCT owner_team_id) AS n FROM compliance_requirements x "
                               f"WHERE owner_team_id IS NOT NULL AND {region}").fetchone()["n"]
         wf = conn.execute(f"""SELECT
@@ -888,7 +888,7 @@ def admin(cc: CountryParam = None) -> dict:
                      "success_pct": round(100 * tot["good"] / tot["n"], 1) if tot["n"] else None,
                      "warnings": warnings, "partial_runs": tot["partial"],
                      "last_sync_min": int((now - last).total_seconds() // 60) if last else None},
-            "sources": sources, "runs": runs, "settings": {k: v for k, v in settings.items() if k != "scheduler_heartbeat"},
+            "sources": sources, "runs": runs, "settings": {k: v for k, v in settings.items() if k not in ("scheduler_heartbeat", "v4b_switch_verified")},
             "sync": _sync_state, "syncable": ["ALL"] + [s["code"] for s in sources if s["crawler"]],
             "scheduler": scheduler_status(settings), "impact_rule": IMPACT_RULE}
 

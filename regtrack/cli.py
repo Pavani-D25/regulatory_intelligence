@@ -74,10 +74,10 @@ def cmd_check(_args) -> int:
     return 0 if ok_all else 1
 
 
-def cmd_migrate(_args) -> int:
+def cmd_migrate(args) -> int:
     from regtrack.migrate import migrate
 
-    for line in migrate():
+    for line in migrate(until=args.until):
         print(line)
     return 0
 
@@ -201,7 +201,9 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="regtrack")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check").set_defaults(fn=cmd_check)
-    sub.add_parser("migrate").set_defaults(fn=cmd_migrate)
+    sp = sub.add_parser("migrate")
+    sp.add_argument("--until", type=int, help="apply files up to this number only (e.g. 10)")
+    sp.set_defaults(fn=cmd_migrate)
     sub.add_parser("schemas").set_defaults(fn=cmd_schemas)
     sp = sub.add_parser("import-seed")
     sp.add_argument("--limit", type=int)

@@ -50,7 +50,7 @@ def pick_documents(conn, n: int = 10) -> list[dict]:
 
 
 def column_dim(conn) -> int | None:
-    r = conn.execute("""SELECT atttypmod FROM pg_attribute WHERE attrelid='chunk'::regclass AND attname='embedding'""").fetchone()
+    r = conn.execute("""SELECT atttypmod FROM pg_attribute WHERE attrelid='document_chunks'::regclass AND attname='embedding'""").fetchone()
     return r["atttypmod"] if r and r["atttypmod"] > 0 else None
 
 

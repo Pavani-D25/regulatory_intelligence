@@ -336,7 +336,7 @@ def meta(cc: CountryParam = None) -> dict:
             "SELECT extract(year FROM published_date)::int AS year, count(*) AS n FROM regulations g "
             f"WHERE published_date IS NOT NULL AND local_class<>'OFF_TOPIC' AND {doc} GROUP BY 1 ORDER BY 1 DESC")]
         classes = [dict(r) for r in conn.execute(f"SELECT local_class AS doc_class, count(*) AS n FROM regulations g "
-                                                 f"WHERE {doc} GROUP BY 1 ORDER BY 2 DESC")]
+                                                 f"WHERE {doc} GROUP BY 1 ORDER BY 2 DESC, 1")]
         domains = [dict(r) for r in conn.execute(
             f"""SELECT lower(d.code) AS code, d.name AS label,
                        (SELECT count(*) FROM regulation_domains l JOIN regulations g ON g.id=l.regulation_id
