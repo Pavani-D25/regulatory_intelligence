@@ -2,7 +2,7 @@
 
 **Date:** 18 October 2026 · **Branch:** `v4-schema` · **Plan:** `docs/SCHEMA_V4B.md` §4
 
-**Status:** everything for the switch is built and was rehearsed on a full copy of the live database. **The live database has not been changed**; the switch needs the go-ahead (it changes live data).
+**Status:** **switched.** The live database `regtrack` runs on the v4B tables since 18 October 2026, after the go-ahead. The old tables are dropped. Results in "The live switch, as run" below.
 
 ## What was built
 
@@ -65,7 +65,7 @@ These are exactly the values in `reports/VALIDATION_REPORT.md` from before the m
    - `resolve-flags`: 0;
    - **seed re-import: 0 rows written**.
 
-## The live switch (to run after the go-ahead)
+## The live switch: the plan
 
 | Step | Command / action | Check |
 |---|---|---|
@@ -83,8 +83,22 @@ These are exactly the values in `reports/VALIDATION_REPORT.md` from before the m
 - **After step 7:** `dropdb regtrack; createdb regtrack; pg_restore` the step-2 dump, and reset `multi-country` to its old commit (`9aedf73`).
 - The original files in `data/raw` and the page text are never touched by the switch.
 
+## The live switch, as run (18 October 2026)
+
+| Step | Result |
+|---|---|
+| 1 | Nothing connected to `regtrack`; no RegTrack API or scheduler running (the running `vite` servers belong to another project and were left alone) |
+| 2 | Backup `data/snapshots/regtrack_2026-10-18_pre_switch.dump` (22 MB, 25 tables with data) |
+| 3 | `multi-country` fast-forwarded `9aedf73` → `25e0c39` (= `v4-schema`); the uncommitted `discovery/classify.py` edit untouched |
+| 4 | `scripts/v4b_verify.py regtrack --migrate`: 0007–0010 applied, **ALL CHECKS PASSED** (25/25 counts, 11/11 fingerprints, 8/8 vehicle-on-date answers, wheel-rim history 269 → 288 → 300 → 324). The id counters continue after the highest ids (next regulation 2125, next file 4972) |
+| 5 | `post_run`: impact for 2,066 regulations, 299 chunk years corrected, 51 alerts (35 closed at once), 0 change events. Second run: all 0 |
+| 6 | 37 endpoint snapshots equal to the rehearsal's on the same data (only the new stable order of class counts and the elapsed-minutes counter differ) |
+| 7 | `--mark-verified` passed again; migration 0011 dropped the old tables. 40 tables (39 v4B + migration log), 235 MB; `migrate`: up to date |
+| 8 | Endpoints unchanged after the drop; **pytest on live: 110 passed, 2 skipped**, no test rows left behind (1 team, 0 users, 4 alert rules as before); ruff clean; dashboard rebuilt with the new screens |
+
 ## Open issues
 
 1. **`compliance_requirements.regulation_id` is empty** (0 of 120). 0007 links a rule to its legal-basis regulation only when the code starts the legal basis, and rule keys like "SO-1365(E)-2004 Table Sr.8(b)" name a regulation that is not stored. Rules created from now on get it when the regulation is stored. A backfill is optional.
 2. **After the switch, the multi-country rollout continues on v4B**, starting with the Thai vehicle categories.
-3. **The helper scripts and the rehearsal database** (`D:\installers`, `regtrack_rehearsal`, `regtrack_dev`, the worktree) can be removed after the switch.
+3. **Clean-up, when you are happy with the switch:** the databases `regtrack_rehearsal` and `regtrack_dev` and the folder `D:\installers` (helper scripts, snapshots) can be removed. Keep the two backups in `data/snapshots/` until the new system has run for a while.
+4. **To go back:** `dropdb regtrack`, `createdb regtrack`, `pg_restore` the `pre_switch` backup, and `git reset --hard 9aedf73` on `multi-country` (this discards the new code on that branch; `v4-schema` keeps it).
