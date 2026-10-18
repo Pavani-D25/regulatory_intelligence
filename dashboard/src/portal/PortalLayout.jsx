@@ -8,7 +8,7 @@ import { ago, Badge, fmt, fmtTime } from "./ui";
 const NAV = [
   ["/", "▦", "Dashboard"], ["/regulations", "≡", "Regulations"], ["/changes", "↻", "Change Monitor"],
   ["/compliance", "✓", "Compliance Matrix"], ["/impact", "⌁", "Impact View"], ["/ai", "✦", "Ask Regulatory AI"],
-  ["/reports", "▤", "Reports"], ["/alerts", "◉", "Alerts"], ["/admin", "⚙", "Admin"],
+  ["/reports", "▤", "Reports"], ["/alerts", "◉", "Alerts"], ["/team", "◍", "Teams"], ["/admin", "⚙", "Admin"],
 ];
 const TOOLS = [["/vehicle", "◎", "Vehicle Check"], ["/versions", "⇄", "Versions"]];
 const TITLES = Object.fromEntries([...NAV, ...TOOLS, ["/search", "", "Search"], ["/doc", "", "Document"]].map(([p, , t]) => [p, t]));
@@ -40,7 +40,40 @@ function DrawerSection({ title, children, empty }) {
   );
 }
 
-function Drawer({ id, onClose, toast, openReg }) {
+// who follows this regulation; a team starts or stops watching it here (portal: Teams page lists all watches)
+function Watchers({ id, teams, toast }) {
+  const [list, setList] = useState(null);
+  const [team, setTeam] = useState("");
+  const load = useCallback(() => portal.watches(id).then((x) => setList(x.watches)).catch(() => setList([])), [id]);
+  useEffect(() => { setList(null); load(); }, [load]);
+  const free = (teams || []).filter((t) => !(list || []).some((w) => w.team_id === t.id));
+  const add = async () => {
+    try { await portal.addWatch({ canonical_id: id, team_id: Number(team) }); toast("Watching"); setTeam(""); load(); }
+    catch (e) { toast(e.message); }
+  };
+  const remove = async (w) => { await portal.deleteWatch(w.id); toast("Watch removed"); load(); };
+  return (
+    <DrawerSection title="Watched By" empty={list ? null : "Loading…"}>
+      {list && (
+        <>
+          <div className="chips">
+            {list.map((w) => <span key={w.id} className="chip">{w.team || w.user}<b onClick={() => remove(w)} title="Stop watching" style={{ cursor: "pointer" }}>×</b></span>)}
+            {!list.length && <span className="note">Nobody watches this regulation yet.</span>}
+          </div>
+          {free.length > 0 && (
+            <div className="actions" style={{ marginTop: 8 }}>
+              <select className="select" value={team} onChange={(e) => setTeam(e.target.value)}>
+                <option value="">Choose a team…</option>{free.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+              <button className="btn secondary" disabled={!team} onClick={add}>Watch</button>
+            </div>
+          )}
+        </>
+      )}
+    </DrawerSection>
+  );
+}
+
+function Drawer({ id, onClose, toast, openReg, teams }) {
   const nav = useNavigate();
   const [d, setD] = useState(null);
   const [full, setFull] = useState(null);
@@ -143,6 +176,8 @@ function Drawer({ id, onClose, toast, openReg }) {
                   <button className="btn ghost" style={{ padding: 0 }} onClick={() => { onClose(); nav(familyPath(d.family_key)); }}>Full timeline →</button>
                 </DrawerSection>
               )}
+
+              <Watchers id={d.canonical_id} teams={teams} toast={toast} />
 
               <div className="formrow" style={{ marginTop: 8 }}>
                 <label className="formlabel">Review status
@@ -284,7 +319,7 @@ export default function PortalLayout() {
           <div className="content"><Outlet /></div>
         </main>
       </div>
-      <div className="portal"><Drawer id={drawer} onClose={closeDrawer} toast={toast} openReg={setDrawer} /></div>
+      <div className="portal"><Drawer id={drawer} onClose={closeDrawer} toast={toast} openReg={setDrawer} teams={meta?.teams} /></div>
       <div className={`toast ${toastMsg ? "show" : ""}`}>{toastMsg}</div>
     </Ctx.Provider>
   );

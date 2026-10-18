@@ -5,12 +5,17 @@ import { usePortal } from "../PortalLayout";
 import useLoad from "../../useLoad";
 import { ago, Card, Loading } from "../ui";
 
+const WELCOME = { role: "ai", text: "Ask about Indian vehicle regulations. Answers cite the regulation and clause they come from." };
+
 export default function AskAI() {
   const [sp] = useSearchParams();
   const { openReg, meta } = usePortal();
   const { data: ctx } = useLoad(() => portal.askContext(), []);
+  const [histTick, setHistTick] = useState(0);
+  const { data: hist } = useLoad(() => portal.conversations(), [histTick]);
   const cats = (meta?.categories || []).map((c) => c.code).join(", ");
-  const [msgs, setMsgs] = useState([{ role: "ai", text: "Ask about Indian vehicle regulations. Answers cite the regulation and clause they come from." }]);
+  const [msgs, setMsgs] = useState([WELCOME]);
+  const [conv, setConv] = useState(null);  // the conversation follow-up questions belong to
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const end = useRef(null);
@@ -23,12 +28,21 @@ export default function AskAI() {
     setQ(""); setBusy(true);
     setMsgs((m) => [...m, { role: "user", text }]);
     try {
-      const r = await portal.ask(text);
+      const r = await portal.ask(text, conv);
+      setConv(r.conversation_id);
+      setHistTick((t) => t + 1);
       setMsgs((m) => [...m, { role: "ai", text: r.answer, sources: r.sources, note: r.note, mode: r.mode }]);
     } catch (e) {
       setMsgs((m) => [...m, { role: "ai", text: `Could not answer: ${e.message}` }]);
     } finally { setBusy(false); }
   };
+  const open = async (id) => {
+    const c = await portal.conversation(id);
+    setConv(id);
+    setMsgs([WELCOME, ...c.messages.filter((m) => m.role !== "system").map((m) => (m.role === "user" ? { role: "user", text: m.content }
+      : { role: "ai", text: m.content, sources: m.citations.filter((x) => x.canonical_id).map((x) => ({ canonical_id: x.canonical_id, clause: x.clause_no })) }))]);
+  };
+  const fresh = () => { setConv(null); setMsgs([WELCOME]); };
   useEffect(() => {
     const pre = sp.get("q");
     if (pre && !asked.current) { asked.current = true; ask(pre); }
@@ -39,6 +53,7 @@ export default function AskAI() {
     <section className="view">
       <div className="pagehead">
         <div><h1>Ask Regulatory AI</h1><p>Questions answered from the clause-level text of the regulations, with citations.</p></div>
+        <div className="actions"><button className="btn secondary" disabled={!conv || busy} onClick={fresh}>New conversation</button></div>
       </div>
       <div className="aiLayout">
         <Card className="chat" title="Regulatory Assistant" sub="Answers only from indexed Indian regulations">
@@ -68,6 +83,20 @@ export default function AskAI() {
           </div>
         </Card>
         <div>
+          <Card title="History" sub="Earlier conversations · click to continue one">
+            {!hist ? <Loading /> : (
+              <div className="stack">
+                {hist.conversations.slice(0, 8).map((c) => (
+                  <button key={c.id} className={`taskitem ${c.id === conv ? "active" : ""}`} style={{ cursor: "pointer", background: c.id === conv ? "var(--blueSoft)" : "#fff", textAlign: "left" }}
+                    onClick={() => open(c.id)}>
+                    <div className="itemmain"><div><strong style={{ fontSize: 12 }}>{(c.first_question || "—").slice(0, 70)}</strong>
+                      <small>{c.questions} question{c.questions === 1 ? "" : "s"} · {ago(c.last_at || c.started_at)}</small></div></div>
+                  </button>
+                ))}
+                {!hist.conversations.length && <p className="note">No questions asked yet.</p>}
+              </div>
+            )}
+          </Card>
           <Card title="Suggested Questions" sub="Built from the most-regulated topics and latest high-impact items">
             {!ctx ? <Loading /> : <div className="suggest">{ctx.suggestions.map((s) => <button key={s} onClick={() => ask(s)}>{s}</button>)}</div>}
           </Card>

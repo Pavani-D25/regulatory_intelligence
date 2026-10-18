@@ -12,6 +12,7 @@ import AskAI from "./portal/pages/AskAI";
 import Reports from "./portal/pages/Reports";
 import Alerts from "./portal/pages/Alerts";
 import Admin from "./portal/pages/Admin";
+import Team from "./portal/pages/Team";
 import VehicleCheck from "./pages/VehicleCheck";
 import Browse from "./pages/Browse";
 import Versions from "./pages/Versions";
@@ -34,6 +35,7 @@ createRoot(document.getElementById("root")).render(
           <Route path="reports" element={<Reports />} />
           <Route path="alerts" element={<Alerts />} />
           <Route path="admin" element={<Admin />} />
+          <Route path="team" element={<Team />} />
           {/* earlier RegTrack tools, kept inside the new shell */}
           <Route path="vehicle" element={<VehicleCheck />} />
           <Route path="browse" element={<Browse />} />

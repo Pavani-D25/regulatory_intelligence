@@ -213,3 +213,51 @@ def test_drafts_are_not_published_standards():
                               JOIN sources s ON s.id=fs.source_id AND s.code='ARAI_AIS'
                               WHERE d.local_class='AIS_STANDARD' AND fs.payload->>'code' ILIKE 'Draft%%'""").fetchone()["n"]
     assert bad == 0
+
+
+def test_workspace_teams_watches_schedules(client, tmp_path, monkeypatch):
+    """v4 workspace: teams and users, a watch on a regulation, a report schedule that the scheduler runs."""
+    from datetime import datetime, timedelta
+
+    from regtrack.api import workspace as W
+    from regtrack.db import connect
+
+    monkeypatch.setattr(W, "REPORT_DIR", tmp_path)
+    cid = client.get("/portal/regulations").json()["rows"][0]["canonical_id"]
+    tid = client.post("/portal/teams", json={"name": "pytest workspace"}).json()["id"]
+    try:
+        assert client.post("/portal/teams", json={"name": "pytest workspace"}).json()["id"] == tid  # same name, same team
+        uid = client.post("/portal/users", json={"email": "PyTest@Example.com", "name": "Py Test", "team_id": tid}).json()["id"]
+        assert client.post("/portal/users", json={"email": "pytest@example.com", "name": "x"}).status_code == 409
+        assert client.post("/portal/users", json={"email": "not-an-email", "name": "x"}).status_code == 400
+        assert client.patch(f"/portal/users/{uid}", json={"role": "editor", "is_active": False}).status_code == 200
+        u = next(x for x in client.get("/portal/team").json()["users"] if x["id"] == uid)
+        assert (u["email"], u["role"], u["is_active"], u["team"]) == ("pytest@example.com", "editor", False, "pytest workspace")
+        assert any(t["id"] == tid for t in client.get("/portal/meta").json()["teams"])
+        # watch: one team, once
+        wid = client.post("/portal/watches", json={"canonical_id": cid, "team_id": tid}).json()["id"]
+        assert client.post("/portal/watches", json={"canonical_id": cid, "team_id": tid}).status_code == 409
+        assert client.post("/portal/watches", json={"canonical_id": cid}).status_code == 400
+        assert client.post("/portal/watches", json={"canonical_id": "NO-SUCH-ID", "team_id": tid}).status_code == 404
+        assert [w["team"] for w in client.get("/portal/watches", params={"canonical_id": cid}).json()["watches"]
+                if w["id"] == wid] == ["pytest workspace"]
+        # schedule: due a week later, the scheduler writes the report file, logs it and moves the next date
+        sid = client.post("/portal/report-schedules", json={"kind": "compliance_gap", "frequency": "weekly",
+                                                             "team_ids": [tid]}).json()["id"]
+        assert client.post("/portal/report-schedules", json={"kind": "compliance_gap", "frequency": "hourly",
+                                                             "team_ids": [tid]}).status_code == 400
+        files = W.run_due_schedules(datetime.now().astimezone() + timedelta(days=8))
+        assert len(files) == 1 and (tmp_path / files[0]).read_text(encoding="utf-8").startswith("<!doctype html>")
+        s = next(x for x in client.get("/portal/report-schedules").json()["schedules"] if x["id"] == sid)
+        assert s["teams"] == ["pytest workspace"] and s["last_run_at"] and s["kind"] == "compliance_gap"
+        assert W.run_due_schedules(datetime.now().astimezone() + timedelta(days=8)) == []  # not due again yet
+        assert client.patch(f"/portal/report-schedules/{sid}", json={"is_active": False}).status_code == 200
+        assert client.get("/portal/ask/conversations").status_code == 200
+    finally:
+        with connect() as conn:
+            conn.execute("DELETE FROM reports WHERE owner_team_id=%s", (tid,))
+            conn.execute("DELETE FROM report_schedules WHERE recipients->'teams' @> to_jsonb(%s::int)", (tid,))
+            conn.execute("DELETE FROM regulation_watches WHERE watcher_team_id=%s", (tid,))
+            conn.execute("DELETE FROM users WHERE team_id=%s", (tid,))
+            conn.execute("DELETE FROM teams WHERE id=%s", (tid,))
+            conn.commit()
