@@ -556,12 +556,14 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
                      use_llm: bool = True) -> None:
     dc = DocClass(doc["doc_class"])
     cols, data, conf = deterministic(doc, pages, df, f, names)
+    data.pop("subject_source", None)  # provenance belongs in extraction (an older version wrote it into data)
+    subject_source = None
     if dc in (DocClass.AIS_STANDARD, DocClass.AIS_DRAFT, DocClass.SAFETY_STANDARD_LEGACY) and not AIS_DRAFT_COVER_TITLE.match(cols.get("subject") or ""):
         alt = listing_subject(conn, doc, f["id"])
         if alt:
             cols["subject"] = alt
             data["title"] = alt
-            data["subject_source"] = "ARAI listing (code-matched)"
+            subject_source = "ARAI listing (code-matched)"
             conf["subject"] = 0.8
             if dc != DocClass.AIS_DRAFT and is_junk_title(doc.get("official_title")):
                 cols["official_title"] = alt
@@ -569,7 +571,7 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
         alt = listing_subject(conn, doc, f["id"])
         if alt:
             cols["subject"] = alt
-            data["subject_source"] = "listing"
+            subject_source = "listing"
             conf["subject"] = 0.4
     if dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and not cols.get("vehicle_categories") and data.get("amends"):
         # an amendment applies to the vehicles of the standard it amends (same rule as link.link_ais)
@@ -580,6 +582,8 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
             conf["vehicle_categories"] = 0.6
     extraction = {"model": "rules", "rules": RULES_VERSION, "prompt": None, "confidence": conf, "needs_check": [],
                   "source_file": f["sha256"], "pages": [df["page_from"], df["page_to"]]}
+    if subject_source:  # where the subject line came from when the content gave none
+        extraction["subject_source"] = subject_source
     old = doc["extraction"] or {}
     if old.get("model") not in (None, "rules"):  # keep an earlier Qwen result for this document
         extraction.update({k: old[k] for k in ("model", "prompt", "agreement") if k in old})

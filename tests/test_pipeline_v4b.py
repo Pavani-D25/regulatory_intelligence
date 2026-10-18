@@ -491,3 +491,29 @@ def test_flags_resolved_on_v4b(v4):
     q = conn.execute("SELECT resolved_at, details FROM quality_flags WHERE entity='document' AND entity_id=%s "
                      "AND rule='placeholder_listing_date'", (fid,)).fetchone()
     assert q["resolved_at"] and q["details"]["evidence"]["content_date"] == "2021-03-22"
+
+
+def test_extracted_data_matches_its_model(v4):
+    """Every fixture's regulations validate against their doc_class model: provenance (subject_source) goes into
+    extraction, never into data (migration 0012 moved the 401 rows written before)."""
+    from regtrack.validators import validate_data
+
+    conn = v4
+    for name, folder in (("so_1406_2021_wheel_rim.pdf", "05_MoRTH_Gazette_Notifications"),
+                         ("draft_notification.pdf", "05_MoRTH_Gazette_Notifications"),
+                         ("ais_with_amendment.pdf", "07_AIS_Published_Standards")):
+        run_all(conn, add_seed_file(conn, name, folder))
+    rows = conn.execute("SELECT external_code, local_class, data FROM regulations").fetchall()
+    assert rows
+    for r in rows:
+        assert "subject_source" not in r["data"], r["external_code"]
+        assert not validate_data(r["local_class"], r["data"]), r["external_code"]
+    assert conn.execute("SELECT count(*) AS n FROM quality_flags WHERE rule='schema_violation'").fetchone()["n"] == 0
+    # the provenance is kept where it belongs when a listing supplied the subject
+    conn.execute("UPDATE regulations SET data = data || '{\"subject_source\": \"listing\"}' WHERE id = "
+                 "(SELECT min(id) FROM regulations)")
+    from regtrack.pipeline import extract as X
+    from regtrack.pipeline import repo
+    fid = conn.execute("SELECT min(document_id) AS f FROM document_parts").fetchone()["f"]
+    X.stage_extract(conn, repo.get_file(conn, fid), use_llm=False)
+    assert conn.execute("SELECT count(*) AS n FROM regulations WHERE data ? 'subject_source'").fetchone()["n"] == 0
