@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from regtrack import llm
 from regtrack.config import get_settings
 from regtrack.db import connect, vec_literal
+from regtrack.pipeline import repo
 
 CLASS_MIX = [  # (doc_class, how many) — notifications and AIS standards dominate the Qwen work
     ("NOTIFICATION_FINAL", 2), ("NOTIFICATION_DRAFT", 1), ("NOTIFICATION_ORDER", 1), ("NOTIFICATION_EXTENSION", 1),
@@ -29,9 +30,9 @@ class _Ping(BaseModel):
     number: int
 
 
-PICK_SQL = """SELECT d.*, df.page_from, df.page_to, fo.sha256, fo.storage_path, fo.id AS file_id
-               FROM document d JOIN document_file df ON df.document_id=d.id AND df.is_best_copy
-               JOIN file_object fo ON fo.id=df.file_id
+PICK_SQL = """SELECT d.*, df.page_from, df.page_to, fo.checksum_sha256 AS sha256, fo.storage_path, fo.id AS file_id
+               FROM (""" + repo.REG_SQL + """) d JOIN document_parts df ON df.regulation_id=d.id AND df.is_best_copy
+               JOIN documents fo ON fo.id=df.document_id
                WHERE {cls} coalesce((d.extraction->>'llm_pending')::boolean, true)
                  AND d.canonical_id !~ '^(NOTIF|AIS-UNIDENTIFIED)-' AND coalesce(fo.text_layer, true)
                  AND d.doc_class <> 'OFF_TOPIC' AND NOT (d.id = ANY(%s))
@@ -42,9 +43,9 @@ def pick_documents(conn, n: int = 10) -> list[dict]:
     """A fixed mix of classes (newest, in-scope first), topped up from any pending document."""
     out: list[dict] = []
     for dc, k in CLASS_MIX:
-        out += conn.execute(PICK_SQL.format(cls="d.doc_class=%s AND"), (dc, [d["id"] for d in out], k)).fetchall()
+        out += conn.execute(PICK_SQL.replace("{cls}", "d.doc_class=%s AND"), (dc, [d["id"] for d in out], k)).fetchall()
     if len(out) < n:
-        out += conn.execute(PICK_SQL.format(cls=""), ([d["id"] for d in out], n - len(out))).fetchall()
+        out += conn.execute(PICK_SQL.replace("{cls}", ""), ([d["id"] for d in out], n - len(out))).fetchall()
     return out[:n]
 
 
@@ -95,7 +96,7 @@ def run(n: int = 10, dry_run: bool = False, max_chunks: int = 40) -> int:
                       f"identity-check={check}")
                 if not dry_run:
                     df = {"page_from": d["page_from"], "page_to": d["page_to"], "is_best_copy": True}
-                    doc = conn.execute("SELECT * FROM document WHERE id=%s", (d["id"],)).fetchone()
+                    doc = repo.get_document(conn, d["id"])
                     X.extract_document(conn, doc, df, {"sha256": d["sha256"], "storage_path": d["storage_path"],
                                                        "id": d["file_id"]}, pages, [], use_llm=True)
                     conn.commit()
@@ -107,7 +108,7 @@ def run(n: int = 10, dry_run: bool = False, max_chunks: int = 40) -> int:
                 print(f"  agreement {k}: {sum(v)}/{len(v)}")
 
         print("\nEmbeddings:")
-        chunks = conn.execute("SELECT id, heading, content FROM chunk WHERE document_id = ANY(%s) AND NOT is_boilerplate "
+        chunks = conn.execute("SELECT id, heading, content FROM document_chunks WHERE regulation_id = ANY(%s) AND NOT is_boilerplate "
                               "ORDER BY id LIMIT %s", ([d["id"] for d in docs], max_chunks)).fetchall()
         if not chunks:
             print("  no chunks for these documents")

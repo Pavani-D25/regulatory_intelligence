@@ -1,4 +1,4 @@
-"""Migration 0007: the v4B tables (docs/SCHEMA_V4B.md) exist next to the old ones and enforce their rules.
+"""The v4B tables (docs/SCHEMA_V4B.md; migration 0007, old tables dropped by 0011) exist and enforce their rules.
 Runs on regtrack_test; every test rolls back. The data copy itself is checked on a copy of the live database."""
 
 from __future__ import annotations
@@ -38,12 +38,30 @@ def base(conn):
     return {"region": region, "reg": reg, "doc": doc}
 
 
-def test_all_v4b_tables_exist_next_to_the_old_ones(conn, migrated):
+def test_v4b_tables_exist_and_old_ones_are_gone(conn, migrated):
     assert "applied migration/0007_v4b_schema.sql" in migrated[1]
+    assert "applied migration/0011_drop_old_tables.sql" in migrated[1]
     have = {r["table_name"] for r in conn.execute(
         "SELECT table_name FROM information_schema.tables WHERE table_schema='public'")}
     assert V4B_TABLES <= have
-    assert {"document", "file_object", "mandate", "chunk"} <= have          # old tables kept until the switch
+    assert not ({"document", "file_object", "mandate", "chunk", "source", "quality_flag", "country"} & have)
+    assert have - V4B_TABLES == {"schema_migrations"}                         # nothing else left behind
+
+
+def test_old_tables_drop_needs_verification(conn):
+    """0011 refuses to drop old tables that hold data unless the switch-over was verified."""
+    sql = open(__import__("pathlib").Path(__file__).parent.parent / "db" / "migrations" / "0011_drop_old_tables.sql",
+               encoding="utf-8").read()
+    guard = sql[sql.index("DO $$"):sql.index("END $$;") + len("END $$;")]
+    conn.execute("CREATE TEMP TABLE document (id int)")      # stands in for the old table, with one row
+    conn.execute("INSERT INTO document VALUES (1)")
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute(guard)
+    conn.rollback()
+    conn.execute("CREATE TEMP TABLE document (id int)")
+    conn.execute("INSERT INTO document VALUES (1)")
+    conn.execute("INSERT INTO app_settings VALUES ('v4b_switch_verified', 'true') ON CONFLICT (key) DO UPDATE SET value='true'")
+    conn.execute(guard)                                       # verified: passes
 
 
 def test_reference_rows(conn):

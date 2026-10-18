@@ -225,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         fn=cmd_resolve_flags)
     sp = sub.add_parser("storage-upload", help="one-time upload of local originals to S3/MinIO")
     sp.add_argument("--limit", type=int)
-    sp.add_argument("--switch", action="store_true", help="rewrite file_object.storage_path to s3:// URIs")
+    sp.add_argument("--switch", action="store_true", help="rewrite documents.storage_path to s3:// URIs")
     sp.set_defaults(fn=cmd_storage_upload)
     sp = sub.add_parser("snapshot-export", help="database dump (+ files zip) to share with a collaborator")
     sp.add_argument("--with-files", action="store_true", help="also zip the stored originals and page text")

@@ -1,5 +1,5 @@
 """Validators. document.data is checked against the JSON Schema generated from its Pydantic model;
-failures become quality_flag rows (no manual review step) and the value is kept, marked needs_check."""
+failures become quality_flags rows (no manual review step) and the value is kept, marked needs_check."""
 
 from __future__ import annotations
 

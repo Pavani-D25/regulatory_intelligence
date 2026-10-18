@@ -96,9 +96,9 @@ def _finalise(tmp: Path, dst: Path) -> None:
 
 
 # ====================================================================== backends
-# STORAGE_BACKEND=local (default): objects live in STORAGE_DIR, file_object.storage_path is the local path.
+# STORAGE_BACKEND=local (default): objects live in STORAGE_DIR, documents.storage_path is the local path.
 # STORAGE_BACKEND=s3: objects live in an S3-compatible bucket (MinIO) under the same key
-# <sha[:2]>/<sha>.<ext>; file_object.storage_path is s3://<bucket>/<key>. Write-once in both: an existing key is
+# <sha[:2]>/<sha>.<ext>; documents.storage_path is s3://<bucket>/<key>. Write-once in both: an existing key is
 # never written again; in a bucket created with object locking every object also gets a legal hold (no delete).
 
 def object_key(sha: str, ext: str) -> str:

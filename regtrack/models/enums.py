@@ -59,7 +59,7 @@ INDIA_CLASSES = [c for c in DocClass if c not in THAI_CLASSES]
 
 
 # ---- country-neutral classification (migration 0006, docs/CLASSIFICATION_DESIGN.md); the per-country mapping
-#      from DocClass lives in the database table local_class, the derived fields in refresh_universal_fields()
+#      from DocClass lives in the database table document_classes, the derived fields in refresh_regulation_fields()
 class DocType(StrEnum):
     LAW = "LAW"
     REGULATION = "REGULATION"

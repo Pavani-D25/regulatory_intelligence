@@ -37,7 +37,7 @@ router = APIRouter(prefix="/portal", tags=["portal"])
 
 CATEGORIES = ["L1", "L2", "M1", "N1"]
 SCOPE = CATEGORIES + ["ALL"]
-# labels come from the seeded vocabulary tables (vehicle_category, domain); refreshed every 10 minutes
+# labels come from the vocabulary tables (vehicle_categories, domains); refreshed every 10 minutes
 CAT_LABEL: dict[str, str] = {}
 DOMAIN_LABEL: dict[str, str] = {}
 _vocab_at: datetime | None = None
