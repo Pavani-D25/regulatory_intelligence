@@ -103,11 +103,12 @@ def notification_ids(text: str) -> list[NotificationId]:
             key = (series, num, ext)
             if key in seen:
                 continue
-            # heading must look operative: followed by 'In exercise', 'Whereas', 'The Central Government' ...
+            # heading must look operative: followed by 'In exercise', 'Whereas', 'The Central Government' ... (the words
+            # in any case: OCR gives 'whereas the draft', 'the draft rules'); otherwise any capitalised word
             if heading_pass:
                 tail = text[m.end():m.end() + 80]
-                if not re.match(r"\s*(In\s+exercise|exercise|Whereas|WHEREAS|The\s+Central|The\s+draft|In\s+the|"
-                                r"In\s+pursuance|Notwithstanding|The\s+following|In\s+supersession|Corrigendum|"
+                if not re.match(r"\s*((?i:In\s+exercise|exercise|Whereas|The\s+Central|The\s+draft|In\s+the|"
+                                r"In\s+pursuance|Notwithstanding|The\s*following|In\s+supersession|Corrigendum)|"
                                 r"[A-Z])", tail):
                     continue
             if heading_pass:

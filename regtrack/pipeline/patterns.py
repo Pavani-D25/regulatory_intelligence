@@ -21,8 +21,9 @@ SERIES_RE = r"(G\s?[.,]?\s?S\s?[.,]?\s?R\s?[.,]?|S\s?\.?\s?O\s?\.?)"
 # '(E)' marks the Extraordinary gazette; tolerate '728E)', '377. (E)', '(E' from poor text layers
 _E = r"([\(\{\[]\s*E\s*[\)\}\]]|(?<=\d)\s*E\s*[\)\}\]]|[\(\{\[]\s*E\b)"
 NUM_ID = re.compile(SERIES_RE + r"\s*(?:No\.?\s*)?(\d{1,5})\s*\.?\s*" + _E + "?", re.I)
-# The operative heading of a notification: "G.S.R. 659(E).—In exercise ..." / "S.O. 4143(E).- ..."
-NUM_ID_HEAD = re.compile(SERIES_RE + r"\s*(?:No\.?\s*)?(\d{1,5})\s*\.?\s*" + _E + r"?\s*[.,:]?\s*[—–\-]+\s*", re.I)
+# The operative heading of a notification: "G.S.R. 659(E).—In exercise ..." / "S.O. 4143(E).- ..."; poor text layers
+# turn the dash into an underscore ("G.s.R.673(E)._The following ...")
+NUM_ID_HEAD = re.compile(SERIES_RE + r"\s*(?:No\.?\s*)?(\d{1,5})\s*\.?\s*" + _E + r"?\s*[.,:]?\s*[—–\-_]+\s*", re.I)
 # Hindi "सा.का.नि. 659(अ)" / "का.आ. 4143(अ)"
 HI_ID = re.compile(r"(सा\.\s?का\.\s?नि\.|का\.\s?आ\.)\s*(\d{1,5})\s*\(\s*अ\s*\)")
 

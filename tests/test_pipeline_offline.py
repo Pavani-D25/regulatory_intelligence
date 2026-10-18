@@ -231,3 +231,19 @@ def test_identity_from_amendment_headers():
     assert i.canonical_id == "AIS-071(Part2)" and i.family_key == "AIS-071(Part2)"
     same = [Segment("amendment", 1, 1, 1, target_raw="AIS-007 (Rev.5)")]
     assert identity_from_headers(cover, same) is cover
+
+
+def test_notification_heading_tolerates_ocr():
+    """The operative heading is found when OCR lowercases the opening words or turns the dash into '_'."""
+    for text, want in (
+            ("MINISTRY OF ROAD TRANSPORT AND HIGHWAYS NOTIFICATION New Delhi, the 31 st May, 2002 G.s.R400(E).- whereas "
+             "the draft of certain rules", "GSR-400(E)-2002"),
+            ("NOTIFICATION New Delhi, the 3l st Augus! 2015 G.s.R.673(E)._Thefollowingdraftofcertainrules", "GSR-673(E)-2015"),
+            ("NOTIFICATION New Delhi, the 2nd September, 2022 G.S.R. 680(E).—the draft rules the Inter-Country",
+             "GSR-680(E)-2022"),
+            ("NOTIFICATION New Delhi, the 12th August, 2022 S.O. 3896(E).—In exercise of the powers", "SO-3896(E)-2022")):
+        idt = notification_identity(text)
+        assert idt and idt.canonical_id == want, (text[:60], idt)
+    # a citation is still not a heading
+    assert notification_identity("as published vide notification number G.S.R. 31(E) dated the 15th January, 2002, "
+                                 "and the draft rules") is None
