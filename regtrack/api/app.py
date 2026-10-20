@@ -20,7 +20,7 @@ from regtrack import country
 from regtrack.api import sql as S
 from regtrack.api.params import CountryParam, resolve_country
 from regtrack.db import connect
-from regtrack.models.enums import IN_SCOPE_CATEGORIES
+from regtrack.models.enums import in_scope_categories
 from regtrack.pipeline.search import search as chunk_search
 from regtrack.storage import open_local
 
@@ -100,7 +100,7 @@ def vehicles_applicable(category: str = Query(..., examples=["L2"]), engine_cc: 
                 m["standards"].append({"ref": ref, "current_version": dict(cur) if cur else None,
                                        "amendments": [dict(a) for a in amds]})
     return {"query": {"category": category, "engine_cc": engine_cc, "powertrain": powertrain, "on": on},
-            "in_scope_category": category.upper() in IN_SCOPE_CATEGORIES, "count": len(mandates), "mandates": mandates}
+            "in_scope_category": category.upper() in in_scope_categories(cc), "count": len(mandates), "mandates": mandates}
 
 
 # ---------------------------------------------------------------- documents
@@ -344,7 +344,7 @@ def meta(cc: CountryParam = None) -> dict:
                 FROM domains d ORDER BY 3 DESC""")]
         cats = [dict(r) for r in conn.execute(
             "SELECT code, label, code = ANY(%s) AS in_scope, un_codes FROM vehicle_categories v "
-            f"WHERE {country.region_sql('v', cc)} ORDER BY code", (sorted(IN_SCOPE_CATEGORIES),))]
+            f"WHERE {country.region_sql('v', cc)} ORDER BY code", (sorted(in_scope_categories(cc)),))]
     return {"country": cc, "stats": stats, "years": years, "doc_classes": classes, "domains": domains, "categories": cats,
             "powertrains": ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"],
             "usage": ["private", "transport"]}

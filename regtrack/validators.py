@@ -8,7 +8,7 @@ from functools import lru_cache
 from jsonschema import Draft202012Validator
 
 from regtrack.models import schema_for
-from regtrack.models.enums import IN_SCOPE_CATEGORIES
+from regtrack.models.enums import in_scope_categories
 
 
 @lru_cache(maxsize=64)
@@ -23,8 +23,8 @@ def validate_data(doc_class: str, data: dict) -> list[str]:
             for e in sorted(v.iter_errors(data), key=lambda e: list(e.absolute_path))]
 
 
-def in_scope(categories: list[str]) -> bool:
-    return bool(set(categories) & IN_SCOPE_CATEGORIES)
+def in_scope(categories: list[str], cc: str | None = None) -> bool:
+    return bool(set(categories) & in_scope_categories(cc))
 
 
 def implementation_before_notification(impl, notified) -> bool:

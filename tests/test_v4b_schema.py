@@ -73,8 +73,13 @@ def test_reference_rows(conn):
                          WHERE r.code='IN' AND vc.code='L2'""").fetchone()
     assert l2["un_codes"] == ["L3"]
     scope = {r["code"] for r in conn.execute("""SELECT vc.code FROM region_scope s JOIN vehicle_categories vc
-                                                ON vc.id = s.vehicle_category_id""")}
+                                                ON vc.id = s.vehicle_category_id JOIN regions r ON r.id = vc.region_id
+                                                WHERE r.code='IN'""")}
     assert scope == {"L1", "L2", "M1", "N1", "ALL"}
+    th_scope = {r["code"] for r in conn.execute("""SELECT vc.code FROM region_scope s JOIN vehicle_categories vc
+                                                   ON vc.id = s.vehicle_category_id JOIN regions r ON r.id = vc.region_id
+                                                   WHERE r.code='TH'""")}
+    assert th_scope == {"L1", "L3", "M1", "N1"}
     assert conn.execute("SELECT count(*) AS n FROM domains WHERE code='NUMBER_PLATES'").fetchone()["n"] == 1
     assert conn.execute("SELECT count(*) AS n FROM report_templates").fetchone()["n"] == 3
 

@@ -194,7 +194,16 @@ class VehicleCategory(StrEnum):
     ALL = "ALL"
 
 
-IN_SCOPE_CATEGORIES = frozenset({"L1", "L2", "M1", "N1", "ALL"})
+IN_SCOPE_CATEGORIES_BY_COUNTRY: dict[str, tuple[str, ...]] = {
+    "IN": ("L1", "L2", "M1", "N1", "ALL"),
+    # UNECE L2 = three-wheeled moped, not India's L2 meaning (motorcycle); Thailand's motorcycle-equivalent is L3
+    "TH": ("L1", "L3", "M1", "N1", "ALL"),
+}
+
+
+def in_scope_categories(cc: str | None) -> frozenset[str]:
+    """The in-scope vehicle-category codes of a country; India's set for an unknown/unset one."""
+    return frozenset(IN_SCOPE_CATEGORIES_BY_COUNTRY.get((cc or "").upper(), IN_SCOPE_CATEGORIES_BY_COUNTRY["IN"]))
 
 
 class Usage(StrEnum):

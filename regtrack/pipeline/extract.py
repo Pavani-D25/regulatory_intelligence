@@ -387,7 +387,7 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
             if law == "repealed":
                 cols["status"] = Status.SUPERSEDED.value
     cols["vehicle_categories"] = cats
-    cols["in_scope"] = in_scope(cats) if cats else (None if dc == DocClass.OFF_TOPIC else False)
+    cols["in_scope"] = in_scope(cats, file_row.get("country")) if cats else (None if dc == DocClass.OFF_TOPIC else False)
     conf["vehicle_categories"] = 0.7 if cats else 0.0
     return cols, data, conf
 
@@ -457,7 +457,7 @@ def in_double_sample(canonical_id: str) -> bool:
     return int(hashlib.sha256(canonical_id.encode()).hexdigest(), 16) % 10 == 0
 
 
-def merge_llm(dc: DocClass, data: dict, cols: dict, conf: dict, r) -> list[str]:
+def merge_llm(dc: DocClass, data: dict, cols: dict, conf: dict, r, cc: str | None = None) -> list[str]:
     """Deterministic values win for fixed-format fields; Qwen fills the rest. Returns needs_check fields."""
     fixed = {"series", "number", "date", "gazette", "file_no", "draft_ref", "amendment_no", "corrigendum_no", "amends"}
     needs: list[str] = []
@@ -476,7 +476,7 @@ def merge_llm(dc: DocClass, data: dict, cols: dict, conf: dict, r) -> list[str]:
     if r.vehicle_categories and not cols.get("vehicle_categories"):
         cats = [P.norm_category(c) or c for c in r.vehicle_categories]
         cols["vehicle_categories"] = [c for c in dict.fromkeys(P.expand_letters(cats))]
-        cols["in_scope"] = in_scope(cols["vehicle_categories"])
+        cols["in_scope"] = in_scope(cols["vehicle_categories"], cc)
         conf["vehicle_categories"] = 0.6
     for fc in r.field_confidence:
         conf[fc.field] = round(fc.confidence, 2)
@@ -596,7 +596,7 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
             eng = english_text(pages, df["page_from"], df["page_to"])
             try:
                 r = llm_extract(doc, eng)
-                extraction["needs_check"] += merge_llm(dc, data, cols, conf, r)
+                extraction["needs_check"] += merge_llm(dc, data, cols, conf, r, f.get("country"))
                 extraction.update(model=get_settings().llm_model, prompt=PROMPT_VERSION)
                 if in_double_sample(doc["canonical_id"]):
                     extraction["agreement"] = double_check(doc, eng, data)

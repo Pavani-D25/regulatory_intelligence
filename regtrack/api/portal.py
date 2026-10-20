@@ -32,15 +32,12 @@ from regtrack import country
 from regtrack.api import sql as S
 from regtrack.api.params import CountryParam, resolve_country
 from regtrack.db import Jsonb, connect
+from regtrack.models.enums import in_scope_categories
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
-CATEGORIES = ["L1", "L2", "M1", "N1"]
-SCOPE = CATEGORIES + ["ALL"]
-# labels come from the vocabulary tables (vehicle_categories, domains); refreshed every 10 minutes
-CAT_LABEL: dict[str, str] = {}
-DOMAIN_LABEL: dict[str, str] = {}
-_vocab_at: datetime | None = None
+# per-country vehicle-category / domain labels, refreshed every 10 minutes; see load_vocab()
+_VOCAB: dict[str, dict] = {}
 IMPACT_RULE = ("High = technical, with an obligation still to come, a revision needing re-approval, or published in the "
                "last 12 months; Medium = other technical; Low = administrative (registration, licences, fees)")
 STATUSES = ["Action Required", "Under Review", "Impact Analysis", "Tracked"]
@@ -55,19 +52,24 @@ def _short(label: str) -> str:
     return label.split("(")[0].strip()
 
 
-def load_vocab(conn) -> None:
-    global _vocab_at
-    if _vocab_at and datetime.now() - _vocab_at < timedelta(minutes=10) and CAT_LABEL:
-        return
-    cats = {r["code"]: f"{r['code']} {_short(r['label'])}"
-            for r in conn.execute(f"SELECT code, label FROM vehicle_categories v WHERE {country.region_sql('v')}")}
-    CAT_LABEL.clear()
-    CAT_LABEL.update(cats)
-    CAT_LABEL.setdefault("ALL", "All vehicles")
-    DOMAIN_LABEL.clear()
-    DOMAIN_LABEL.update({r["code"]: r["label"] for r in conn.execute(
-        "SELECT lower(code) AS code, name AS label FROM domains ORDER BY code")})
-    _vocab_at = datetime.now()
+def load_vocab(conn, cc: str) -> dict:
+    """In-scope vehicle categories and their/domain labels for one country, cached 10 minutes."""
+    v = _VOCAB.get(cc)
+    if v and datetime.now() - v["at"] < timedelta(minutes=10):
+        return v
+    scope = sorted(in_scope_categories(cc) - {"ALL"})
+    rows = conn.execute(f"SELECT code, label FROM vehicle_categories v WHERE {country.region_sql('v', cc)} "
+                        "AND code = ANY(%s) ORDER BY code", (scope,)).fetchall()
+    categories = [r["code"] for r in rows]
+    cat_label = {r["code"]: f"{r['code']} {_short(r['label'])}" for r in rows}
+    cat_label["ALL"] = "All vehicles"
+    domain_label = {r["code"]: r["label"] for r in conn.execute(
+        "SELECT lower(code) AS code, name AS label FROM domains ORDER BY code")}
+    name = conn.execute("SELECT name FROM regions WHERE code=%s", (cc,)).fetchone()
+    v = {"categories": categories, "scope": categories + ["ALL"], "cat_label": cat_label,
+         "domain_label": domain_label, "name": name["name"] if name else cc, "at": datetime.now()}
+    _VOCAB[cc] = v
+    return v
 
 
 def _rows(conn, sql: str, args=None) -> list[dict]:
@@ -116,7 +118,7 @@ WHERE d.doc_class <> 'OFF_TOPIC' AND d.vehicle_categories && %s {where}
 """
 
 
-def classify_row(r: dict, today: date | None = None) -> dict:
+def classify_row(r: dict, vocab: dict, today: date | None = None) -> dict:
     today = today or date.today()
     technical = r["nature"] == "technical" or (r["doc_class"] or "").startswith(("AIS_", "TAP_"))
     recent = bool(r["doc_date"] and r["doc_date"] >= today - timedelta(days=365))
@@ -143,7 +145,7 @@ def classify_row(r: dict, today: date | None = None) -> dict:
         status = "Impact Analysis"
     else:
         status = "Tracked"
-    cats = [c for c in CATEGORIES if c in (r["vehicle_categories"] or [])] or (["ALL"] if "ALL" in (r["vehicle_categories"] or []) else [])
+    cats = [c for c in vocab["categories"] if c in (r["vehicle_categories"] or [])] or (["ALL"] if "ALL" in (r["vehicle_categories"] or []) else [])
     formal, subject = (r["official_title"] or "").strip(), (r["subject"] or "").strip()
     if formal and subject and subject != formal and AMENDMENT_RULES.search(formal) and not AMENDMENT_RULES.search(subject):
         name, subtitle = subject, formal  # "Amends CMVR Rule 125 ..." tells more than "Central Motor Vehicles (Tenth Amendment) Rules"
@@ -152,7 +154,7 @@ def classify_row(r: dict, today: date | None = None) -> dict:
     r.update(
         name=name, subtitle=subtitle, impact=impact, impact_basis=basis,
         status=status, region=", ".join(cats), categories=cats, authority=r["issuer"] or "—",
-        domain=DOMAIN_LABEL.get((r["domains"] or [None])[0], "General") if r["domains"] else "General",
+        domain=vocab["domain_label"].get((r["domains"] or [None])[0], "General") if r["domains"] else "General",
         effective=r["next_obligation"] or r["doc_date"],
     )
     return r
@@ -163,19 +165,19 @@ def regulations(conn, category: str | None = None, extra_where: str = "", args: 
     """In-scope regulations of one country (cc, default the setting) with impact/status. history=False leaves out
     superseded and withdrawn documents, reference=False leaves out reports, form tables, catalogues and unclassified
     documents."""
-    load_vocab(conn)
+    vocab = load_vocab(conn, cc)
     if not history:
         extra_where = "AND d.status NOT IN ('superseded','withdrawn') " + extra_where
     if not reference:
         extra_where = "AND d.doc_class NOT IN ('" + "','".join(REFERENCE_CLASSES) + "') " + extra_where
-    cats = [category] if category in CATEGORIES else SCOPE
-    if category in CATEGORIES:
+    cats = [category] if category in vocab["categories"] else vocab["scope"]
+    if category in vocab["categories"]:
         cats = [category, "ALL"]
     rows = _rows(conn, REG_SQL.format(where=extra_where, docs=S.docs(cc), review=S.REVIEW.format(e="e")), (cats, *args))
-    return [classify_row(r) for r in rows]
+    return [classify_row(r, vocab) for r in rows]
 
 
-def follow_up(r: dict) -> str:
+def follow_up(r: dict, vocab: dict) -> str:
     dc = r["doc_class"]
     if r["reapproval"]:
         return "New revision: type approvals to the earlier revision need re-approval - check affected models and plan re-testing."
@@ -191,7 +193,7 @@ def follow_up(r: dict) -> str:
         return "Amendment to a standard: check the changed clauses against current homologation evidence."
     if r["nature"] == "administrative":
         return "Administrative change (registration / licence / fees): inform the homologation and dealer-operations teams."
-    return f"Confirm applicability for {'/'.join(r['categories'] or CATEGORIES)} models and record the decision."
+    return f"Confirm applicability for {'/'.join(r['categories'] or vocab['categories'])} models and record the decision."
 
 
 def detected_change(conn, doc_id: int) -> str:
@@ -218,36 +220,37 @@ def summary(cc: CountryParam = None) -> dict:
     today = date.today()
     cc = resolve_country(cc)
     with connect() as conn:
+        vocab = load_vocab(conn, cc)
         regs = regulations(conn, cc=cc)
         months = _rows(conn, f"""SELECT to_char(m, 'Mon') AS label, to_char(m, 'YYYY-MM') AS ym,
                    (SELECT count(*) FROM {S.docs(cc)} d WHERE d.doc_class<>'OFF_TOPIC' AND d.vehicle_categories && %s
                       AND date_trunc('month', d.doc_date)=m) AS n
                    FROM generate_series(date_trunc('month', current_date) - interval '11 months',
-                                        date_trunc('month', current_date), interval '1 month') m ORDER BY m""", (SCOPE,))
+                                        date_trunc('month', current_date), interval '1 month') m ORDER BY m""", (vocab["scope"],))
         changes = _rows(conn, f"""SELECT count(*) AS n, count(*) FILTER (WHERE e.review_status<>'confirmed') AS open
                                  FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
                                  WHERE e.detected_at > now() - interval '30 days' AND d.doc_class <> 'OFF_TOPIC'
-                                   AND d.vehicle_categories && %s""", (SCOPE,))[0]
+                                   AND d.vehicle_categories && %s""", (vocab["scope"],))[0]
         # upcoming obligations: notified (final) and proposed (draft notifications), soonest first
         deadlines = _rows(conn, f"""SELECT m.mandate_key, m.subject, m.implementation_date, m.vehicle_categories,
                    m.is_draft, d.external_code AS canonical_id FROM {S.mandates(cc)} m JOIN regulations d ON d.id=m.source_doc_id
                    WHERE m.valid_to IS NULL AND m.vehicle_categories && %s
-                     AND m.implementation_date >= current_date ORDER BY m.implementation_date, m.is_draft, m.mandate_key LIMIT 6""", (SCOPE,))
+                     AND m.implementation_date >= current_date ORDER BY m.implementation_date, m.is_draft, m.mandate_key LIMIT 6""", (vocab["scope"],))
         recent_deadlines = _rows(conn, f"""SELECT m.mandate_key, m.subject, m.implementation_date, m.vehicle_categories,
                    m.is_draft, d.external_code AS canonical_id FROM {S.mandates(cc)} m JOIN regulations d ON d.id=m.source_doc_id
                    WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
                      AND m.implementation_date <= current_date
-                   ORDER BY m.implementation_date DESC, m.mandate_key LIMIT 6""", (SCOPE,))
+                   ORDER BY m.implementation_date DESC, m.mandate_key LIMIT 6""", (vocab["scope"],))
         sources = _rows(conn, f"SELECT count(*) AS n, max(last_run_at) AS last FROM {S.sources(cc)} s "
                               "WHERE code<>'LOCAL_SEED'")[0]
     sev = {k: sum(1 for r in regs if r["impact"] == k) for k in ("High", "Medium", "Low")}
     changed = [r for r in regs if r["last_event_at"] and r["last_event_at"].date() >= today - timedelta(days=30)]
-    by_cat = [{"name": CAT_LABEL[c], "code": c, "n": sum(1 for r in regs if c in r["categories"])} for c in CATEGORIES]
+    by_cat = [{"name": vocab["cat_label"][c], "code": c, "n": sum(1 for r in regs if c in r["categories"])} for c in vocab["categories"]]
     dom: dict[str, int] = {}
     for r in regs:
         for d in r["domains"] or []:
             dom[d] = dom.get(d, 0) + 1
-    top_dom = [{"name": DOMAIN_LABEL.get(k, k), "code": k, "n": v} for k, v in sorted(dom.items(), key=lambda kv: -kv[1])[:5]]
+    top_dom = [{"name": vocab["domain_label"].get(k, k), "code": k, "n": v} for k, v in sorted(dom.items(), key=lambda kv: -kv[1])[:5]]
     latest = sorted([r for r in regs if r["doc_date"]], key=lambda r: (r["doc_date"], r["canonical_id"]), reverse=True)[:6]
     return {
         "kpis": {"tracked": len(regs), "new_this_quarter": sum(1 for r in regs if r["doc_date"] and r["doc_date"] >= today - timedelta(days=90)),
@@ -274,13 +277,14 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
     today = date.today()
     cc = resolve_country(cc)
     with connect() as conn:
+        vocab = load_vocab(conn, cc)
         regs = regulations(conn, category, history=history, reference=reference, cc=cc)
         n_reference = conn.execute(f"""SELECT count(*) AS n FROM {S.docs(cc)} d WHERE vehicle_categories && %s
                                       AND doc_class = ANY(%s) AND status NOT IN ('superseded','withdrawn')""",
-                                   (SCOPE, list(REFERENCE_CLASSES))).fetchone()["n"]
+                                   (vocab["scope"], list(REFERENCE_CLASSES))).fetchone()["n"]
         superseded = conn.execute(f"""SELECT count(*) AS n FROM {S.docs(cc)} d WHERE doc_class<>'OFF_TOPIC'
                                      AND vehicle_categories && %s AND status IN ('superseded','withdrawn')""",
-                                  (SCOPE,)).fetchone()["n"]
+                                  (vocab["scope"],)).fetchone()["n"]
     by_issuer: dict[str, int] = {}
     for r in regs:
         by_issuer[r["issuer"] or "Unknown"] = by_issuer.get(r["issuer"] or "Unknown", 0) + 1
@@ -306,6 +310,7 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
 def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
+        vocab = load_vocab(conn, cc)
         regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,), history=True, reference=True, cc=cc)
         if not regs:
             raise HTTPException(404, "not an in-scope regulation")
@@ -317,7 +322,7 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
         out.update(summary=r["subject"] or r["official_title"] or "No summary yet (AI pending).",
                    change=r["last_event_summary"] and f"{r['last_event'].replace('_', ' ')}: {r['last_event_summary']}"
                    or detected_change(conn, r["id"]),
-                   action=follow_up(r), owner=r["review_owner"], note=r["review_note"],
+                   action=follow_up(r, vocab), owner=r["review_owner"], note=r["review_note"],
                    file=files[0] if files else None)
     return out
 
@@ -328,8 +333,9 @@ def set_review(canonical_id: str, body: dict = Body(...)) -> dict:
         raise HTTPException(400, "bad status")
     if body.get("impact") and body["impact"] not in ("High", "Medium", "Low"):
         raise HTTPException(400, "bad impact")
+    cc = resolve_country(body.get("country"))
     with connect() as conn:
-        d = conn.execute(f"SELECT id FROM regulations g WHERE external_code=%s AND {country.region_sql('g')}",
+        d = conn.execute(f"SELECT id FROM regulations g WHERE external_code=%s AND {country.region_sql('g', cc)}",
                          (canonical_id,)).fetchone()
         if not d:
             raise HTTPException(404, "unknown document")
@@ -341,7 +347,7 @@ def set_review(canonical_id: str, body: dict = Body(...)) -> dict:
                         WHERE id=%s""",
                      (status, team_id(conn, body.get("owner")), body.get("note"), impact, impact, impact, d["id"]))
         if not impact:  # back to the rule-based impact at once
-            conn.execute("SELECT refresh_regulation_fields(%s)", (country.code(),))
+            conn.execute("SELECT refresh_regulation_fields(%s)", (cc,))
         conn.commit()
     return {"ok": True}
 
@@ -425,16 +431,16 @@ ORDER BY coalesce(cr.due_date, m.implementation_date) DESC NULLS LAST, m.mandate
 
 @router.get("/compliance")
 def compliance(category: str | None = None, cc: CountryParam = None) -> dict:
-    cats = [category, "ALL"] if category in CATEGORIES else SCOPE
     cc = resolve_country(cc)
     with connect() as conn:
-        load_vocab(conn)
+        vocab = load_vocab(conn, cc)
+        cats = [category, "ALL"] if category in vocab["categories"] else vocab["scope"]
         rows = _rows(conn, COMP_SQL.format(tracked=TRACKED, mandates=S.mandates(cc), docs=S.docs(cc)), (cats,))
         default_owner = _setting(conn, "default_owner", "Regulatory Affairs Team")
     for r in rows:
-        r["domain"] = DOMAIN_LABEL.get((r["domains"] or [None])[0], "General") if r["domains"] else "General"
+        r["domain"] = vocab["domain_label"].get((r["domains"] or [None])[0], "General") if r["domains"] else "General"
         r["requirement"] = f"{r['legal_basis']}"
-        r["categories"] = [c for c in SCOPE if c in (r["vehicle_categories"] or [])]
+        r["categories"] = [c for c in vocab["scope"] if c in (r["vehicle_categories"] or [])]
     n = len(rows) or 1
     count = {s: sum(1 for r in rows if r["status"] == s) for s in ("Compliant", "In Progress", "Open", "Not Applicable")}
     applicable = n - count["Not Applicable"] or 1
@@ -463,7 +469,7 @@ def set_compliance(mandate_key: str, body: dict = Body(...)) -> dict:
     if body.get("status", "Open") not in ("Open", "In Progress", "Compliant", "Not Applicable"):
         raise HTTPException(400, "bad status")
     due = body.get("due_date") or None
-    cc = country.code()
+    cc = resolve_country(body.get("country"))
     status = body.get("status", "Open").lower().replace(" ", "_")
     evidence = [{"type": "note", "label": body["evidence"]}] if body.get("evidence") else []
     with connect() as conn:
@@ -484,10 +490,11 @@ def impact(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     region = country.region_sql("x", cc)
     with connect() as conn:
+        vocab = load_vocab(conn, cc)
         regs = regulations(conn, cc=cc)
         stds = _rows(conn, f"""SELECT s AS name, count(*) AS n FROM {S.mandates(cc)} m, unnest(m.standard_refs) s
                               WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
-                              GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 5""", (SCOPE,))
+                              GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 5""", (vocab["scope"],))
         owners = conn.execute(f"SELECT count(DISTINCT owner_team_id) AS n FROM compliance_requirements x "
                               f"WHERE owner_team_id IS NOT NULL AND {region}").fetchone()["n"]
         wf = conn.execute(f"""SELECT
@@ -500,18 +507,18 @@ def impact(cc: CountryParam = None) -> dict:
               (SELECT count(*) FROM {S.mandates(cc)} m WHERE valid_to IS NULL AND NOT is_draft
                  AND vehicle_categories && %s) AS obligations,
               (SELECT count(*) FROM regulation_changes x WHERE review_status='reviewed' AND {region}) AS closed,
-              (SELECT count(*) FROM regulation_changes x WHERE {region}) AS changes""", (SCOPE,)).fetchone()
+              (SELECT count(*) FROM regulation_changes x WHERE {region}) AS changes""", (vocab["scope"],)).fetchone()
     dom: dict[str, int] = {}
     for r in regs:
         for d in r["domains"] or []:
             dom[d] = dom.get(d, 0) + (2 if r["impact"] == "High" else 1)
     top = [d for d, _ in sorted(dom.items(), key=lambda kv: -kv[1])[:5]]
     counts = {d: {c: sum((2 if r["impact"] == "High" else 1) for r in regs if d in (r["domains"] or [])
-                         and (c in r["categories"] or "ALL" in (r["vehicle_categories"] or []))) for c in CATEGORIES} for d in top}
+                         and (c in r["categories"] or "ALL" in (r["vehicle_categories"] or []))) for c in vocab["categories"]} for d in top}
     peak = max([v for row in counts.values() for v in row.values()] or [1]) or 1
     score = {d: {c: max(1, min(5, 1 + round(4 * v / peak))) if v else 1 for c, v in row.items()} for d, row in counts.items()}
-    cells = [{"domain": DOMAIN_LABEL.get(d, d), "code": d, "scores": [score[d][c] for c in CATEGORIES],
-              "counts": [counts[d][c] for c in CATEGORIES]} for d in top]
+    cells = [{"domain": vocab["domain_label"].get(d, d), "code": d, "scores": [score[d][c] for c in vocab["categories"]],
+              "counts": [counts[d][c] for c in vocab["categories"]]} for d in top]
     critical = sum(1 for d in top if max(score[d].values()) >= 4)
     workflow = [
         {"step": "Detect", "text": "New or changed documents found by source monitoring (last 30 days)", "n": wf["detected"], "of": None},
@@ -520,11 +527,11 @@ def impact(cc: CountryParam = None) -> dict:
         {"step": "Map", "text": "Obligations in force with an owner in the Compliance Matrix", "n": wf["mapped"], "of": wf["obligations"]},
         {"step": "Close", "text": "Detected changes marked as reviewed", "n": wf["closed"], "of": wf["changes"]},
     ]
-    return {"categories": CATEGORIES, "category_labels": [CAT_LABEL.get(c, c) for c in CATEGORIES], "cells": cells,
+    return {"categories": vocab["categories"], "category_labels": [vocab["cat_label"].get(c, c) for c in vocab["categories"]], "cells": cells,
             "top_standards": stds, "workflow": workflow,
             "kpis": {"critical": critical,
-                     "top1": {"name": DOMAIN_LABEL.get(top[0], top[0]) if top else "—", "n": sum(1 for r in regs if top and top[0] in (r["domains"] or []))},
-                     "top2": {"name": DOMAIN_LABEL.get(top[1], top[1]) if len(top) > 1 else "—", "n": sum(1 for r in regs if len(top) > 1 and top[1] in (r["domains"] or []))},
+                     "top1": {"name": vocab["domain_label"].get(top[0], top[0]) if top else "—", "n": sum(1 for r in regs if top and top[0] in (r["domains"] or []))},
+                     "top2": {"name": vocab["domain_label"].get(top[1], top[1]) if len(top) > 1 else "—", "n": sum(1 for r in regs if len(top) > 1 and top[1] in (r["domains"] or []))},
                      "owners": owners}}
 
 
@@ -532,9 +539,10 @@ def impact(cc: CountryParam = None) -> dict:
 def impact_cell(category: str, domain: str, cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
+        vocab = load_vocab(conn, cc)
         regs = [r for r in regulations(conn, category, cc=cc) if domain in (r["domains"] or [])]
     regs.sort(key=lambda r: ({"High": 0, "Medium": 1, "Low": 2}[r["impact"]], -(r["effective"] or date(1900, 1, 1)).toordinal()))
-    return {"category": category, "domain": DOMAIN_LABEL.get(domain, domain), "count": len(regs),
+    return {"category": category, "domain": vocab["domain_label"].get(domain, domain), "count": len(regs),
             "rows": [_reg_out(r) for r in regs[:6]]}
 
 
@@ -544,16 +552,17 @@ def ask_context(cc: CountryParam = None) -> dict:
     """Suggested questions built from the current data, and the sources the assistant searches."""
     cc = resolve_country(cc)
     with connect() as conn:
+        vocab = load_vocab(conn, cc)
         regs = regulations(conn, cc=cc)
         sources = _rows(conn, f"""SELECT s.code, s.name, s.last_run_at, s.last_status,
                    (SELECT count(DISTINCT d.id) FROM raw_ingestion_records f JOIN document_parts p ON p.document_id=f.document_id
                       JOIN {S.docs(cc)} d ON d.id=p.regulation_id WHERE f.source_id=s.id AND d.vehicle_categories && %s)
                      AS documents
-                   FROM {S.sources(cc)} s ORDER BY s.id""", (SCOPE,))
+                   FROM {S.sources(cc)} s ORDER BY s.id""", (vocab["scope"],))
         chunks = conn.execute(f"SELECT count(*) AS n FROM document_chunks c WHERE in_scope AND NOT is_boilerplate "
                               f"AND {country.region_sql('c', cc)}").fetchone()["n"]
     suggest: list[str] = []
-    for c in CATEGORIES:  # most-regulated topic per category (type approval is everywhere, so skipped)
+    for c in vocab["categories"]:  # most-regulated topic per category (type approval is everywhere, so skipped)
         dom: dict[str, int] = {}
         for r in regs:
             if c in r["categories"]:
@@ -562,7 +571,7 @@ def ask_context(cc: CountryParam = None) -> dict:
                         dom[d] = dom.get(d, 0) + 1
         if dom:
             top = max(dom, key=dom.get)
-            suggest.append(f"Which rules on {DOMAIN_LABEL.get(top, top)} apply to {c}?")
+            suggest.append(f"Which rules on {vocab['domain_label'].get(top, top)} apply to {c}?")
     latest = sorted([r for r in regs if r["impact"] == "High" and r["doc_date"]], key=lambda r: r["doc_date"], reverse=True)[:2]
     suggest += [f"Summarize {r['canonical_id']}: {r['name'][:60]}" for r in latest]
     return {"suggestions": suggest[:6], "sources": [x for x in sources if x["documents"]], "chunks": chunks}
@@ -576,8 +585,9 @@ def ask(body: dict = Body(...)) -> dict:
     q = (body.get("question") or "").strip()
     if not q:
         raise HTTPException(400, "empty question")
+    cc = resolve_country(body.get("country"))
     with connect() as conn:
-        out, hits = _answer(conn, q)
+        out, hits = _answer(conn, q, cc)
         out["conversation_id"] = record_exchange(conn, q, out["answer"], hits, body.get("conversation_id"))
         conn.commit()
     return out
@@ -594,14 +604,15 @@ def ask_conversation(conversation_id: int) -> dict:
     return {"conversation_id": conversation_id, "messages": msgs}
 
 
-def _answer(conn, q: str) -> tuple[dict, list[dict]]:
+def _answer(conn, q: str, cc: str) -> tuple[dict, list[dict]]:
     from pydantic import BaseModel
 
     from regtrack import llm
     from regtrack.pipeline.search import search as chunk_search
 
-    cat = next((c for c in CATEGORIES if c.lower() in q.lower().split() or c in q), None)
-    hits = chunk_search(conn, q, cat, None, None, None, 8, cc=country.code())["results"]
+    vocab = load_vocab(conn, cc)
+    cat = next((c for c in vocab["categories"] if c.lower() in q.lower().split() or c in q), None)
+    hits = chunk_search(conn, q, cat, None, None, None, 8, cc=cc)["results"]
     sources = [{"canonical_id": h["canonical_id"], "clause": h["clause_no"], "pages": f"{h['page_from']}-{h['page_to']}",
                 "title": h["official_title"] or h["subject"], "snippet": " ".join((h["content"] or "").split())[:300]} for h in hits]
     ok, _ = llm.reachable()
@@ -611,7 +622,7 @@ def _answer(conn, q: str) -> tuple[dict, list[dict]]:
 
         ctx = "\n\n".join(f"[{i + 1}] {h['canonical_id']} clause {h['clause_no']}: {h['content'][:1200]}" for i, h in enumerate(hits))
         try:
-            a = llm.structured(Answer, "Answer questions about Indian vehicle regulations using only the numbered sources. "
+            a = llm.structured(Answer, f"Answer questions about {vocab['name']} vehicle regulations using only the numbered sources. "
                                        "Cite sources as [n]. Say so if the sources do not answer the question.",
                                f"Question: {q}\n\nSources:\n{ctx}", timeout=180)
             return {"mode": "qwen", "answer": a.answer, "sources": sources}, hits
@@ -648,14 +659,15 @@ REPORT_LOG_SQL = """SELECT r.id, rt.name AS kind, r.parameters->>'scope' AS scop
 def reports(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
+        vocab = load_vocab(conn, cc)
         recent = _rows(conn, REPORT_LOG_SQL + " ORDER BY r.generated_at DESC LIMIT 20")
         month = conn.execute("SELECT count(*) AS n FROM reports WHERE generated_at > date_trunc('month', now())").fetchone()["n"]
         awaiting = conn.execute(f"""SELECT count(*) AS n FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
                                    WHERE e.review_status<>'confirmed' AND d.doc_class <> 'OFF_TOPIC'
-                                     AND d.vehicle_categories && %s""", (SCOPE,)).fetchone()["n"]
+                                     AND d.vehicle_categories && %s""", (vocab["scope"],)).fetchone()["n"]
         last = conn.execute("SELECT max(generated_at) AS t FROM reports").fetchone()["t"]
     return {"kpis": {"generated_month": month, "last_generated": last, "awaiting_review": awaiting, "templates": len(REPORTS)},
-            "scope": ", ".join(CATEGORIES),
+            "scope": ", ".join(vocab["categories"]),
             "templates": [{"kind": k, "name": v} for k, v in REPORTS.items()], "recent": recent}
 
 
@@ -678,13 +690,15 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
     if kind not in REPORTS:
         raise HTTPException(404, "unknown report")
     cc = resolve_country(cc)
+    with connect() as conn:
+        vocab = load_vocab(conn, cc)
     title = REPORTS[kind]
     stamp = datetime.now().strftime("%d %b %Y %H:%M")
     if kind == "executive":
         s = summary(cc)
         ch = change_monitor(30, cc)
         sections = [
-            ("Key figures", ["Measure", "Value"], [[f"Regulations tracked (India, {'/'.join(CATEGORIES)})", s["kpis"]["tracked"]],
+            ("Key figures", ["Measure", "Value"], [[f"Regulations tracked ({vocab['name']}, {'/'.join(vocab['categories'])})", s["kpis"]["tracked"]],
                                                    ["Changes in last 30 days", s["kpis"]["changes_30d"]],
                                                    ["High impact (rule-based)", s["kpis"]["high"]],
                                                    ["Action required", s["kpis"]["action_required"]]]),
@@ -720,7 +734,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
                         VALUES ((SELECT id FROM report_templates WHERE name=%s), (SELECT id FROM regions WHERE code=%s),
                                 %s, %s)""",
                      (title, cc, team_id(conn, owner) or team_id(conn, _setting(conn, "default_owner", "Regulatory Affairs Team")),
-                      Jsonb({"scope": "India · " + "/".join(CATEGORIES), "rows": len(rows)})))
+                      Jsonb({"scope": f"{vocab['name']} · " + "/".join(vocab["categories"]), "rows": len(rows)})))
         conn.commit()
     fname = f"{title.replace(' ', '_')}_{date.today().isoformat()}"
     if fmt == "csv":
@@ -730,7 +744,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
         w.writerows(rows)
         return Response(buf.getvalue(), media_type="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'})
-    body = _html(title, f"RegTrack India · India, vehicle categories {', '.join(CATEGORIES)} · generated {stamp}. "
+    body = _html(title, f"RegTrack · {vocab['name']}, vehicle categories {', '.join(vocab['categories'])} · generated {stamp}. "
                         f"Impact is rule-based until the AI pass runs.", sections)
     return Response(body, media_type="text/html", headers={"Content-Disposition": f'attachment; filename="{fname}.html"'})
 
@@ -777,13 +791,13 @@ def _notifications(conn, cc: str) -> list[dict]:
 def alerts(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
-        load_vocab(conn)
+        vocab = load_vocab(conn, cc)
         rules = _rows(conn, RULE_SQL, (cc,))
         for r in rules:
             r["matches"] = r["matches"] if r["enabled"] else 0
         notes = _notifications(conn, cc)
         due60 = conn.execute(f"""SELECT count(*) AS n FROM {S.mandates(cc)} m WHERE valid_to IS NULL AND vehicle_categories && %s
-                                AND implementation_date BETWEEN current_date AND current_date + 60""", (SCOPE,)).fetchone()["n"]
+                                AND implementation_date BETWEEN current_date AND current_date + 60""", (vocab["scope"],)).fetchone()["n"]
         resolved = conn.execute(f"""SELECT count(*) AS n FROM regulation_changes x WHERE review_status='reviewed'
                                    AND reviewed_at > date_trunc('month', now()) AND {country.region_sql('x', cc)}""").fetchone()["n"]
     seen, uniq = set(), []
@@ -795,7 +809,7 @@ def alerts(cc: CountryParam = None) -> dict:
     return {"kpis": {"active": sum(1 for r in rules if r["enabled"]), "action": len(uniq), "due_soon": due60, "resolved": resolved},
             "rules": rules, "notifications": uniq[:50],
             "conditions": ["high_impact", "new_document", "draft_published", "draft_finalised", "date_changed", "due_within", "domain"],
-            "domains": [{"code": k, "label": v} for k, v in DOMAIN_LABEL.items()]}
+            "domains": [{"code": k, "label": v} for k, v in vocab["domain_label"].items()]}
 
 
 def _refresh_alerts(conn) -> None:
@@ -809,7 +823,7 @@ def _refresh_alerts(conn) -> None:
 def add_alert(body: dict = Body(...)) -> dict:
     cond = body.get("condition") or "new_document"
     param = body.get("param")
-    cc = country.code()
+    cc = resolve_country(body.get("country"))
     with connect() as conn:
         r = conn.execute(
             """INSERT INTO alert_rules (name, scope_region_id, scope_domain_id, scope_vehicle_category_id, condition,
@@ -920,7 +934,8 @@ def run_sync(body: dict = Body(default={})) -> dict:
     then processes once; 'step' tells the page which source is being crawled right now."""
     from regtrack.scheduler import crawlers, run_all, run_source
 
-    mods = crawlers()
+    cc = resolve_country(body.get("country"))
+    mods = crawlers(cc)
     code = body.get("source") or "ALL"
     if code != "ALL" and code not in mods:
         raise HTTPException(400, "unknown source")
@@ -936,10 +951,10 @@ def run_sync(body: dict = Body(default={})) -> dict:
         try:
             _sync_state.update(running=code, step=None, done=0, total=len(mods) if code == "ALL" else 1)
             if code == "ALL":
-                res = run_all(step)
+                res = run_all(step, cc)
             else:
                 step(code)
-                res = run_source(code)
+                res = run_source(code, cc=cc)
             errors = res.get("errors") or {}
             _sync_state["last"] = {"source": code, "finished": datetime.now().isoformat(),
                                    "errors": errors, "ok": [c for c in (res.get("crawl") or {})] if code == "ALL" else [code]}
@@ -959,7 +974,7 @@ def portal_meta(cc: CountryParam = None) -> dict:
 
     cc = resolve_country(cc)
     with connect() as conn:
-        load_vocab(conn)
+        vocab = load_vocab(conn, cc)
         s = conn.execute(f"""SELECT count(*) FILTER (WHERE last_status IN ('ok','partial')) AS n, count(*) AS total,
                             max(last_run_at) AS last FROM {S.sources(cc)} s WHERE code = ANY(%s)""",
                          (list(crawlers(cc)),)).fetchone()
@@ -967,5 +982,5 @@ def portal_meta(cc: CountryParam = None) -> dict:
         teams = _rows(conn, "SELECT id, name FROM teams ORDER BY name")
     return {"country": cc, "sources": s["n"], "sources_total": s["total"], "last_sync": s["last"], "teams": teams,
             "scheduler": scheduler_status(settings),
-            "categories": [{"code": c, "label": CAT_LABEL.get(c, c)} for c in CATEGORIES],
-            "statuses": STATUSES, "domains": [{"code": k, "label": v} for k, v in DOMAIN_LABEL.items()]}
+            "categories": [{"code": c, "label": vocab["cat_label"].get(c, c)} for c in vocab["categories"]],
+            "statuses": STATUSES, "domains": [{"code": k, "label": v} for k, v in vocab["domain_label"].items()]}

@@ -17,7 +17,7 @@ from __future__ import annotations
 import psycopg
 
 from regtrack import country
-from regtrack.validators import IN_SCOPE_CATEGORIES
+from regtrack.models.enums import in_scope_categories
 
 WINDOW_DAYS = 30
 CHANGE_TYPE = {"new_document": "new_document", "draft_published": "draft_published", "draft_finalised": "draft_finalised",
@@ -26,13 +26,14 @@ CHANGE_TYPE = {"new_document": "new_document", "draft_published": "draft_publish
 REFERENCE_CLASSES = ("REPORT", "OTHER", "AIS_FORM_TABLE", "FORM_TEMPLATE", "BIS_CATALOGUE", "APPROVED_LIST")
 
 
-def _scope_ids(conn: psycopg.Connection, rule: dict, region_id: int) -> list[int]:
+def _scope_ids(conn: psycopg.Connection, rule: dict, region_id: int, cc: str) -> list[int]:
+    scope = in_scope_categories(cc)
     if rule["scope_vehicle_category_id"]:
         codes = [r["code"] for r in conn.execute("SELECT code FROM vehicle_categories WHERE id=%s",
                                                  (rule["scope_vehicle_category_id"],))] + ["ALL"]
-        codes = [c for c in codes if c in IN_SCOPE_CATEGORIES]
+        codes = [c for c in codes if c in scope]
     else:
-        codes = sorted(IN_SCOPE_CATEGORIES)
+        codes = sorted(scope)
     return [r["id"] for r in conn.execute("SELECT id FROM vehicle_categories WHERE region_id=%s AND code = ANY(%s)",
                                           (region_id, codes))]
 
@@ -50,7 +51,8 @@ def _insert(conn, rule_id: int, regulation_id: int | None, message: str, change_
 
 def evaluate_rules(conn: psycopg.Connection) -> dict:
     """Store new matches of every enabled rule of the current region; returns counts per rule id."""
-    region_id = conn.execute("SELECT id FROM regions WHERE code=%s", (country.code(),)).fetchone()["id"]
+    cc = country.code()
+    region_id = conn.execute("SELECT id FROM regions WHERE code=%s", (cc,)).fetchone()["id"]
     rules = conn.execute("SELECT * FROM alert_rules WHERE is_enabled AND (scope_region_id=%s OR scope_region_id IS NULL) "
                          "ORDER BY id", (region_id,)).fetchall()
     listed = ("g.local_class <> 'OFF_TOPIC' AND g.legal_status NOT IN ('superseded','withdrawn') "
@@ -58,7 +60,7 @@ def evaluate_rules(conn: psycopg.Connection) -> dict:
     out = {}
     for rule in rules:
         cond = (rule["condition"] or {}).get("type")
-        scope = _scope_ids(conn, rule, region_id)
+        scope = _scope_ids(conn, rule, region_id, cc)
         n = 0
         if cond == "due_within":
             days = int((rule["condition"] or {}).get("param") or 60)

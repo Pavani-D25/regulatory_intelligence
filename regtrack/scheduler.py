@@ -24,7 +24,7 @@ _lock = threading.Lock()  # one pipeline run at a time
 # source code -> module in regtrack.sources, per country (Thai crawlers are added here when they exist)
 CRAWLERS_BY_COUNTRY: dict[str, dict[str, str]] = {
     "IN": {"MORTH_API": "morth", "ARAI_AIS": "arai", "EGAZETTE": "egazette", "INDIACODE": "indiacode"},
-    "TH": {},
+    "TH": {"TH_TISI_MANDATORY": "thailand_tisi"},
 }
 CRAWLERS = CRAWLERS_BY_COUNTRY["IN"]  # India's; code that runs crawls uses crawlers()
 
@@ -35,10 +35,10 @@ def crawlers(cc: str | None = None) -> dict[str, str]:
 HEARTBEAT_MIN = 5
 
 
-def crawl_source(code: str) -> dict:
-    mods = crawlers()
+def crawl_source(code: str, cc: str | None = None) -> dict:
+    mods = crawlers(cc)
     if code not in mods:
-        raise ValueError(f"no crawler for {code} in country {country.code()}")
+        raise ValueError(f"no crawler for {code} in country {country.code(cc)}")
     import importlib
 
     return importlib.import_module(f"regtrack.sources.{mods[code]}").crawl()
@@ -58,21 +58,21 @@ def run_pipeline_locked() -> dict:
             lk.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_LOCK,))
 
 
-def run_source(code: str, process: bool = True) -> dict:
-    out = {"crawl": crawl_source(code)}
+def run_source(code: str, process: bool = True, cc: str | None = None) -> dict:
+    out = {"crawl": crawl_source(code, cc)}
     if process:
         out["pipeline"] = run_pipeline_locked()
     return out
 
 
-def run_all(on_step=None) -> dict:
+def run_all(on_step=None, cc: str | None = None) -> dict:
     """Crawl every source one after another (a failing source does not stop the others), then one pipeline run."""
     out: dict = {"crawl": {}, "errors": {}}
-    for code in crawlers():
+    for code in crawlers(cc):
         if on_step:
             on_step(code)
         try:
-            out["crawl"][code] = crawl_source(code)
+            out["crawl"][code] = crawl_source(code, cc)
         except Exception as e:  # noqa: BLE001
             log.exception("crawl %s failed", code)
             out["errors"][code] = f"{type(e).__name__}: {e}"[:300]

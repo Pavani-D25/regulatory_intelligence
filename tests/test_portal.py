@@ -24,15 +24,17 @@ def client():
 def test_classify_rules():
     from regtrack.api.portal import classify_row
 
+    vocab = {"categories": ["L1", "L2", "M1", "N1"], "scope": ["L1", "L2", "M1", "N1", "ALL"],
+             "cat_label": {}, "domain_label": {}}
     base = dict(nature="technical", doc_class="NOTIFICATION_FINAL", doc_date=date(2015, 1, 1), next_obligation=None,
                 reapproval=False, last_event_at=None, last_event_review=None, doc_status="final", official_title="T",
                 subject=None, canonical_id="X", vehicle_categories=["M1"], issuer="MoRTH", domains=["braking"])
-    assert classify_row(dict(base))["impact"] == "Medium"
-    assert classify_row(dict(base, nature="administrative", doc_class="NOTIFICATION_FINAL"))["impact"] == "Low"
-    up = classify_row(dict(base, next_obligation=date(2099, 1, 1)), today=date(2026, 1, 1))
+    assert classify_row(dict(base), vocab)["impact"] == "Medium"
+    assert classify_row(dict(base, nature="administrative", doc_class="NOTIFICATION_FINAL"), vocab)["impact"] == "Low"
+    up = classify_row(dict(base, next_obligation=date(2099, 1, 1)), vocab, today=date(2026, 1, 1))
     assert (up["impact"], up["status"]) == ("High", "Action Required")
-    assert classify_row(dict(base, doc_class="NOTIFICATION_DRAFT"))["status"] == "Under Review"
-    team = classify_row(dict(base, review_status="Tracked", review_impact="Low", next_obligation=date(2099, 1, 1)))
+    assert classify_row(dict(base, doc_class="NOTIFICATION_DRAFT"), vocab)["status"] == "Under Review"
+    team = classify_row(dict(base, review_status="Tracked", review_impact="Low", next_obligation=date(2099, 1, 1)), vocab)
     assert (team["impact"], team["status"], team["impact_basis"]) == ("Low", "Tracked", "team")
 
 
@@ -157,7 +159,7 @@ def test_sync_all_runs_every_source_and_survives_a_failure(monkeypatch):
 
     calls, steps = [], []
 
-    def fake_crawl(code):
+    def fake_crawl(code, cc=None):
         calls.append(code)
         if code == "ARAI_AIS":
             raise TimeoutError("site slow")
