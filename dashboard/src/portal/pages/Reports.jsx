@@ -12,10 +12,9 @@ const CARDS = {
 
 export default function Reports() {
   const [tick, setTick] = useState(0);
-  const { version } = usePortal();
+  const { version, toast, meta, countryName } = usePortal();
   const { data, error, loading } = useLoad(() => portal.reports(), [tick, version]);
   const { data: sch } = useLoad(() => portal.schedules(), [tick, version]);
-  const { toast, meta } = usePortal();
   const [plan, setPlan] = useState(null);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -31,7 +30,7 @@ export default function Reports() {
   return (
     <section className="view">
       <div className="pagehead">
-        <div><h1>Reports</h1><p>Generate regulatory reports from live data · India · {data.scope}.</p></div>
+        <div><h1>Reports</h1><p>Generate regulatory reports from live data · {countryName} · {data.scope}.</p></div>
       </div>
       <div className="kpis">
         <Kpi label="Generated This Month" value={k.generated_month} small="All report types" corner="▤" />

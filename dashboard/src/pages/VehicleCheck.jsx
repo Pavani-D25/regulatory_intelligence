@@ -2,14 +2,9 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, familyPath, sharePackUrl } from "../api";
 import { AiPending, Badge, Button, Card, Chips, DocLink, Empty, ErrorBox, Loading, Table, Td, fmtDate } from "../components/ui";
+import { usePortal } from "../portal/PortalLayout";
 import useLoad from "../useLoad";
 
-const CATEGORIES = [
-  ["L1", "L1 – moped (≤ 45 km/h)"],
-  ["L2", "L2 – motorcycle / scooter"],
-  ["M1", "M1 – passenger car"],
-  ["N1", "N1 – light goods (≤ 3.5 t)"],
-];
 const POWERTRAINS = ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"];
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -71,6 +66,7 @@ export default function VehicleCheck() {
   };
   const [form, setForm] = useState(sel);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const { meta, version } = usePortal();
 
   const { data, error, loading } = useLoad(async () => {
     if (!sel.category) return null;
@@ -78,7 +74,7 @@ export default function VehicleCheck() {
     const [now, all] = await Promise.all([api.applicable(q), api.applicable({ ...q, include_future: true })]);
     const nowIds = new Set(now.mandates.map((m) => m.id));
     return { now: now.mandates, upcoming: all.mandates.filter((m) => !nowIds.has(m.id)) };
-  }, [params.toString()]);
+  }, [params.toString(), version]);
 
   const submit = (e) => {
     e.preventDefault();
@@ -99,7 +95,7 @@ export default function VehicleCheck() {
             <label htmlFor="cat">Category</label>
             <select id="cat" value={form.category} onChange={set("category")} required className="w-60">
               <option value="">Choose…</option>
-              {CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">

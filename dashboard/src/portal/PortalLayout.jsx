@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { api, docPath, familyPath, fileUrl, portal } from "../api";
+import { api, docPath, familyPath, fileUrl, portal, setApiCountry } from "../api";
 import "./portal.css";
 import { ago, Badge, fmt, fmtTime } from "./ui";
+
+export const COUNTRIES = [["IN", "India"], ["TH", "Thailand"]];
 
 // views of the approved design, in its order; "Tools" are the earlier RegTrack pages kept reachable
 const NAV = [
@@ -249,7 +251,15 @@ export default function PortalLayout() {
   const loc = useLocation();
   const [meta, setMeta] = useState(null);
   const [version, setVersion] = useState(0);
+  const [country, setCountryState] = useState(() => store.get("ri.country") || "IN");
   const lastSync = useRef(null);
+  const setCountry = useCallback((cc) => {
+    store.set("ri.country", cc);
+    setApiCountry(cc);
+    setCountryState(cc);
+    setVersion((v) => v + 1);
+  }, []);
+  const countryName = (COUNTRIES.find(([c]) => c === country) || [null, "India"])[1];
   const [drawer, setDrawer] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
   const [q, setQ] = useState("");
@@ -268,7 +278,7 @@ export default function PortalLayout() {
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
-  }, [toast]);
+  }, [toast, country]);
   useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
   useEffect(() => {  // "/" jumps to the search box
     const key = (e) => {
@@ -283,10 +293,10 @@ export default function PortalLayout() {
   const sch = meta?.scheduler;
 
   return (
-    <Ctx.Provider value={{ openReg: setDrawer, toast, meta, version }}>
+    <Ctx.Provider value={{ openReg: setDrawer, toast, meta, version, country, countryName }}>
       <div className="app portal">
         <aside className="sidebar">
-          <div className="brand"><div className="brandmark">RI</div><div><strong>Regulatory Intelligence</strong><small>India · Automotive</small></div></div>
+          <div className="brand"><div className="brandmark">RI</div><div><strong>Regulatory Intelligence</strong><small>{countryName} · Automotive</small></div></div>
           <nav className="nav">
             {NAV.map(([p, icon, label]) => (
               <button key={p} className={base === p ? "active" : ""} onClick={() => nav(p)} title={label}>{icon} <span>{label}</span></button>
@@ -312,6 +322,9 @@ export default function PortalLayout() {
               <div className="search">⌕ <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search regulation, category, topic…  ( / )"
                 onKeyDown={(e) => { if (e.key === "Enter" && q.trim()) { nav(`/regulations?q=${encodeURIComponent(q.trim())}`); e.target.blur(); } }} /></div>
               <Bell version={version} openReg={setDrawer} />
+              <select className="select" value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Country">
+                {COUNTRIES.map(([c, name]) => <option key={c} value={c}>{name}</option>)}
+              </select>
               <select className="select" defaultValue="en" aria-label="Language"><option value="en">English</option></select>
               <div className="avatar" title="Regulatory Affairs">RA</div>
             </div>

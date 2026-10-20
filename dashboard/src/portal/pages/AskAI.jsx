@@ -5,17 +5,19 @@ import { usePortal } from "../PortalLayout";
 import useLoad from "../../useLoad";
 import { ago, Card, Loading } from "../ui";
 
-const WELCOME = { role: "ai", text: "Ask about Indian vehicle regulations. Answers cite the regulation and clause they come from." };
+const welcome = (name) => ({ role: "ai", text: `Ask about ${name} vehicle regulations. Answers cite the regulation and clause they come from.` });
 
 export default function AskAI() {
   const [sp] = useSearchParams();
-  const { openReg, meta } = usePortal();
-  const { data: ctx } = useLoad(() => portal.askContext(), []);
+  const { openReg, meta, version, country, countryName } = usePortal();
+  const { data: ctx } = useLoad(() => portal.askContext(), [version]);
   const [histTick, setHistTick] = useState(0);
-  const { data: hist } = useLoad(() => portal.conversations(), [histTick]);
+  const { data: hist } = useLoad(() => portal.conversations(), [histTick, version]);
   const cats = (meta?.categories || []).map((c) => c.code).join(", ");
-  const [msgs, setMsgs] = useState([WELCOME]);
+  const [msgs, setMsgs] = useState([welcome(countryName)]);
   const [conv, setConv] = useState(null);  // the conversation follow-up questions belong to
+  // a conversation from the previous country would mix clause search results from both
+  useEffect(() => { setConv(null); setMsgs([welcome(countryName)]); }, [country, countryName]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const end = useRef(null);
@@ -39,10 +41,10 @@ export default function AskAI() {
   const open = async (id) => {
     const c = await portal.conversation(id);
     setConv(id);
-    setMsgs([WELCOME, ...c.messages.filter((m) => m.role !== "system").map((m) => (m.role === "user" ? { role: "user", text: m.content }
+    setMsgs([welcome(countryName), ...c.messages.filter((m) => m.role !== "system").map((m) => (m.role === "user" ? { role: "user", text: m.content }
       : { role: "ai", text: m.content, sources: m.citations.filter((x) => x.canonical_id).map((x) => ({ canonical_id: x.canonical_id, clause: x.clause_no })) }))]);
   };
-  const fresh = () => { setConv(null); setMsgs([WELCOME]); };
+  const fresh = () => { setConv(null); setMsgs([welcome(countryName)]); };
   useEffect(() => {
     const pre = sp.get("q");
     if (pre && !asked.current) { asked.current = true; ask(pre); }
@@ -56,7 +58,7 @@ export default function AskAI() {
         <div className="actions"><button className="btn secondary" disabled={!conv || busy} onClick={fresh}>New conversation</button></div>
       </div>
       <div className="aiLayout">
-        <Card className="chat" title="Regulatory Assistant" sub="Answers only from indexed Indian regulations">
+        <Card className="chat" title="Regulatory Assistant" sub={`Answers only from indexed ${countryName} regulations`}>
           <div className="messages">
             {msgs.map((m, i) => (
               <div key={i} className={`msg ${m.role}`}>

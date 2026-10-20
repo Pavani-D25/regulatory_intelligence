@@ -2,13 +2,15 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, familyPath } from "../api";
 import { Badge, Card, Empty, ErrorBox, Loading, Table, Td, fmtDate } from "../components/ui";
+import { usePortal } from "../portal/PortalLayout";
 import useLoad from "../useLoad";
 
 export default function Versions() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") || "";
   const [text, setText] = useState(q);
-  const { data, error, loading } = useLoad(() => api.families(q), [q]);
+  const { version } = usePortal();
+  const { data, error, loading } = useLoad(() => api.families(q), [q, version]);
 
   return (
     <div className="flex flex-col gap-5">

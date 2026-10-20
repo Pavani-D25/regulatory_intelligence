@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { AiPending, Button, Card, Chips, DocLink, Empty, ErrorBox, Loading, StatusBadges, Table, Td, classLabel, fmtDate } from "../components/ui";
+import { usePortal } from "../portal/PortalLayout";
 import useLoad from "../useLoad";
 
 const PAGE = 50;
@@ -9,7 +10,8 @@ const PAGE = 50;
 export default function Browse() {
   const [params, setParams] = useSearchParams();
   const [meta, setMeta] = useState(null);
-  useEffect(() => { api.meta().then(setMeta).catch(() => {}); }, []);
+  const { version } = usePortal();
+  useEffect(() => { api.meta().then(setMeta).catch(() => {}); }, [version]);
 
   const f = {
     year: params.get("year") || "", category: params.get("category") || "", domain: params.get("domain") || "",
@@ -24,7 +26,7 @@ export default function Browse() {
 
   const { data, error, loading } = useLoad(
     () => api.documents({ ...f, in_scope: f.in_scope ? "true" : "", limit: PAGE, offset }),
-    [params.toString()],
+    [params.toString(), version],
   );
   // only plausible years in the chart (a few documents carry mis-read future dates; they are flagged for checking)
   const maxYear = new Date().getFullYear() + 1;
@@ -91,7 +93,7 @@ export default function Browse() {
           </form>
           <label className="flex items-center gap-2 pb-1.5 text-sm text-zinc-700">
             <input type="checkbox" checked={f.in_scope} onChange={(e) => update({ in_scope: e.target.checked })} />
-            In scope only (L1/L2/M1/N1)
+            In scope only ({(meta?.categories || []).filter((c) => c.in_scope).map((c) => c.code).join("/")})
           </label>
         </div>
       </Card>

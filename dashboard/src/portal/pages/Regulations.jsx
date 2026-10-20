@@ -13,14 +13,14 @@ const COLS = [
   ["domain", "Domain"], ["effective", "Effective"], ["impact", "Impact"], ["status", "Status"],
 ];
 
-function csv(rows) {
+function csv(rows, cc) {
   const head = ["ID", "Regulation", "Category", "Authority", "Domain", "Effective", "Impact", "Status", "Document status"];
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const body = rows.map((r) => [r.canonical_id, r.name, r.region, r.authority, r.domain, r.effective, r.impact, r.status, r.doc_status].map(esc).join(","));
   const blob = new Blob(["﻿" + [head.join(","), ...body].join("\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `regulations_india_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `regulations_${(cc || "").toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
 }
 
@@ -37,7 +37,7 @@ export default function Regulations() {
     month: sp.get("month") || "", history: sp.get("history") === "1", reference: sp.get("reference") === "1",
   };
   const set = (k, v) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); setSp(n, { replace: true }); };
-  const { openReg, meta, version } = usePortal();
+  const { openReg, meta, version, country, countryName } = usePortal();
   const { data, error, loading } = useLoad(
     () => portal.regulations({ q: f.q, category: f.category, impact: f.impact, status: f.status, history: f.history, reference: f.reference }),
     [f.q, f.category, f.impact, f.status, f.history, f.reference, version]);
@@ -66,8 +66,8 @@ export default function Regulations() {
   return (
     <section className="view">
       <div className="pagehead">
-        <div><h1>Regulation Library</h1><p>Search, filter and review Indian vehicle regulations, standards and notifications for {(meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
-        <div className="actions"><button className="btn secondary" disabled={!rows.length} onClick={() => csv(rows)}>Export CSV ({rows.length})</button></div>
+        <div><h1>Regulation Library</h1><p>Search, filter and review {countryName} vehicle regulations, standards and notifications for {(meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
+        <div className="actions"><button className="btn secondary" disabled={!rows.length} onClick={() => csv(rows, country)}>Export CSV ({rows.length})</button></div>
       </div>
       <div className="kpis">
         <Kpi label="Library Records" value={k?.records} small={`In force and drafts${f.history ? " + superseded" : ""}${f.reference ? " + reference" : ""}`} corner="L" />

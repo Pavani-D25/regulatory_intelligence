@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { AiPending, Card, DocLink, Empty, ErrorBox, Loading, classLabel, fmtDate } from "../components/ui";
+import { usePortal } from "../portal/PortalLayout";
 import useLoad from "../useLoad";
 
 function highlight(text, q) {
@@ -17,8 +18,9 @@ export default function Search() {
   const category = params.get("category") || "";
   const [text, setText] = useState(q);
   const [cat, setCat] = useState(category);
+  const { meta, version } = usePortal();
   const { data, error, loading } = useLoad(
-    () => (q ? api.search({ q, category, in_scope: "", limit: 25 }) : null), [q, category]);
+    () => (q ? api.search({ q, category, in_scope: "", limit: 25 }) : null), [q, category, version]);
   const textMode = data?.mode?.startsWith("text");
 
   return (
@@ -31,7 +33,7 @@ export default function Search() {
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. anti-lock braking for motorcycles" className="w-96 max-w-full" autoFocus />
         <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Category">
           <option value="">Any category</option>
-          {["L1", "L2", "M1", "N1"].map((c) => <option key={c} value={c}>{c}</option>)}
+          {(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
         </select>
         <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white">Search</button>
       </form>

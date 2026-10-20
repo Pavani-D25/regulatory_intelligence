@@ -5,7 +5,7 @@ import { usePortal } from "../PortalLayout";
 import { ago, Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId } from "../ui";
 
 export default function Dashboard() {
-  const { version } = usePortal();
+  const { version, countryName } = usePortal();
   const { data: s, error, loading } = useLoad(() => portal.summary(), [version]);
   const { openReg, meta } = usePortal();
   const nav = useNavigate();
@@ -18,7 +18,7 @@ export default function Dashboard() {
     <section className="view">
       <div className="pagehead">
         <div><h1>Regulatory Overview</h1>
-          <p>Live view of Indian vehicle regulations from {meta ? `${meta.sources_total} monitored sources` : "the monitored sources"} for {(meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
+          <p>Live view of {countryName} vehicle regulations from {meta ? `${meta.sources_total} monitored sources` : "the monitored sources"} for {(meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
         <div className="actions">
           <button className="btn secondary" onClick={() => nav("/reports")}>Generate Report</button>
           <button className="btn primary" onClick={() => nav("/changes")}>Review Changes</button>

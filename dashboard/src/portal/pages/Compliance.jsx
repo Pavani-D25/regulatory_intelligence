@@ -9,11 +9,13 @@ const STATUSES = ["Open", "In Progress", "Compliant", "Not Applicable"];
 export default function Compliance() {
   const [category, setCategory] = useState("");
   const [tick, setTick] = useState(0);
-  const { data, error, loading } = useLoad(() => portal.compliance(category), [category, tick]);
-  const { openReg, toast, meta } = usePortal();
+  const { openReg, toast, meta, version, country } = usePortal();
+  const { data, error, loading } = useLoad(() => portal.compliance(category), [category, tick, version]);
   const [edits, setEdits] = useState({});
   const [saving, setSaving] = useState(false);
   useEffect(() => setEdits({}), [data]);
+  // a category selected under the previous country may not exist in this one
+  useEffect(() => setCategory(""), [country]);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const k = data.kpis;

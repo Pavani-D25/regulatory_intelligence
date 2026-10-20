@@ -1,9 +1,19 @@
 // Thin client for the RegTrack read API (regtrack/api/app.py).
 export const API = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
+// The selected country, injected into every request below so a page author never has to pass it explicitly.
+// PortalLayout is the only writer (setApiCountry), and persists it under the same key it reads on load.
+let currentCountry = (() => {
+  try { return localStorage.getItem("ri.country") || "IN"; } catch { return "IN"; }
+})();
+
+export function setApiCountry(cc) {
+  currentCountry = cc;
+}
+
 function qs(params = {}) {
   const p = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
+  Object.entries({ country: currentCountry, ...params }).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "" && v !== false) p.set(k, v);
   });
   const s = p.toString();
@@ -40,8 +50,9 @@ export const familyPath = (key) => `/versions/${enc(key)}`;
 
 // ---- portal (approved design v2) -------------------------------------------------------------
 async function send(method, path, body) {
-  const r = await fetch(`${API}${path}`, {
-    method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
+  const payload = { country: currentCountry, ...(body || {}) };
+  const r = await fetch(`${API}${path}${qs()}`, {
+    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });
   if (!r.ok) {
     let detail = r.statusText;
@@ -87,4 +98,4 @@ export const portal = {
   saveSettings: (body) => send("PUT", "/portal/settings", body),
   sync: (source) => send("POST", "/portal/admin/sync", { source }),
 };
-export const reportUrl = (kind, fmt = "html") => `${API}/portal/reports/${kind}?fmt=${fmt}`;
+export const reportUrl = (kind, fmt = "html") => `${API}/portal/reports/${kind}${qs({ fmt })}`;

@@ -36,7 +36,7 @@ export default function ChangeMonitor() {
   return (
     <section className="view">
       <div className="pagehead">
-        <div><h1>Change Monitor</h1><p>Delta tracking across MoRTH, ARAI, e-Gazette and India Code: new documents, drafts, revisions and date changes.</p></div>
+        <div><h1>Change Monitor</h1><p>Delta tracking across every monitored source: new documents, drafts, revisions and date changes.</p></div>
         <div className="actions">
           <select className="select" value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={365}>Last 12 months</option><option value={3650}>All</option></select>

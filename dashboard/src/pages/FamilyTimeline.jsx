@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { api, docPath, fileUrl } from "../api";
 import { AiPending, Badge, Card, ErrorBox, Loading, classLabel, fmtDate } from "../components/ui";
+import { usePortal } from "../portal/PortalLayout";
 import useLoad from "../useLoad";
 
 const isAmend = (v) => ["AIS_AMENDMENT", "AIS_CORRIGENDUM"].includes(v.doc_class);
@@ -41,7 +42,8 @@ function Node({ v, small = false }) {
 
 export default function FamilyTimeline() {
   const key = decodeURIComponent(useParams()["*"] || "");
-  const { data, error, loading } = useLoad(() => api.family(key), [key]);
+  const { version } = usePortal();
+  const { data, error, loading } = useLoad(() => api.family(key), [key, version]);
   if (loading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const ais = data.versions.some(isAmend) || data.versions.some((v) => v.doc_class === "AIS_STANDARD");

@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { api, docPath, familyPath, fileUrl } from "../api";
 import { AiPending, Badge, Button, Card, Chips, DocLink, Empty, ErrorBox, Loading, StatusBadges, Table, Td, classLabel, fmtDate } from "../components/ui";
+import { usePortal } from "../portal/PortalLayout";
 import useLoad from "../useLoad";
 
 const RELATION = {
@@ -43,7 +44,8 @@ function Row({ label, children }) {
 
 export default function DocumentDetail() {
   const id = decodeURIComponent(useParams()["*"] || "");
-  const { data: d, error, loading } = useLoad(() => api.document(id), [id]);
+  const { version } = usePortal();
+  const { data: d, error, loading } = useLoad(() => api.document(id), [id, version]);
   if (loading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const ex = d.extraction || {};

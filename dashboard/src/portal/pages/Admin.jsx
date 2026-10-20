@@ -6,8 +6,8 @@ import { ago, Badge, Card, ErrorBox, fmtTime, Kpi, Loading } from "../ui";
 
 export default function Admin() {
   const [tick, setTick] = useState(0);
-  const { data, error, loading } = useLoad(() => portal.admin(), [tick]);
-  const { toast } = usePortal();
+  const { version, toast } = usePortal();
+  const { data, error, loading } = useLoad(() => portal.admin(), [tick, version]);
   const [s, setS] = useState(null);
   const [src, setSrc] = useState("ALL");
   useEffect(() => { if (data) setS(data.settings); }, [data]);
