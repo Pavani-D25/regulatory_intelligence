@@ -41,8 +41,30 @@ def render_png(pdf_path: Path, page_no: int, dpi: int = DPI) -> bytes:
         return pg.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY).tobytes("png")
 
 
+THAI = re.compile("[ก-๛]")
+THAI_GAP = re.compile("(?<=[ก-๛]) +(?=[ก-๛])")  # Tesseract's spaces between Thai letters
+THAI_WORDS = ("มาตรฐาน", "ผลิตภัณฑ์", "อุตสาหกรรม", "ที่", "และ", "ของ", "ให้", "ใน", "การ", "ตาม", "ต้อง", "รถ")
+
+
+def join_thai(text: str) -> str:
+    """'ท ่ อ ไอ เส ี ย' -> 'ท่อไอเสีย': Thai has no spaces between letters; Tesseract's Thai output adds them."""
+    return THAI_GAP.sub("", text)
+
+
+def thai_confidence(text: str) -> float:
+    """Share of Thai letters / digits / usual punctuation among the characters, scaled by common Thai words."""
+    chars = [c for c in text if not c.isspace()]
+    if len(chars) < 20:
+        return 0.0
+    ok = sum(1 for c in chars if THAI.match(c) or c.isdigit() or c in ".,()-/:%")
+    words = sum(text.count(w) for w in THAI_WORDS)
+    return round(min(1.0, ok / len(chars) * min(1.0, 0.5 + words / 10)), 3)
+
+
 def heuristic_confidence(text: str) -> float:
-    """No engine here reports a calibrated score; estimate from the share of recognisable English words."""
+    """No engine here reports a calibrated score; estimate from the share of recognisable words (Thai or English)."""
+    if len(THAI.findall(text)) > len(re.findall(r"[A-Za-z]", text)):
+        return thai_confidence(text)
     tokens = text.split()
     if len(tokens) < 5:
         return 0.0
@@ -112,12 +134,32 @@ def windows_ocr(png: bytes, lang: str = "en-US") -> str:
     return asyncio.run(_win_ocr_async(png, lang))
 
 
+def tesseract_cmd() -> str | None:
+    """TESSERACT_CMD (e.g. D:/tesseract/Library/bin/tesseract.exe, a conda-forge env), else tesseract on PATH."""
+    from regtrack.config import get_settings
+
+    cmd = get_settings().tesseract_cmd
+    return str(cmd) if cmd and Path(cmd).exists() else shutil.which("tesseract")
+
+
+def _tess_env() -> dict:
+    import os
+
+    from regtrack.config import get_settings
+
+    env = dict(os.environ)
+    if get_settings().tessdata_prefix:
+        env["TESSDATA_PREFIX"] = str(get_settings().tessdata_prefix)
+    return env
+
+
 def tesseract_available() -> bool:
-    return shutil.which("tesseract") is not None
+    return tesseract_cmd() is not None
 
 
 def tesseract_ocr(png: bytes, lang: str = "eng") -> str:
-    r = subprocess.run(["tesseract", "stdin", "stdout", "-l", lang], input=png, capture_output=True, timeout=120)
+    r = subprocess.run([tesseract_cmd(), "stdin", "stdout", "-l", lang], input=png, capture_output=True, timeout=300,
+                       env=_tess_env())
     return r.stdout.decode("utf-8", "ignore")
 
 
@@ -173,7 +215,7 @@ def tesseract_has(lang: str) -> bool:
     """tesseract --list-langs includes this traineddata (Thai: 'tha', from the installer's language options)."""
     if not tesseract_available():
         return False
-    r = subprocess.run(["tesseract", "--list-langs"], capture_output=True, timeout=30)
+    r = subprocess.run([tesseract_cmd(), "--list-langs"], capture_output=True, timeout=30, env=_tess_env())
     return lang in r.stdout.decode("utf-8", "ignore").split()
 
 
@@ -207,6 +249,8 @@ def ocr_page(pdf_path: Path, page_no: int, engine: str, cc: str | None = None) -
         text = windows_ocr(png, win_lang)
     elif engine == "tesseract":
         text = tesseract_ocr(png, tess_lang)
+        if "tha" in tess_lang:
+            text = join_thai(text)
     else:
         raise ValueError(engine)
     return text, heuristic_confidence(text)

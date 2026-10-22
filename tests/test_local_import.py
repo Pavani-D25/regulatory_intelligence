@@ -82,3 +82,14 @@ def test_local_listing_ids_follow_content(tmp_path, monkeypatch):
         assert local_import.listings("MY_LOCAL") == []  # no MY folder: nothing, no error
     finally:
         config.get_settings.cache_clear()
+
+
+def test_tesseract_thai_spacing_and_confidence():
+    from regtrack.pipeline.ocr import heuristic_confidence, join_thai
+
+    raw = "ท ่ อ ไอ เส ี ย ร ถ จ ั ก ร ย า น ย น ต ์ เล ข ท ี ่ ม อ ก . 341-2528"
+    text = join_thai(raw)
+    assert text.startswith("ท่อไอเสียรถจักรยานยนต์") and "มอก . 341-2528" in text
+    assert thai.tis_number(text)["canonical_id"] == "TIS-341-2528"  # "มอก ." as Tesseract writes it
+    assert heuristic_confidence("มาตรฐานผลิตภัณฑ์อุตสาหกรรม ท่อไอเสียรถจักรยานยนต์ ที่ต้องเป็นไปตามมาตรฐาน") > 0.8
+    assert heuristic_confidence("ราคพอ «8 ว๒ 08 หห 071080 ช 0105 5 พฐแบราร «= ฆ <") < 0.8  # OCR junk scores lower

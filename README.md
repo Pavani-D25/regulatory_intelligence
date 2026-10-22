@@ -116,6 +116,29 @@ Start-Service RegTrackPostgres
 
 Do not run the Docker database at the same time: both use port 5432.
 
+## Thai OCR (Tesseract)
+
+Windows OCR has no Thai. Scanned Thai pages are read by Tesseract 5 with Thai data (Qwen vision is only the fallback:
+it misread numbers and invented words on the TIS 341 scan). A conda-forge environment of its own, on D:, no PATH
+change:
+
+```powershell
+$env:CONDA_PKGS_DIRS = "D:\miniforge3\pkgs"
+D:\miniforge3\Scripts\conda.exe create -y -p D:\tesseract -c conda-forge --override-channels "tesseract=5.5.3"
+# language data from https://github.com/tesseract-ocr/tessdata : tha.traineddata, eng.traineddata
+#   into D:\tesseract\Library\share\tessdata
+```
+
+Then in `.env`:
+
+```
+TESSERACT_CMD=D:\tesseract\Library\bin\tesseract.exe
+TESSDATA_PREFIX=D:\tesseract\Library\share\tessdata
+```
+
+Thai scans saved before this wait at `text` with an `ocr_pending` flag; the next pipeline run OCRs them.
+Old, blurry Thai covers can still confuse the digits ๔ and ๕ (low-confidence pages are flagged).
+
 ## Running
 
 ```powershell
