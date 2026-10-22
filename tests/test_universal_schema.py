@@ -124,3 +124,28 @@ def test_compliance_keyed_by_country(conn):
     with pytest.raises(psycopg.errors.UniqueViolation):
         conn.execute("INSERT INTO compliance_requirements (region_id, requirement_code) VALUES (%s,'K')",
                      (_region(conn, "IN"),))
+
+
+def test_tis_family_orders_editions_by_year(conn):
+    from regtrack.pipeline.link import recompute_family
+
+    th = _region(conn, "TH")
+    ids = {}
+    for cid, year in (("TIS-9999-2568", 2025), ("TIS-9999-2551", 2008)):  # the newer edition arrives first
+        ids[cid] = conn.execute(
+            "INSERT INTO regulations (region_id, external_code, local_class, legal_status, family_key, year) "
+            "VALUES (%s,%s,'TIS_STANDARD','final','TIS-9999',%s) RETURNING id", (th, cid, year)).fetchone()["id"]
+    import os
+    os.environ["REGTRACK_COUNTRY"] = "TH"
+    from regtrack.config import get_settings
+    get_settings.cache_clear()
+    try:
+        recompute_family(conn, "TIS-9999")
+    finally:
+        os.environ.pop("REGTRACK_COUNTRY")
+        get_settings.cache_clear()
+    rows = {r["external_code"]: r for r in conn.execute(
+        "SELECT external_code, is_current, legal_status, version_seq FROM regulations WHERE family_key='TIS-9999'")}
+    assert rows["TIS-9999-2568"]["is_current"] and rows["TIS-9999-2568"]["legal_status"] == "final"
+    assert not rows["TIS-9999-2551"]["is_current"] and rows["TIS-9999-2551"]["legal_status"] == "superseded"
+    assert (rows["TIS-9999-2551"]["version_seq"], rows["TIS-9999-2568"]["version_seq"]) == (1, 2)

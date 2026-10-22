@@ -34,6 +34,13 @@ def tis_mandate(conn: psycopg.Connection, doc: dict) -> int:
     """TIS_STANDARD -> one rule version (key = family, e.g. TIS-721)."""
     if not doc.get("family_key"):
         return 0
+    newer = conn.execute("""SELECT 1 FROM requirement_versions v JOIN compliance_requirements r ON r.id = v.requirement_id
+                            JOIN regulations g ON g.id = v.source_regulation_id
+                            WHERE r.region_id = (SELECT region_id FROM regulations WHERE id = %s)
+                              AND r.requirement_code = %s AND v.valid_to IS NULL AND g.year > %s""",
+                         (doc["id"], doc["family_key"], doc.get("year") or 0)).fetchone()
+    if newer:
+        return 0  # an older edition processed late never replaces the newer edition's rule
     data = doc.get("data") or {}
     eff = date.fromisoformat(data["effective_date"]) if data.get("effective_date") else None
     return _record(conn, doc["family_key"], doc, {

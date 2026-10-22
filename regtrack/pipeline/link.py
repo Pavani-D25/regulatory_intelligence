@@ -156,15 +156,31 @@ def notification_family(doc: dict) -> str | None:
     return None
 
 
+def tis_family(conn: psycopg.Connection, rows: list[dict], versioned: list[dict]) -> None:
+    """TIS-721-2551, TIS-721-2568, ...: ordered by edition year; the newest is current, the older ones superseded."""
+    versioned = sorted(versioned, key=lambda r: (r["year"] or 0, r["id"]))
+    current_id = versioned[-1]["id"]
+    for r in rows:  # clear the old current first (partial unique index)
+        if r["is_current"] and r["id"] != current_id:
+            conn.execute("UPDATE regulations SET is_current=false WHERE id=%s", (r["id"],))
+    for i, r in enumerate(versioned):
+        status = "final" if r["id"] == current_id else "superseded"
+        update_if_changed(conn, "regulations", {"id": r["id"]},
+                          {"version_seq": i + 1, "is_current": r["id"] == current_id, "legal_status": status})
+
+
 def recompute_family(conn: psycopg.Connection, family_key: str) -> None:
     """version_seq in order, exactly one is_current per family (drafts excluded)."""
     rows = conn.execute(
         """SELECT id, external_code AS canonical_id, local_class AS doc_class, legal_status AS status, revision,
-                  amendment_no, corrigendum_no, published_date AS doc_date, version_seq, is_current
+                  amendment_no, corrigendum_no, published_date AS doc_date, version_seq, is_current, year
            FROM regulations WHERE family_key=%s AND """ + country.region_sql(), (family_key,)).fetchall()
     if not rows:
         return
     versioned = [r for r in rows if r["doc_class"] not in ("AIS_DRAFT", "NOTIFICATION_DRAFT") and r["status"] != "draft"]
+    if versioned and all(r["doc_class"] == "TIS_STANDARD" for r in versioned):
+        tis_family(conn, rows, versioned)  # Thai standards: editions differ by their year, not a revision number
+        return
     if family_key.startswith(("SO-1365", "CMVR-Rule")):
         key = lambda r: (r["doc_date"] or P.date(1900, 1, 1), r["id"])  # noqa: E731
     else:
