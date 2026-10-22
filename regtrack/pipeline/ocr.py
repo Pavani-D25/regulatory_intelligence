@@ -149,16 +149,39 @@ def qwen_vision_available() -> bool:
     return _vision_ok
 
 
-def qwen_ocr(png: bytes) -> str:
+QWEN_OCR_PROMPT = {  # per country: the page's language and the numbers that must stay exact
+    "IN": ("scanned Indian Gazette pages", "Keep numbers, dates and G.S.R./S.O. numbers exact."),
+    "TH": ("scanned Thai regulatory documents (Thai script, sometimes English)",
+           "Write Thai in Thai script exactly as printed; keep มอก. numbers, Thai or Arabic numerals and dates exact."),
+    "MY": ("scanned Malaysian regulatory documents (Malay or English)",
+           "Keep P.U. (A) numbers, Act numbers and dates exact."),
+}
+
+
+def qwen_ocr(png: bytes, cc: str | None = None) -> str:
     from regtrack import llm
 
+    what, keep = QWEN_OCR_PROMPT.get((cc or "IN").upper(), QWEN_OCR_PROMPT["IN"])
     r = llm.structured_with_image(
-        OcrPage, "You transcribe scanned Indian Gazette pages exactly. Output plain text only, no commentary.",
-        "Transcribe all text on this page in reading order. Keep numbers, dates and G.S.R./S.O. numbers exact.", png)
+        OcrPage, f"You transcribe {what} exactly. Output plain text only, no commentary, no translation.",
+        f"Transcribe all text on this page in reading order. {keep}", png)
     return r.text
 
 
-def pick_engine() -> str | None:
+@lru_cache(maxsize=4)
+def tesseract_has(lang: str) -> bool:
+    """tesseract --list-langs includes this traineddata (Thai: 'tha', from the installer's language options)."""
+    if not tesseract_available():
+        return False
+    r = subprocess.run(["tesseract", "--list-langs"], capture_output=True, timeout=30)
+    return lang in r.stdout.decode("utf-8", "ignore").split()
+
+
+def pick_engine(cc: str | None = None) -> str | None:
+    """Thai: Tesseract with Thai data first (exact on printed Thai; Qwen vision reads Thai but misreads digits and
+    invents words, tested on TIS 341), Qwen vision as the fallback. Elsewhere: Qwen vision, Windows OCR, Tesseract."""
+    if (cc or "").upper() == "TH" and tesseract_has("tha"):
+        return "tesseract"
     if qwen_vision_available():
         return "qwen_vision"
     if windows_ocr_available():
@@ -179,7 +202,7 @@ def ocr_page(pdf_path: Path, page_no: int, engine: str, cc: str | None = None) -
     png = render_png(pdf_path, page_no)
     win_lang, tess_lang = ocr_lang(cc)
     if engine == "qwen_vision":
-        text = qwen_ocr(png)
+        text = qwen_ocr(png, cc)
     elif engine == "windows_ocr":
         text = windows_ocr(png, win_lang)
     elif engine == "tesseract":

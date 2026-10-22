@@ -42,8 +42,7 @@ def waiting_for_ocr(conn) -> list[dict]:
                         "AND d.ocr_engine IS NULL AND " + country.region_sql("d")).fetchall()
     if not rows:
         return []
-    eng = ocr.pick_engine()
-    return [r for r in rows if ocr.can_ocr(eng, r["country"])]
+    return [r for r in rows if ocr.can_ocr(ocr.pick_engine(r["country"]), r["country"])]
 
 
 def _run_one(fn, file_id: int) -> tuple[int, str | None]:

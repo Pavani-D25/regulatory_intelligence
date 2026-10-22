@@ -56,7 +56,7 @@ def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str
         return "failed"
     need_ocr = f["ext"] == "pdf" and not meta["text_layer"] and meta["scanned_pages"] and not engine
     if need_ocr and allow_ocr:
-        eng = ocr.pick_engine()
+        eng = ocr.pick_engine(f.get("country"))
         if eng and ocr.can_ocr(eng, f.get("country")):
             engine, conf = ocr_pages(f, pages, meta["scanned_pages"], eng)
     lm = language_mix(pages)
@@ -136,7 +136,7 @@ def stage_classify(conn: psycopg.Connection, f: dict) -> str:
     # a notification whose header page has a garbled text layer: OCR the first pages once and retry
     if fa.cls.doc_class.is_notification and fa.identity is None and f["ext"] == "pdf":
         bad = [p for p in garbled_pages(pages[:4]) if p <= 4]
-        eng = ocr.pick_engine() if bad else None
+        eng = ocr.pick_engine(f.get("country")) if bad else None
         if eng:
             e, c = ocr_pages(f, pages, bad, eng)
             if e:
