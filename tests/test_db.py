@@ -25,7 +25,7 @@ def test_seed_vocab(conn):
     assert scope == 5
     by_country = {r["code"]: r["n"] for r in conn.execute(
         "SELECT r.code, count(*) AS n FROM sources s JOIN regions r ON r.id=s.region_id GROUP BY 1")}
-    assert by_country == {"IN": 6, "TH": 8, "MY": 7}  # 0001 seed + 0005 Thai + 0017/0019 Malaysian sources
+    assert by_country == {"IN": 6, "TH": 9, "MY": 8}  # 0001 seed + 0005 Thai + 0017/0019 Malaysian + 0020 local imports
     assert conn.execute("SELECT extversion FROM pg_extension WHERE extname='vector'").fetchone()
 
 

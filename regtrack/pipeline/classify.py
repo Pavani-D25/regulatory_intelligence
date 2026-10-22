@@ -211,6 +211,13 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
     def res(dc: DocClass, status: str = "final", why: str = "", iss: str | None = None) -> ClassResult:
         return ClassResult(dc, status, iss or issuer, rel, nature_of(eng, dc), "rules", why)
 
+    # ---- Thailand / Malaysia: documents saved by hand (regtrack/sources/local_import.py)
+    if any(x.get("source") == "TH_LOCAL" for x in ctx.listings):
+        k = thai.law_class(full_text(ctx.pages))
+        iss = {"TIS_STANDARD": "TISI", "DLT_NOTIFICATION": "Department of Land Transport (DLT)"}.get(k or "")
+        return ClassResult(DocClass(k) if k else DocClass.OTHER, "final", iss, rel, None, "rules",
+                           f"hand-saved Thai document ({k or 'kind not recognised'})")
+
     # ---- Thailand: a TISI mandatory-standard page (every product type; only the automotive ones are TIS_STANDARD)
     tisi = [x for x in ctx.listings if x.get("source") == thai.TISI_SOURCE]
     if tisi:
@@ -230,7 +237,8 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
             dc = DocClass.MY_ACT if leg["kind"] == "act" else DocClass.MY_SUBSIDIARY_LEGISLATION
         else:
             dc = DocClass.MY_FORM if malaysia.is_form(ctx.names, eng) else DocClass.MY_GUIDELINE
-        return ClassResult(dc, "final", malaysia.ISSUER[malaysia.MY_SOURCES[my]], rel, None, "rules", f"Malaysia {my}")
+        iss = malaysia.ISSUER.get(malaysia.issuer_of(my, full_text(ctx.pages)), "Malaysia")
+        return ClassResult(dc, "final", iss, rel, None, "rules", f"Malaysia {my}")
 
     # ---- source/folder rules for document families with a fixed home
     if fo == "28":

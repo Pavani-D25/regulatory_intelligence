@@ -67,7 +67,7 @@ def test_old_tables_drop_needs_verification(conn):
 def test_reference_rows(conn):
     regions = {r["code"] for r in conn.execute("SELECT code FROM regions")}
     assert regions == {"IN", "TH", "MY", "UN", "EU"}
-    assert conn.execute("SELECT count(*) AS n FROM sources").fetchone()["n"] == 21  # + 7 Malaysian (0017, 0019)
+    assert conn.execute("SELECT count(*) AS n FROM sources").fetchone()["n"] == 23  # + 7 Malaysian (0017, 0019), + TH_LOCAL, MY_LOCAL (0020)
     assert conn.execute("SELECT name FROM teams WHERE code='REG_AFFAIRS'").fetchone()["name"] == "Regulatory Affairs Team"
     l2 = conn.execute("""SELECT un_codes FROM vehicle_categories vc JOIN regions r ON r.id = vc.region_id
                          WHERE r.code='IN' AND vc.code='L2'""").fetchone()
@@ -79,7 +79,7 @@ def test_reference_rows(conn):
     th_scope = {r["code"] for r in conn.execute("""SELECT vc.code FROM region_scope s JOIN vehicle_categories vc
                                                    ON vc.id = s.vehicle_category_id JOIN regions r ON r.id = vc.region_id
                                                    WHERE r.code='TH'""")}
-    assert th_scope == {"L1", "L3", "M1", "N1"}
+    assert th_scope == {"L1", "L3", "M1", "N1", "ALL"}  # ALL since 0021, like India
     assert conn.execute("SELECT count(*) AS n FROM domains WHERE code='NUMBER_PLATES'").fetchone()["n"] == 1
     assert conn.execute("SELECT count(*) AS n FROM report_templates").fetchone()["n"] == 3
 

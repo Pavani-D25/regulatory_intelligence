@@ -46,6 +46,7 @@ class Settings:
     country: str = "IN"                     # whose rows this process sees (env REGTRACK_COUNTRY); see regtrack/country.py
     pg_bin: Path | None = None              # local PostgreSQL programs (pg_ctl, pg_dump…); empty = database in Docker
     pg_data: Path | None = None             # local PostgreSQL data folder (initdb -D)
+    import_dir: Path = ROOT / "data" / "import"  # documents people saved by hand: <import_dir>/<TH|MY>/... (read-only)
 
     @property
     def psycopg_dsn(self) -> str:
@@ -85,4 +86,5 @@ def get_settings() -> Settings:
         country=(_clean(os.getenv("REGTRACK_COUNTRY")) or "IN").upper(),
         pg_bin=Path(_clean(os.getenv("PG_BIN"))) if _clean(os.getenv("PG_BIN")) else None,
         pg_data=Path(_clean(os.getenv("PG_DATA"))) if _clean(os.getenv("PG_DATA")) else None,
+        import_dir=Path(_clean(os.getenv("IMPORT_DIR")) or ROOT / "data" / "import"),
     )

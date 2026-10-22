@@ -33,6 +33,19 @@ def _files(conn, stage: str, limit: int | None) -> list[dict]:
     return repo.files_at_stage(conn, stage, limit)
 
 
+def waiting_for_ocr(conn) -> list[dict]:
+    """Scans left at 'text' without OCR (e.g. Thai before the Windows Thai OCR language was installed), when an
+    engine can read their script now: the text stage runs again and OCRs them."""
+    from regtrack.pipeline import ocr
+
+    rows = conn.execute(repo.FILE_SQL + " WHERE d.stage='text' AND d.file_ext='pdf' AND d.text_layer IS FALSE "
+                        "AND d.ocr_engine IS NULL AND " + country.region_sql("d")).fetchall()
+    if not rows:
+        return []
+    eng = ocr.pick_engine()
+    return [r for r in rows if ocr.can_ocr(eng, r["country"])]
+
+
 def _run_one(fn, file_id: int) -> tuple[int, str | None]:
     with connect() as conn:
         f = repo.get_file(conn, file_id)
@@ -66,6 +79,8 @@ def run_stage(stage: str, limit: int | None = None, workers: int = 1) -> dict:
             ).fetchall()
         else:
             files = _files(conn, SOURCE_STAGE[stage], limit)
+        if stage == "text":
+            files += waiting_for_ocr(conn)
         if stage == "classify":
             ready = [f for f in files if S.ready_for_classify(f)]
             skipped = len(files) - len(ready)

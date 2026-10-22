@@ -56,6 +56,27 @@ GOOD_TOKEN = re.compile(r"^[(\[\"']?(?:[A-Z]?[a-z]+|[A-Z]+|\d+(?:[.,/\-]\d+)*(?:
 
 
 # ------------------------------------------------------------------ engines
+# OCR language per country: Thai script needs Thai; Malay (Latin script) reads well with English
+OCR_LANG = {"TH": ("th", "tha"), "MY": ("en-US", "eng+msa"), "IN": ("en-US", "eng")}
+
+
+def ocr_lang(cc: str | None) -> tuple[str, str]:
+    """(Windows OCR language tag, tesseract -l) for a country; English for any other."""
+    return OCR_LANG.get((cc or "").upper(), ("en-US", "eng"))
+
+
+@lru_cache(maxsize=8)
+def windows_language_installed(tag: str) -> bool:
+    """Windows OCR has only the languages installed in Settings (Thai: Language & region > Thai, with OCR)."""
+    try:
+        from winrt.windows.globalization import Language
+        from winrt.windows.media.ocr import OcrEngine
+
+        return bool(OcrEngine.is_language_supported(Language(tag)))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @lru_cache(maxsize=1)
 def windows_ocr_available() -> bool:
     try:
@@ -67,7 +88,7 @@ def windows_ocr_available() -> bool:
         return False
 
 
-async def _win_ocr_async(png: bytes) -> str:
+async def _win_ocr_async(png: bytes, lang: str = "en-US") -> str:
     from winrt.windows.globalization import Language
     from winrt.windows.graphics.imaging import BitmapDecoder
     from winrt.windows.media.ocr import OcrEngine
@@ -82,21 +103,21 @@ async def _win_ocr_async(png: bytes) -> str:
     stream.seek(0)
     decoder = await BitmapDecoder.create_async(stream)
     bmp = await decoder.get_software_bitmap_async()
-    engine = OcrEngine.try_create_from_language(Language("en-US"))
+    engine = OcrEngine.try_create_from_language(Language(lang))
     res = await engine.recognize_async(bmp)
     return "\n".join(line.text for line in res.lines)
 
 
-def windows_ocr(png: bytes) -> str:
-    return asyncio.run(_win_ocr_async(png))
+def windows_ocr(png: bytes, lang: str = "en-US") -> str:
+    return asyncio.run(_win_ocr_async(png, lang))
 
 
 def tesseract_available() -> bool:
     return shutil.which("tesseract") is not None
 
 
-def tesseract_ocr(png: bytes) -> str:
-    r = subprocess.run(["tesseract", "stdin", "stdout", "-l", "eng"], input=png, capture_output=True, timeout=120)
+def tesseract_ocr(png: bytes, lang: str = "eng") -> str:
+    r = subprocess.run(["tesseract", "stdin", "stdout", "-l", lang], input=png, capture_output=True, timeout=120)
     return r.stdout.decode("utf-8", "ignore")
 
 
@@ -147,14 +168,22 @@ def pick_engine() -> str | None:
     return None
 
 
-def ocr_page(pdf_path: Path, page_no: int, engine: str) -> tuple[str, float]:
+def can_ocr(engine: str | None, cc: str | None) -> bool:
+    """False when the engine cannot read this country's script (Thai without the Windows Thai OCR language)."""
+    if engine == "windows_ocr":
+        return windows_language_installed(ocr_lang(cc)[0])
+    return engine is not None
+
+
+def ocr_page(pdf_path: Path, page_no: int, engine: str, cc: str | None = None) -> tuple[str, float]:
     png = render_png(pdf_path, page_no)
+    win_lang, tess_lang = ocr_lang(cc)
     if engine == "qwen_vision":
         text = qwen_ocr(png)
     elif engine == "windows_ocr":
-        text = windows_ocr(png)
+        text = windows_ocr(png, win_lang)
     elif engine == "tesseract":
-        text = tesseract_ocr(png)
+        text = tesseract_ocr(png, tess_lang)
     else:
         raise ValueError(engine)
     return text, heuristic_confidence(text)

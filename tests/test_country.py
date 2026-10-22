@@ -120,5 +120,5 @@ def test_admin_lists_only_india_sources(client):
     india = {s["code"] for s in client.get("/portal/admin").json()["sources"]}
     assert india == {"ARAI_AIS", "MORTH_API", "EGAZETTE", "INDIACODE", "ARAI_TAP", "LOCAL_SEED"}
     thai = {s["code"] for s in client.get("/portal/admin", params={"country": "TH"}).json()["sources"]}
-    assert len(thai) == 8 and all(c.startswith("TH_") for c in thai)
+    assert len(thai) == 9 and all(c.startswith("TH_") for c in thai)  # 8 seeded + TH_LOCAL (0020)
     assert client.get("/portal/meta").json()["sources_total"] == 4  # India's crawlers

@@ -378,6 +378,21 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         if data.get("effective_date"):
             cols["effective_date"] = date.fromisoformat(data["effective_date"])  # วันที่มีผลบังคับใช้
         conf["subject"] = 0.9 if cols["subject"] else 0.0
+    elif dc in (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE):
+        # a Thai Act / ministerial regulation / DLT notification saved by hand: rules only (thai.law_identity); the
+        # LLM is not asked (its category codes are India's)
+        allt = full_text(pages, a, b)
+        n = thai.law_identity(allt, dc.value) or {}
+        data.update({k: v for k, v in {"title": n.get("title"), "ref_no": n.get("canonical_id"),
+                                       "date": n["date"].isoformat() if n.get("date") else None,
+                                       "file_name": names[0] if names else None}.items() if v})
+        cols["subject"] = n.get("title")
+        head = thai.thai_digits(allt[:8000])
+        cats = thai.categories_from(n.get("title"), head)
+        if not cats and re.search(r"รถ|vehicle", head, re.I):
+            cats = ["ALL"]  # a motor-vehicle law naming no category applies to all motor vehicles (CLAUDE.md)
+        cols["domains"] = thai.law_domains(allt)
+        text_for_tags = ""
     elif dc in (DocClass.MY_ACT, DocClass.MY_SUBSIDIARY_LEGISLATION):
         # a Malaysian Act / P.U.(A) regulation (Malay, often with English pages): identity, title and dates from its
         # own first page (malaysia.legal_identity); the Malay cover is not an "English" page, so the full text
@@ -416,7 +431,7 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
                 cols["subject"] = re.sub(r"\s+", " ", m.group(1)).title()
         cats = categories_of(eng[:20000]) if dc != DocClass.OFF_TOPIC else []
         text_for_tags = eng[:30000]
-    if dc not in (DocClass.OFF_TOPIC, DocClass.TIS_STANDARD):
+    if dc not in (DocClass.OFF_TOPIC, DocClass.TIS_STANDARD) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE):
         cols["usage"] = P.find_usage(text_for_tags[:30000])
         cols["powertrains"] = P.find_powertrains(text_for_tags[:30000], min_hits=2)
         cols["domains"] = find_domains(text_for_tags)
@@ -633,7 +648,7 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
         data = {**data, **{k: v for k, v in (doc["data"] or {}).items() if k in ("provisions", "instructions")}}
     # TIS_STANDARD: a one-page TISI summary in Thai, read completely by the rules (thai.py)
     needs_llm = dc not in (DocClass.OFF_TOPIC, DocClass.FORM_TEMPLATE, DocClass.BIS_CATALOGUE, DocClass.AIS_FORM_TABLE,
-                           DocClass.REPORT, DocClass.TAP_DOCUMENT, DocClass.TIS_STANDARD)
+                           DocClass.REPORT, DocClass.TAP_DOCUMENT, DocClass.TIS_STANDARD) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE)
     if needs_llm and old.get("model") in (None, "rules"):
         ok = use_llm and llm.reachable()[0]
         if ok:

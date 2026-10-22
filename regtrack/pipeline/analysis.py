@@ -139,6 +139,12 @@ def identify(ctx: FileCtx) -> FileAnalysis:
                                               family_key="TAP-115/116")
     elif dc == DocClass.FORM_TEMPLATE:
         ident = form_identity(eng, ctx.name)
+    elif dc in (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE):
+        n = thai.law_identity(allt, dc.value)
+        if n:
+            ident = Identity(kind="th-law", canonical_id=n["canonical_id"], series=dc.value, year=n["year"],
+                             evidence=n["title"], doc_date=n["date"] or (date(n["year"], 1, 1) if n["year"] else None),
+                             doc_date_precision="day" if n["date"] else ("year" if n["year"] else None))
     elif dc == DocClass.TIS_STANDARD:
         full = [x for x in ctx.listings if x.get("category") == thai.FULL_TEXT]
         if full:  # a full-text PDF: the number it prints that matches the standard whose page links it

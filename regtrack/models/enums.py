@@ -40,6 +40,7 @@ class DocClass(StrEnum):
     DLT_NOTIFICATION = "DLT_NOTIFICATION"
     MINISTERIAL_REGULATION = "MINISTERIAL_REGULATION"
     NEWS = "NEWS"
+    TH_ACT = "TH_ACT"  # พระราชบัญญัติ (migration 0020)
     # Malaysia (migration 0017)
     MY_GUIDELINE = "MY_GUIDELINE"
     MY_FORM = "MY_FORM"
@@ -58,7 +59,7 @@ class DocClass(StrEnum):
 AIS_CLASSES = {c for c in DocClass if c.is_ais}
 NOTIFICATION_CLASSES = {c for c in DocClass if c.is_notification}
 THAI_CLASSES = frozenset({DocClass.TIS_STANDARD, DocClass.GAZETTE_NOTICE, DocClass.DLT_NOTIFICATION,
-                          DocClass.MINISTERIAL_REGULATION, DocClass.NEWS})
+                          DocClass.MINISTERIAL_REGULATION, DocClass.NEWS, DocClass.TH_ACT})
 MALAYSIA_CLASSES = frozenset({DocClass.MY_GUIDELINE, DocClass.MY_FORM, DocClass.MY_ACT,
                               DocClass.MY_SUBSIDIARY_LEGISLATION})
 # what India's classifier may answer (the Qwen prompt and its schema list exactly these)

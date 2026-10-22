@@ -86,6 +86,12 @@ def _src(*codes: str, rx: str | None = None):
 
 
 EMISSION = _rx(r"สารมลพิษ|ท่อไอเสีย")
+EMC = re.compile(r"แม่เหล็กไฟฟ้า|electromagnetic|\bEMC\b|\bR\s?10\b", re.I)
+LAW_CLASSES = {"TH_ACT", "MINISTERIAL_REGULATION", "DLT_NOTIFICATION", "GAZETTE_NOTICE"}
+
+
+def _law(r: dict) -> bool:
+    return r["doc_class"] in LAW_CLASSES
 RULES: dict[str, list[tuple[str, str, object]]] = {
     "TH": [
         ("TH-01", "supporting", lambda r: r["doc_class"] == "TIS_STANDARD"),
@@ -97,6 +103,14 @@ RULES: dict[str, list[tuple[str, str, object]]] = {
         ("TH-09", "primary", _rx(r"ยางล้อ|ยางใน")),
         ("TH-11", "primary", _rx(r"เข็มขัดนิรภัย|หมวกนิรภัย")),
         ("TH-12", "primary", _rx(r"กระจกนิรภัย")),
+        # Thai legal texts saved by hand (TH_LOCAL): by their topics (thai.law_domains) and subject line
+        ("TH-02", "primary", lambda r: r["doc_class"] == "TH_ACT" or (_law(r) and "REGISTRATION" in r["domains"])),
+        ("TH-07", "primary", lambda r: _law(r) and "DIMENSIONS_WEIGHTS" in r["domains"]),
+        ("TH-08", "primary", lambda r: _law(r) and "LIGHTING" in r["domains"]),
+        ("TH-10", "primary", lambda r: _law(r) and "BRAKING" in r["domains"]),
+        ("TH-13", "primary", lambda r: _law(r) and bool({"EV_ALT_FUEL", "BATTERY"} & set(r["domains"]))),
+        ("TH-14", "primary", lambda r: _law(r) and bool(EMC.search(f"{r['subject'] or ''} {r['refs']}"))),
+        ("TH-15", "primary", lambda r: _law(r) and "FUEL_EFFICIENCY" in r["domains"]),
     ],
     "MY": [
         ("MY-01", "primary", _src("MY_JPJ_VTA")),
@@ -124,6 +138,9 @@ RULES: dict[str, list[tuple[str, str, object]]] = {
         ("MY-15", "candidate", _src("MY_JPJ_AED")),
         # its functions: VTA testing "bagi tujuan pengiktirafan Energy Efficient Vehicle (EEV)"
         ("MY-17", "primary", _src("MY_JPJ_AED")),
+        ("MY-14", "primary", _src("MY_LOCAL", rx=r"R\s?100\b|REESS|electric\s+vehicle|kenderaan\s+elektrik")),
+        ("MY-15", "primary", _src("MY_LOCAL", rx=r"R\s?10\b|electromagnetic|\bEMC\b|keserasian\s+elektromagnet")),
+        ("MY-08", "primary", _src("MY_LOCAL", rx=r"UN\s+Regulation|UNECE|WP\.?29")),
     ],
 }
 
@@ -132,7 +149,9 @@ SELECT g.id, g.external_code AS canonical_id, g.local_class AS doc_class, coales
        coalesce(g.data->>'references', '') || ' ' || coalesce(g.data->>'title', '') AS refs,
        coalesce((SELECT array_agg(DISTINCT s.code) FROM document_parts p
                  JOIN raw_ingestion_records x ON x.document_id = p.document_id
-                 JOIN sources s ON s.id = x.source_id WHERE p.regulation_id = g.id), '{{}}') AS sources
+                 JOIN sources s ON s.id = x.source_id WHERE p.regulation_id = g.id), '{{}}') AS sources,
+       coalesce((SELECT array_agg(d.code) FROM regulation_domains rd JOIN public.domains d ON d.id = rd.domain_id
+                 WHERE rd.regulation_id = g.id), '{{}}') AS domains
 FROM regulations g WHERE {region} AND g.local_class <> 'OFF_TOPIC'"""
 
 

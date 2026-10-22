@@ -57,7 +57,7 @@ def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str
     need_ocr = f["ext"] == "pdf" and not meta["text_layer"] and meta["scanned_pages"] and not engine
     if need_ocr and allow_ocr:
         eng = ocr.pick_engine()
-        if eng:
+        if eng and ocr.can_ocr(eng, f.get("country")):
             engine, conf = ocr_pages(f, pages, meta["scanned_pages"], eng)
     lm = language_mix(pages)
     values = {"page_count": meta["page_count"], "text_layer": meta["text_layer"],
@@ -80,7 +80,7 @@ def ocr_pages(f: dict, pages: list[PageText], targets: list[int], engine: str) -
         if pg.page not in targets or pg.ocr:
             continue
         try:
-            text, c = ocr.ocr_page(path, pg.page, engine)
+            text, c = ocr.ocr_page(path, pg.page, engine, f.get("country"))
         except Exception as e:  # noqa: BLE001  one bad page must not stop the file
             log.warning("OCR failed %s p%s: %s", f["sha256"][:12], pg.page, e)
             continue
@@ -244,12 +244,14 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
                 flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "no G.S.R./S.O. heading in English text",
                                                             "scan": not ctx.text_layer}))
         elif ident and ident.canonical_id and dc in (DocClass.FORM_TEMPLATE, DocClass.TIS_STANDARD, DocClass.MY_GUIDELINE, DocClass.MY_FORM, DocClass.MY_ACT,
-                                                                         DocClass.MY_SUBSIDIARY_LEGISLATION) or (ident and ident.kind == "notification"):
+                                                                         DocClass.MY_SUBSIDIARY_LEGISLATION) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE) or (ident and ident.kind == "notification"):
             cid = ident.canonical_id
         else:
             cid = synthetic_id("DOC", ctx.sha)
             if dc == DocClass.TIS_STANDARD:
                 flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "no มอก. number on the TISI page"}))
+            elif dc in (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE):
+                flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "no Thai law number / title on the first page"}))
         data = notification_header_data(fa) if dc.is_notification or (ident and ident.kind == "notification") else {}
         if dc == DocClass.FORM_TEMPLATE:
             data = form_data(ctx, ident)

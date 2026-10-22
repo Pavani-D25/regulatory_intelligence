@@ -11,7 +11,14 @@ import re
 from datetime import date, datetime
 
 MY_SOURCES = {"MY_JPJ_VTA": "JPJ", "MY_JPJ_CTA": "JPJ", "MY_JPJ_AED": "JPJ", "MY_DOE_EMISSION": "DOE",
-              "MY_DOE_VTA_GUIDE": "DOE", "MY_JPJ_ACTS": "JPJ", "MY_DOE_REGS": "DOE"}
+              "MY_DOE_VTA_GUIDE": "DOE", "MY_JPJ_ACTS": "JPJ", "MY_DOE_REGS": "DOE", "MY_LOCAL": None}
+ISSUER_TEXT = [("JPJ", re.compile(r"JABATAN PENGANGKUTAN JALAN|Road Transport Department|\bJPJ\b", re.I)),
+               ("DOE", re.compile(r"JABATAN ALAM SEKITAR|Department of Environment|KUALITI ALAM SEKELILING", re.I))]
+
+
+def issuer_of(source: str, text: str) -> str:
+    """JPJ / DOE: by source, or, for a hand-saved file (MY_LOCAL), by its own text; 'MY' when neither."""
+    return MY_SOURCES.get(source) or next((k for k, rx in ISSUER_TEXT if rx.search(text[:5000])), "MY")
 ISSUER = {"JPJ": "Road Transport Department (JPJ)", "DOE": "Department of Environment (DOE/JAS)"}
 PAGE_TITLE = re.compile(r"^\s*(.+?)\s+-\s+(?:Portal Rasmi JPJ|Department of Environment)\s*$", re.M)
 FORM = re.compile(r"\b(?:BORANG|FORM|APPLICATION[\s-]FORM)\b", re.I)
@@ -44,12 +51,12 @@ def is_form(names: list[str], text: str) -> bool:
 
 def identity(source: str, ext: str, names: list[str], text: str) -> dict:
     """MY-<issuer>-<page title | file name>: a page is named by its own title, a file by its published file name."""
-    issuer = MY_SOURCES[source]
+    issuer = issuer_of(source, text)
     base = page_title(text) if ext in ("html", "htm") else None
     if not base:
         stem = next((n for n in names if n), "") .rsplit(".", 1)[0]
         base = stem or source
-    return {"canonical_id": f"MY-{issuer}-{slug(base)}", "issuer": ISSUER[issuer], "title": base}
+    return {"canonical_id": f"MY-{issuer}-{slug(base)}", "issuer": ISSUER.get(issuer, "Malaysia"), "title": base}
 
 
 def categories_of(text: str) -> list[str]:

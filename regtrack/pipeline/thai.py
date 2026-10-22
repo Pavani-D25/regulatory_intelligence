@@ -175,3 +175,110 @@ def full_text_fields(text: str) -> dict:
     """What a full-text PDF adds: its own number (identity check) and the scope section "1. ขอบข่าย"."""
     n = tis_number(text) or {}
     return {"tis_no": n.get("tis_no"), "year_be": n.get("year_be"), "scope_text": scope_of(text)}
+
+
+# ------------------------------------------------------------------ Thai legal texts saved by hand (TH_LOCAL)
+# Acts (พระราชบัญญัติ), ministerial regulations (กฎกระทรวง), DLT notifications (ประกาศกรมการขนส่งทางบก) and other
+# notices, in Thai or in an official English translation. Identity, title and date from the first page.
+THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
+THAI_MONTH_FULL = {m: i for i, m in enumerate(("มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+                                               "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"), 1)}
+FULL_DATE = re.compile(r"(\d{1,2})\s*(" + "|".join(THAI_MONTH_FULL) + r")\s*(?:พ\.\s*ศ\.\s*)?(\d{4})")
+LAW_KINDS = [  # (class, pattern on the first page), most specific first
+    ("TIS_STANDARD", re.compile(r"มาตรฐานผลิตภัณฑ์อุตสาหกรรม|THAI INDUSTRIAL STANDARD")),
+    ("MINISTERIAL_REGULATION", re.compile(r"กฎกระทรวง|Ministerial\s+Regulation", re.I)),
+    ("DLT_NOTIFICATION", re.compile(r"ประกาศกรมการขนส่งทางบก|Notification\s+of\s+the\s+Department\s+of\s+Land\s+Transport", re.I)),
+    ("TH_ACT", re.compile(r"^\s*พระราชบัญญัติ|\bAct,?\s+B\.\s*E\.\s*\d{4}", re.M | re.I)),
+    ("GAZETTE_NOTICE", re.compile(r"ประกาศ(?:กระทรวง|สำนักงาน|กรม)|ราชกิจจานุเบกษา|Notification\s+of\s+the\s+Ministry", re.I)),
+]
+MR_NO = re.compile(r"กฎกระทรวง\s*(?:ฉบับที่\s*(\d{1,3}))?\s*\(?\s*พ\.\s*ศ\.\s*(\d{4})\s*\)?")
+ACT_TITLE = re.compile(r"(พระราชบัญญัติ[^\n]{2,120}?พ\.\s*ศ\.\s*(\d{4}))")
+SUBJECT = re.compile(r"เรื่อง\s+([^\n]{4,200})")
+MINISTRY = [("MOT", re.compile(r"กระทรวงคมนาคม|Ministry\s+of\s+Transport", re.I)),
+            ("MOIND", re.compile(r"กระทรวงอุตสาหกรรม|Ministry\s+of\s+Industry", re.I)),
+            ("MOI", re.compile(r"กระทรวงมหาดไทย|Ministry\s+of\s+Interior", re.I))]
+EN_YEAR = re.compile(r"B\.\s*E\.\s*(\d{4})")
+
+
+def thai_digits(text: str) -> str:
+    return text.translate(THAI_DIGITS)
+
+
+def full_thai_date(text: str) -> date | None:
+    m = FULL_DATE.search(text)
+    if not m:
+        return None
+    try:
+        return date(int(m.group(3)) - 543, THAI_MONTH_FULL[m.group(2)], int(m.group(1)))
+    except ValueError:
+        return None
+
+
+def _h8(s: str) -> str:
+    import hashlib
+
+    return hashlib.sha1(clean(s).encode("utf-8")).hexdigest()[:8].upper()
+
+
+def law_class(text: str) -> str | None:
+    head = thai_digits(text[:2500])
+    return next((dc for dc, rx in LAW_KINDS if rx.search(head)), None)
+
+
+def law_identity(text: str, doc_class: str) -> dict | None:
+    """canonical_id (docs/CLASSIFICATION_DESIGN.md §6.3 style, B.E. year in the id), title, B.E. year, signing date."""
+    head = thai_digits(text[:6000])
+    if doc_class == "TIS_STANDARD":
+        n = tis_number(head)
+        return {**n, "title": title_of(head), "date": None} if n else None
+    title, year_be, cid = None, None, None
+    if doc_class == "MINISTERIAL_REGULATION":
+        m = MR_NO.search(head)
+        ministry = next((code for code, rx in MINISTRY if rx.search(head)), "TH")
+        if m:
+            year_be = int(m.group(2))
+            line = clean(head[m.start():m.start() + 200].split("\n")[0])
+            title = line
+            cid = f"TH-MR-{ministry}-{m.group(1)}-{year_be}" if m.group(1) else f"TH-MR-{ministry}-{_h8(line)}-{year_be}"
+    elif doc_class == "TH_ACT":
+        m = ACT_TITLE.search(head)
+        if m:
+            title, year_be = clean(m.group(1)), int(m.group(2))
+            cid = f"TH-ACT-{year_be}-{_h8(title)}"
+    else:  # DLT / other notifications: "เรื่อง <subject>", dated "ประกาศ ณ วันที่ ..."
+        s = SUBJECT.search(head)
+        d = full_thai_date(head[-3000:]) or full_thai_date(head)
+        if s:
+            title = clean(s.group(1))
+            year_be = (d.year + 543) if d else None
+            prefix = "TH-DLT" if doc_class == "DLT_NOTIFICATION" else "TH-NOTICE"
+            cid = f"{prefix}-{year_be or 0}-{_h8(title)}"
+    if not cid:  # an English translation: "... Act, B.E. 2522" / "Ministerial Regulation No. 5 (B.E. 2551)"
+        y = EN_YEAR.search(head)
+        first = clean(head[:200].split("\n")[0]) if head.strip() else ""
+        if y and first:
+            year_be, title = int(y.group(1)), first
+            kind = {"TH_ACT": "TH-ACT", "MINISTERIAL_REGULATION": "TH-MR-EN", "DLT_NOTIFICATION": "TH-DLT"}.get(doc_class, "TH-NOTICE")
+            cid = f"{kind}-{year_be}-{_h8(title)}"
+    if not cid:
+        return None
+    return {"canonical_id": cid, "title": title, "year_be": year_be, "year": (year_be - 543) if year_be else None,
+            "date": full_thai_date(head[-3000:]) or full_thai_date(head)}
+
+
+# topics of the legal texts (their own vocabulary list, so the TIS domains above stay as they are)
+LAW_DOMAIN_WORDS = [
+    ("REGISTRATION", re.compile(r"จดทะเบียน|ทะเบียนรถ|registration", re.I)),
+    ("DIMENSIONS_WEIGHTS", re.compile(r"ความกว้าง|ความยาว|ความสูง|น้ำหนักรถ|น้ำหนักบรรทุก|dimension|weight", re.I)),
+    ("LIGHTING", re.compile(r"โคมไฟ|ไฟหน้า|ไฟท้าย|ไฟเลี้ยว|ไฟส่องสว่าง|ไฟสัญญาณ|lamp|lighting|light-signalling", re.I)),
+    ("BRAKING", re.compile(r"ห้ามล้อ|เบรก|brak", re.I)),
+    ("EV_ALT_FUEL", re.compile(r"รถยนต์ไฟฟ้า|ยานยนต์ไฟฟ้า|electric\s+vehicle|\bR\s?100\b", re.I)),
+    ("BATTERY", re.compile(r"แบตเตอรี่|REESS|traction\s+battery", re.I)),
+    ("FUEL_EFFICIENCY", re.compile(r"คาร์บอนไดออกไซด์|อัตราการใช้น้ำมัน|อัตราการใช้เชื้อเพลิง|อีโคสติ๊กเกอร์|ECO\s*Sticker|CO2|fuel\s+consumption", re.I)),
+    ("SAFETY_EQUIPMENT", re.compile(r"เข็มขัดนิรภัย|กระจกนิรภัย|ยางล้อ|safety\s+belt", re.I)),
+]
+
+
+def law_domains(text: str) -> list[str]:
+    head = thai_digits(text[:12000])
+    return [d for d, rx in LAW_DOMAIN_WORDS if rx.search(head)]
