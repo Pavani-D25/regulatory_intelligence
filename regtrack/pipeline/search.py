@@ -37,6 +37,10 @@ def search(conn: psycopg.Connection, q: str, category: str | None = None, in_sco
             "g.published_date AS doc_date")
     try:
         vec = llm.embed([q])[0]
+        # the HNSW index returns its ~40 nearest chunks of ALL countries before the WHERE filter: a small country
+        # (Thailand, Malaysia) or a narrow filter got 0 rows. Iterative scans (pgvector >= 0.8) keep scanning
+        # until the filtered result is full.
+        conn.execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
         rows = conn.execute(
             f"SELECT {cols}, 1 - (c.embedding <=> %s::vector) AS score FROM document_chunks c "
             f"JOIN regulations g ON g.id=c.regulation_id "
