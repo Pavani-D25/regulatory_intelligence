@@ -373,3 +373,17 @@ def test_my_page_hash_ignores_counters():
     _, files = page_listing("MY_JPJ_CTA", "https://www.jpj.gov.my/en/component-type-approval-cta/",
                             (FX / "my_jpj_cta.html").read_bytes())
     assert {f.file_name for f in files} == {"BORANG-PERMOHONAN-CTA-2021.rev0_.pdf", "Garis-Panduan-CTA-2020.pdf"}
+
+
+def test_thai_pua_and_full_text_identity():
+    from regtrack.pipeline import thai
+    from regtrack.pipeline.text import fix_thai_pua
+
+    assert fix_thai_pua("ผลิตภัณฑ เลม") == "ผลิตภัณฑ์ เล่ม"
+    assert fix_thai_pua("plain ") == "plain "  # pages without Thai text are left alone
+    assert thai.tis_number("THAI INDUSTRIAL STANDARD\nมอก. 721   2551")["canonical_id"] == "TIS-721-2551"
+    # an amendment notice cites the previous edition first; the linked standard's own number is further down
+    text = "มาตรฐานเลขที่ มอก. 2718−2558 ... ให้ มอก. 2718−2560 ใช้บังคับ"
+    expected = thai.tis_number("มอก.2718-2560 full text")
+    assert thai.full_text_identity(text, expected) == (expected, "content")
+    assert thai.full_text_identity("uon. 341-2542 (broken font)", thai.tis_number("มอก.341-2543"))[1] == "link"

@@ -260,6 +260,12 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
             flags.append((FlagRule.DUPLICATE_IDENTITY_DIFF_HEADER,
                           {"canonical_id": cid, "classes": sorted({existing["doc_class"], dc.value}), "file": ctx.sha}))
         role = Role.HINDI_ONLY if (pages and not any(p.is_english for p in pages) and dc.is_notification) else Role.MAIN
+        if ident and ident.kind == "tis-link":
+            # a full text whose text layer is unreadable (old scan, broken font): kept with its standard, never
+            # its readable copy
+            role = Role.HISTORICAL_COPY
+            flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "full-text PDF has no readable มอก. number; "
+                                                                  "attached by the link on its TISI page", "file": ctx.sha}))
         e = _eng_range(pages, 1, n)
         attach(conn, did, f["id"], 1, n, eng=e, role=role)
         doc_ids.append(did)
@@ -491,7 +497,7 @@ def recompute_best_copies(conn: psycopg.Connection, doc_ids: list[int]) -> None:
         rows = conn.execute(
             """SELECT p.document_id AS file_id, p.page_from,
                       CASE p.role WHEN 'other_language_only' THEN 'hindi_only' ELSE p.role END AS role, p.is_best_copy,
-                      d.text_layer, d.ocr_engine, d.downloaded_at AS first_seen_at,
+                      d.text_layer, d.ocr_engine, d.downloaded_at AS first_seen_at, d.file_ext,
                       coalesce((d.language_mix->>'en_pages')::int,0) AS en_pages,
                       EXISTS (SELECT 1 FROM raw_ingestion_records s JOIN sources so ON so.id=s.source_id
                               WHERE s.document_id=d.id AND so.code IN ('ARAI_AIS','ARAI_TAP')) AS arai,
@@ -503,7 +509,11 @@ def recompute_best_copies(conn: psycopg.Connection, doc_ids: list[int]) -> None:
         doc = conn.execute("SELECT local_class FROM regulations WHERE id=%s", (did,)).fetchone()
         if doc["local_class"] == "TAP_DOCUMENT":
             continue  # every TAP part file is needed; best copy is per part, all true
-        best = sorted(rows, key=lambda r: (not r["text_layer"], not r["arai"], ROLE_RANK.get(r["role"], 1),
+        # a Thai standard's full-text PDF is read over its one-page TISI summary (fields stay from the summary)
+        full_text_first = doc["local_class"] == "TIS_STANDARD"
+        best = sorted(rows, key=lambda r: (full_text_first and (r["file_ext"] != "pdf" or r["role"] == "historical_copy"),
+                                           not r["text_layer"], not r["arai"],
+                                           ROLE_RANK.get(r["role"], 1),
                                            -(r["listed"].toordinal() if r["listed"] else 0), -r["en_pages"],
                                            r["file_id"]))[0]
         for r in rows:

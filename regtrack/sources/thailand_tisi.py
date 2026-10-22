@@ -15,12 +15,16 @@ from __future__ import annotations
 import logging
 import re
 import time
+from urllib.parse import quote, unquote
 
 from regtrack.config import get_settings
 from regtrack.db import connect
+from regtrack.pipeline import thai
+from regtrack.pipeline.text import html_encoding, read_html
 from regtrack.pipeline.thai import parse_thai_date
 from regtrack.sources import http
 from regtrack.sources.common import Listing, RunStats, finish_run, mark_gone, record_listing, start_run
+from regtrack.storage import open_local
 
 log = logging.getLogger(__name__)
 URL = "https://www.tisi.go.th/website/standardlist/comp_thai/th"
@@ -93,6 +97,31 @@ def to_listing(r: dict) -> Listing | None:
                    raw={"number": r["number"], "effective_text": r["effective_text"]})
 
 
+DETAIL_SQL = """SELECT r.external_ref, r.listing_title, r.listing_category, d.storage_path
+                FROM raw_ingestion_records r JOIN sources s ON s.id = r.source_id JOIN documents d ON d.id = r.document_id
+                WHERE s.code = %s AND r.listing_category IS DISTINCT FROM %s ORDER BY r.external_ref"""
+
+
+def full_text_listings(conn, detail_refs: set[str]) -> list[Listing]:
+    """service.tisi.go.th/fulltext/<n>_<year>.pdf links on the automotive detail pages still listed (the other ~140
+    mandatory standards are steel, plastics, appliances...: their full texts are not fetched)."""
+    out: dict[str, Listing] = {}
+    for r in conn.execute(DETAIL_SQL, (SOURCE, thai.FULL_TEXT)).fetchall():
+        if r["external_ref"] not in detail_refs:
+            continue
+        path = open_local(r["storage_path"])
+        if not thai.is_automotive(r["listing_category"], read_html(path)[0]):
+            continue
+        raw = path.read_bytes()
+        for href in thai.FULL_TEXT_LINK.findall(raw.decode(html_encoding(raw), errors="ignore")):
+            link = quote(unquote(href), safe=":/")  # the same file is linked both raw-Thai and %-encoded (มอก.341)
+            number = (r["listing_title"] or "").split(" ")[0]
+            out.setdefault(link, Listing(item_id=link, url=link, title=f"{number} full text", listing_date=None,
+                                         category=thai.FULL_TEXT, file_name=link.rsplit("/", 1)[-1],
+                                         raw={"detail": r["external_ref"], "detail_category": r["listing_category"]}))
+    return list(out.values())
+
+
 def crawl() -> dict:
     stats = RunStats()
     with connect() as conn:
@@ -109,6 +138,11 @@ def crawl() -> dict:
                         continue
                     seen.add(lst.item_id)
                     record_listing(conn, c, SOURCE, run_id, lst, stats)
+                if rows:
+                    # second pass: the full text of each automotive standard, linked from its stored detail page
+                    for lst in full_text_listings(conn, seen):
+                        seen.add(lst.item_id)
+                        record_listing(conn, c, SOURCE, run_id, lst, stats)
             if rows:
                 stats.gone = mark_gone(conn, SOURCE, seen)
             status = "ok" if rows and not stats.errors else ("partial" if rows else "failed")

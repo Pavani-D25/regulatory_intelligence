@@ -202,8 +202,23 @@ def extract(path: Path, ext: str) -> TextResult:
     return build_result(texts, meta, is_paged=(ext == "pdf"), error=err)
 
 
+# Thai PDF fonts map shifted tone marks / vowels to private-use glyphs (U+F700-F71A, the Windows/Adobe Thai PUA);
+# applied only to pages with Thai text, so no other script's text changes
+THAI_PUA = str.maketrans({0xF700: "ฐ", 0xF701: "ิ", 0xF702: "ี", 0xF703: "ึ", 0xF704: "ื",
+                          0xF705: "่", 0xF706: "้", 0xF707: "๊", 0xF708: "๋", 0xF709: "์",
+                          0xF70A: "่", 0xF70B: "้", 0xF70C: "๊", 0xF70D: "๋", 0xF70E: "์",
+                          0xF70F: "ญ", 0xF710: "ั", 0xF711: "ํ", 0xF712: "็", 0xF713: "่",
+                          0xF714: "้", 0xF715: "๊", 0xF716: "๋", 0xF717: "์", 0xF718: "ุ",
+                          0xF719: "ู", 0xF71A: "ฺ"})
+THAI_CHAR = re.compile("[ก-๛]")
+
+
+def fix_thai_pua(t: str) -> str:
+    return t.translate(THAI_PUA) if THAI_CHAR.search(t) else t
+
+
 def build_result(texts: list[str], meta: dict, is_paged: bool, error: str | None = None) -> TextResult:
-    pages = [PageText(i + 1, t.replace("\x00", "")).analyse() for i, t in enumerate(texts)]
+    pages = [PageText(i + 1, fix_thai_pua(t.replace("\x00", ""))).analyse() for i, t in enumerate(texts)]
     n = len(pages)
     total = sum(p.chars for p in pages)
     scanned = [p.page for p in pages if p.chars < SCAN_CHARS] if is_paged else []

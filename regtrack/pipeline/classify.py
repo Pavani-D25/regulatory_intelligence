@@ -216,6 +216,8 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
     if tisi:
         allt = full_text(ctx.pages)
         cat = tisi[0].get("category")
+        if cat == thai.FULL_TEXT:  # the crawler follows full-text links of automotive standards only
+            return ClassResult(DocClass.TIS_STANDARD, "final", "TISI", rel, None, "rules", "TISI full text")
         if thai.is_automotive(cat, allt):
             return ClassResult(DocClass.TIS_STANDARD, "final", "TISI", rel, None, "rules", f"TISI automotive ({cat})")
         return ClassResult(DocClass.OFF_TOPIC, "final", "TISI", rel, None, "rules", f"TISI non-automotive ({cat})")

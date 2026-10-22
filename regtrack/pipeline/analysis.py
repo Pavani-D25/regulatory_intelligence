@@ -140,9 +140,13 @@ def identify(ctx: FileCtx) -> FileAnalysis:
     elif dc == DocClass.FORM_TEMPLATE:
         ident = form_identity(eng, ctx.name)
     elif dc == DocClass.TIS_STANDARD:
-        n = thai.tis_number(allt)  # the page's own มอก. heading, not the listing title
+        full = [x for x in ctx.listings if x.get("category") == thai.FULL_TEXT]
+        if full:  # a full-text PDF: the number it prints that matches the standard whose page links it
+            n, how = thai.full_text_identity(allt, thai.tis_number(full[0].get("title") or ""))
+        else:
+            n, how = thai.tis_number(allt), "content"  # the page's own มอก. heading, not the listing title
         if n:
-            ident = Identity(kind="tis", canonical_id=n["canonical_id"], series="TIS", number=n["number"],
+            ident = Identity(kind="tis" if how != "link" else "tis-link", canonical_id=n["canonical_id"], series="TIS", number=n["number"],
                              part=n["part"], year=n["year"], family_key=n["family_key"], evidence=n["tis_no"],
                              doc_date=date(n["year"], 1, 1), doc_date_precision="year")  # the edition year
     elif dc in (DocClass.MY_GUIDELINE, DocClass.MY_FORM):

@@ -12,12 +12,15 @@ from datetime import date
 
 TISI_SOURCE = "TH_TISI_MANDATORY"
 AUTOMOTIVE_CATEGORY = "ยานยนต์"  # the TISI list's own "automotive" product group
+FULL_TEXT = "fulltext"  # listing category of a standard's full-text PDF (service.tisi.go.th/fulltext/...)
+FULL_TEXT_LINK = re.compile(r"""href=["'](https?://service\.tisi\.go\.th/fulltext/[^"']+\.pdf)["']""", re.I)
 
 THAI_MONTH = {"ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
               "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12}
 DATE_RE = re.compile(r"(\d{1,2})\s+([ก-๙.]+)\s+(\d{4}|\d{2})(?!\d)")
 # "มอก. 721-2551", "มอก.60947 เล่ม 2-2569", "มอก.60335 เล่ม 2(24)-2563" (เล่ม = part)
-TIS_NO = re.compile(r"มอก\.\s*(\d{2,5})(?:\s*เล่ม\s*(\d+(?:\(\d+\))?))?\s*-\s*(\d{4})")
+# the full-text PDFs print "มอก. 721   2551" (the dash is a lost glyph): a dash, or two or more spaces
+TIS_NO = re.compile(r"มอก\.\s*(\d{2,5})(?:\s*เล่ม\s*(\d+(?:\(\d+\))?))?(?:\s*[-–−‐‑—]\s*|[\s\xa0]{2,})(\d{4})(?!\d)")
 EFFECTIVE = re.compile(r"วันที่มีผล(?:บังคับ)?ใช้(?:บังคับ)?\s*:?\s*([^)\n]{4,30})")
 SCOPE_END = re.compile(r"บทนิยามและรายละเอียด|ข้อความในฉลาก|สอบถามรายละเอียด")
 HS_CODE = re.compile(r"\b(\d{4}\.\d{2}(?:\.\d{2})?(?:\.\d{3})?)\b")
@@ -68,6 +71,29 @@ def tis_number(text: str) -> dict | None:
             "canonical_id": f"{base}-{year_be}", "tis_no": clean(m.group(0)), "end": m.end()}
 
 
+def tis_numbers(text: str) -> list[dict]:
+    """Every มอก. number printed in the text, in order (canonical_id per match)."""
+    out = []
+    for m in TIS_NO.finditer(text):
+        n = tis_number(m.group(0))
+        if n:
+            out.append(n)
+    return out
+
+
+def full_text_identity(text: str, expected: dict | None) -> tuple[dict | None, str]:
+    """A full-text PDF often opens with a ministerial amendment notice or an erratum that cites the previous edition
+    ("มอก. 2718−2558") before the standard's own number. Of the numbers the PDF prints, the one of the standard whose
+    TISI page links it; else the first. ('content', 'first', or 'link' when the PDF has no readable number at all:
+    an old scan with a broken font layer, attached by the link and flagged)."""
+    found = tis_numbers(text)
+    if expected and any(f["canonical_id"] == expected["canonical_id"] for f in found):
+        return expected, "content"
+    if found:
+        return found[0], "first"
+    return (expected, "link") if expected else (None, "none")
+
+
 def title_of(text: str) -> str | None:
     """The Thai title: the words after the มอก. number, up to the '(วันที่มีผลบังคับใช้ ...)' bracket."""
     n = tis_number(text)
@@ -94,9 +120,13 @@ def is_automotive(category: str | None, text: str) -> bool:
 
 
 def categories_of(text: str) -> list[str]:
+    return categories_from(title_of(text), scope_of(text))
+
+
+def categories_from(title: str | None, scope: str | None) -> list[str]:
     """Thailand vehicle categories (L1, L3, M1, N1) from the scope's UN codes, else from the vehicle words."""
-    scope = scope_of(text) or ""
-    words = f"{title_of(text) or ''} {scope}"
+    scope = scope or ""
+    words = f"{title or ''} {scope}"
     cats: set[str] = set()
     for letter, digit in UN_CODE.findall(scope):
         cats.add(f"{letter}{digit}")
@@ -130,12 +160,18 @@ POWERTRAIN_WORDS = [("petrol", re.compile(r"จุดระเบิดด้ว
                     ("cng", re.compile(r"ก๊าซธรรมชาติ")), ("lpg", re.compile(r"ก๊าซปิโตรเลียมเหลว"))]
 
 
-def domains_of(text: str) -> list[str]:
+def domains_from(title: str | None, scope: str | None) -> list[str]:
     """Every mandatory TIS needs TISI certification (TYPE_APPROVAL), plus the subject's own domain."""
-    head = f"{title_of(text) or ''} {scope_of(text) or ''}"
+    head = f"{title or ''} {scope or ''}"
     return ["TYPE_APPROVAL"] + [d for d, rx in DOMAIN_WORDS if rx.search(head)]
 
 
-def powertrains_of(text: str) -> list[str]:
-    head = f"{title_of(text) or ''} {scope_of(text) or ''}"
+def powertrains_from(title: str | None, scope: str | None) -> list[str]:
+    head = f"{title or ''} {scope or ''}"
     return [p for p, rx in POWERTRAIN_WORDS if rx.search(head)]
+
+
+def full_text_fields(text: str) -> dict:
+    """What a full-text PDF adds: its own number (identity check) and the scope section "1. ขอบข่าย"."""
+    n = tis_number(text) or {}
+    return {"tis_no": n.get("tis_no"), "year_be": n.get("year_be"), "scope_text": scope_of(text)}

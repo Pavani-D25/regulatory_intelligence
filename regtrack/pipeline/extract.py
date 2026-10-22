@@ -365,11 +365,16 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         # a Thai TISI page: every field is read from its Thai text (regtrack/pipeline/thai.py); the English
         # keyword vocabularies (usage, powertrains, domains) do not apply to it
         allt = full_text(pages, a, b)
-        data.update({k: v for k, v in thai.fields_of(allt).items() if v not in (None, [], {})})
+        if file_row.get("ext") == "pdf":
+            # the standard's full text (linked from its TISI page): the page's fields stay, the PDF fills gaps only
+            data.update({k: v for k, v in thai.full_text_fields(allt).items() if v and not data.get(k)})
+        else:
+            data.update({k: v for k, v in thai.fields_of(allt).items() if v not in (None, [], {})})
         cols["subject"] = data.get("title")
-        cats = thai.categories_of(allt)
+        title, scope = data.get("title"), data.get("scope_text")
+        cats = thai.categories_from(title, scope)
         text_for_tags = ""
-        cols["domains"], cols["powertrains"] = thai.domains_of(allt), thai.powertrains_of(allt)
+        cols["domains"], cols["powertrains"] = thai.domains_from(title, scope), thai.powertrains_from(title, scope)
         if data.get("effective_date"):
             cols["effective_date"] = date.fromisoformat(data["effective_date"])  # วันที่มีผลบังคับใช้
         conf["subject"] = 0.9 if cols["subject"] else 0.0
@@ -512,8 +517,9 @@ def stage_extract(conn: psycopg.Connection, f: dict, use_llm: bool = True) -> st
     names = [r["listing_title"] for r in R.listings_of_file(conn, f["id"]) if r["code"] == "LOCAL_SEED"]
     for df in R.parts_of_file(conn, f["id"]):
         doc = R.get_document(conn, df["document_id"])
-        if not df["is_best_copy"] and doc["extraction"]:
-            continue  # extract from the best copy only; other copies are kept as files
+        if not df["is_best_copy"] and doc["extraction"] and doc["doc_class"] != DocClass.TIS_STANDARD:
+            continue  # extract from the best copy only; other copies are kept as files (a TIS summary page
+            #           always is: its fields win over the full-text PDF's, whichever file comes first)
         extract_document(conn, doc, df, f, pages, names, use_llm)
     from regtrack.pipeline.dbutil import set_stage
 
