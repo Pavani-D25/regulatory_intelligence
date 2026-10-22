@@ -243,7 +243,8 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
             if not (ident and ident.year):
                 flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "no G.S.R./S.O. heading in English text",
                                                             "scan": not ctx.text_layer}))
-        elif ident and ident.canonical_id and dc in (DocClass.FORM_TEMPLATE, DocClass.TIS_STANDARD, DocClass.MY_GUIDELINE, DocClass.MY_FORM) or (ident and ident.kind == "notification"):
+        elif ident and ident.canonical_id and dc in (DocClass.FORM_TEMPLATE, DocClass.TIS_STANDARD, DocClass.MY_GUIDELINE, DocClass.MY_FORM, DocClass.MY_ACT,
+                                                                         DocClass.MY_SUBSIDIARY_LEGISLATION) or (ident and ident.kind == "notification"):
             cid = ident.canonical_id
         else:
             cid = synthetic_id("DOC", ctx.sha)

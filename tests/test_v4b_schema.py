@@ -67,7 +67,7 @@ def test_old_tables_drop_needs_verification(conn):
 def test_reference_rows(conn):
     regions = {r["code"] for r in conn.execute("SELECT code FROM regions")}
     assert regions == {"IN", "TH", "MY", "UN", "EU"}
-    assert conn.execute("SELECT count(*) AS n FROM sources").fetchone()["n"] == 19  # + 5 Malaysian (0017)
+    assert conn.execute("SELECT count(*) AS n FROM sources").fetchone()["n"] == 21  # + 7 Malaysian (0017, 0019)
     assert conn.execute("SELECT name FROM teams WHERE code='REG_AFFAIRS'").fetchone()["name"] == "Regulatory Affairs Team"
     l2 = conn.execute("""SELECT un_codes FROM vehicle_categories vc JOIN regions r ON r.id = vc.region_id
                          WHERE r.code='IN' AND vc.code='L2'""").fetchone()

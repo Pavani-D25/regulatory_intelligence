@@ -378,6 +378,19 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         if data.get("effective_date"):
             cols["effective_date"] = date.fromisoformat(data["effective_date"])  # วันที่มีผลบังคับใช้
         conf["subject"] = 0.9 if cols["subject"] else 0.0
+    elif dc in (DocClass.MY_ACT, DocClass.MY_SUBSIDIARY_LEGISLATION):
+        # a Malaysian Act / P.U.(A) regulation (Malay, often with English pages): identity, title and dates from its
+        # own first page (malaysia.legal_identity); the Malay cover is not an "English" page, so the full text
+        allt = full_text(pages, a, b)
+        leg = malaysia.legal_identity(allt) or {}
+        data.update({k: v for k, v in {"title": leg.get("title"), "ref_no": leg.get("ref_no"),
+                                       "date": leg["published"].isoformat() if leg.get("published") else None,
+                                       "file_name": names[0] if names else None}.items() if v})
+        cols["subject"] = leg.get("title")
+        if leg.get("in_force"):
+            cols["effective_date"] = leg["in_force"]
+        cats = malaysia.categories_of(allt[:20000])
+        text_for_tags = allt[:30000]
     elif dc in (DocClass.MY_GUIDELINE, DocClass.MY_FORM):
         # a JPJ / DOE page (its own <title>) or a linked PDF/DOCX; UNECE category words (malaysia.py)
         g = generic_fields(eng, names[0] if names else "")

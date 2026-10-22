@@ -149,6 +149,13 @@ def identify(ctx: FileCtx) -> FileAnalysis:
             ident = Identity(kind="tis" if how != "link" else "tis-link", canonical_id=n["canonical_id"], series="TIS", number=n["number"],
                              part=n["part"], year=n["year"], family_key=n["family_key"], evidence=n["tis_no"],
                              doc_date=date(n["year"], 1, 1), doc_date_precision="year")  # the edition year
+    elif dc in (DocClass.MY_ACT, DocClass.MY_SUBSIDIARY_LEGISLATION):
+        leg = malaysia.legal_identity(allt)
+        if leg:
+            ident = Identity(kind="my", canonical_id=leg["canonical_id"], series="PUA" if leg["kind"] == "pua" else "ACT",
+                             number=leg["number"], year=leg["year"], evidence=leg["ref_no"],
+                             doc_date=leg["published"] or date(leg["year"], 1, 1),
+                             doc_date_precision="day" if leg["published"] else "year")
     elif dc in (DocClass.MY_GUIDELINE, DocClass.MY_FORM):
         src = malaysia.source_of(ctx.listings)
         if src:

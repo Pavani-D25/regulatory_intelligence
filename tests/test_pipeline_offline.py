@@ -387,3 +387,23 @@ def test_thai_pua_and_full_text_identity():
     expected = thai.tis_number("มอก.2718-2560 full text")
     assert thai.full_text_identity(text, expected) == (expected, "content")
     assert thai.full_text_identity("uon. 341-2542 (broken font)", thai.tis_number("มอก.341-2543"))[1] == "link"
+
+
+def test_my_legal_identity_and_viewer_pdfs():
+    import base64
+    import json
+
+    from regtrack.pipeline import malaysia
+    from regtrack.pipeline.text import full_text
+    from regtrack.sources.malaysia import viewer_pdfs
+
+    leg = malaysia.legal_identity(full_text(extract(FX / "my_pua_543_1996_petrol.pdf", "pdf").pages))
+    assert (leg["canonical_id"], leg["ref_no"]) == ("PUA-543-1996", "P.U. (A) 543/96")
+    assert leg["published"] == leg["in_force"] == date(1996, 11, 1)  # "1 November 1996" (Malay months)
+    assert "Enjin Petrol" in leg["title"]
+    act = malaysia.legal_identity("UNDANG-UNDANG MALAYSIA ... Akta 333 AKTA PENGANGKUTAN JALAN 1987 Sebagaimana pada")
+    assert act["canonical_id"] == "MY-ACT-333" and act["year"] == 1987
+    assert malaysia.legal_identity("JPJ guideline for component type approval") is None
+    fb3d = base64.b64encode(json.dumps({"posts": {"1": {"type": "pdf", "data": {"guid": "https://x/a.pdf"}}}}).encode())
+    html = f"FB3D_CLIENT_DATA.push('{fb3d.decode()}'); window.option_df_7 = {{\"source\":\"https://y/b.pdf\"}};"
+    assert viewer_pdfs(html) == ["https://x/a.pdf", "https://y/b.pdf"]

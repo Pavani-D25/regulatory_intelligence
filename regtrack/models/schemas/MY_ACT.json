@@ -1,0 +1,89 @@
+{
+  "$id": "regtrack/MY_ACT",
+  "additionalProperties": false,
+  "description": "ACT, CONSOLIDATED_RULES, BIS_REGULATION, ENERGY_STANDARD, FUEL_ORDER, APPROVED_LIST, REPORT, OFF_TOPIC...",
+  "properties": {
+    "date": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Date"
+    },
+    "file_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "File Name"
+    },
+    "issuer_text": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Issuer Text"
+    },
+    "ref_no": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ref No"
+    },
+    "references": {
+      "items": {
+        "type": "string"
+      },
+      "title": "References",
+      "type": "array"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Summary"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title"
+    }
+  },
+  "title": "MY_ACT (GenericData)",
+  "type": "object"
+}

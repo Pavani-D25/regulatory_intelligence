@@ -11,7 +11,7 @@ import re
 from datetime import date, datetime
 
 MY_SOURCES = {"MY_JPJ_VTA": "JPJ", "MY_JPJ_CTA": "JPJ", "MY_JPJ_AED": "JPJ", "MY_DOE_EMISSION": "DOE",
-              "MY_DOE_VTA_GUIDE": "DOE"}
+              "MY_DOE_VTA_GUIDE": "DOE", "MY_JPJ_ACTS": "JPJ", "MY_DOE_REGS": "DOE"}
 ISSUER = {"JPJ": "Road Transport Department (JPJ)", "DOE": "Department of Environment (DOE/JAS)"}
 PAGE_TITLE = re.compile(r"^\s*(.+?)\s+-\s+(?:Portal Rasmi JPJ|Department of Environment)\s*$", re.M)
 FORM = re.compile(r"\b(?:BORANG|FORM|APPLICATION[\s-]FORM)\b", re.I)
@@ -128,3 +128,43 @@ def doe_stages(text: str) -> list[dict]:
                     "legal_basis": "EQ (Control of Emissions from Diesel Engines) Regulations 1996", "effective_date": None,
                     "text": s.group(0)})
     return out
+
+
+# ------------------------------------------------------------------ legal texts (Acts, P.U.(A) regulations)
+PUA = re.compile(r"P\.\s*U\.\s*\(\s*A\s*\)\s*(\d{1,4})\s*/\s*(\d{4}|\d{2})(?!\d)")
+ACT = re.compile(r"\bAkta\s+(\d{2,4})\s+(AKTA\s+[A-Z][A-Z ]+?\s(\d{4}))\b")  # "Akta 333 AKTA PENGANGKUTAN JALAN 1987"
+REG_TITLE = re.compile(r"(PERATURAN-PERATURAN [A-Z][A-Z ()\-,]+?\s(?:\(PINDAAN\)\s)?\d{4})")
+MALAY_MONTH = {m: i for i, m in enumerate(("januari", "februari", "mac", "april", "mei", "jun", "julai", "ogos",
+                                           "september", "oktober", "november", "disember"), 1)}
+GAZETTED = re.compile(r"Tarikh diterbitkan dalam Warta\s*:?\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})", re.I)
+IN_FORCE = re.compile(r"Tarikh mula berkuat\s*kuasa\s*:?\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})", re.I)
+
+
+def malay_date(s: str | None) -> date | None:
+    m = re.fullmatch(r"(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", (s or "").strip())
+    if not m or m.group(2).lower() not in MALAY_MONTH:
+        return _date(s or "")  # English month names
+    try:
+        return date(int(m.group(3)), MALAY_MONTH[m.group(2).lower()], int(m.group(1)))
+    except ValueError:
+        return None
+
+
+def legal_identity(text: str) -> dict | None:
+    """A P.U.(A) regulation or an Act, from its own first page: canonical id (DB_DESIGN formats PUA-<n>-<yyyy>,
+    MY-ACT-<n>), title, dates. None for anything else (guidelines, forms)."""
+    head = re.sub(r"\s+", " ", text[:3000])
+    m = PUA.search(head)
+    if m:
+        n, y = int(m.group(1)), int(m.group(2))
+        year = y if y > 99 else (1900 + y if y > 50 else 2000 + y)
+        t = REG_TITLE.search(head[m.end():m.end() + 600])
+        g, f = GAZETTED.search(head), IN_FORCE.search(head)
+        return {"kind": "pua", "canonical_id": f"PUA-{n}-{year}", "number": str(n), "year": year,
+                "ref_no": f"P.U. (A) {n}/{m.group(2)}", "title": t.group(1).title() if t else None,
+                "published": malay_date(g.group(1)) if g else None, "in_force": malay_date(f.group(1)) if f else None}
+    m = ACT.search(head)
+    if m and "UNDANG-UNDANG MALAYSIA" in head.upper():
+        return {"kind": "act", "canonical_id": f"MY-ACT-{m.group(1)}", "number": m.group(1), "year": int(m.group(3)),
+                "ref_no": f"Akta {m.group(1)}", "title": m.group(2).title(), "published": None, "in_force": None}
+    return None

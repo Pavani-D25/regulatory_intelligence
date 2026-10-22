@@ -43,6 +43,8 @@ class DocClass(StrEnum):
     # Malaysia (migration 0017)
     MY_GUIDELINE = "MY_GUIDELINE"
     MY_FORM = "MY_FORM"
+    MY_ACT = "MY_ACT"                                        # migration 0019
+    MY_SUBSIDIARY_LEGISLATION = "MY_SUBSIDIARY_LEGISLATION"  # P.U.(A) rules, regulations, orders
 
     @property
     def is_notification(self) -> bool:
@@ -57,7 +59,8 @@ AIS_CLASSES = {c for c in DocClass if c.is_ais}
 NOTIFICATION_CLASSES = {c for c in DocClass if c.is_notification}
 THAI_CLASSES = frozenset({DocClass.TIS_STANDARD, DocClass.GAZETTE_NOTICE, DocClass.DLT_NOTIFICATION,
                           DocClass.MINISTERIAL_REGULATION, DocClass.NEWS})
-MALAYSIA_CLASSES = frozenset({DocClass.MY_GUIDELINE, DocClass.MY_FORM})
+MALAYSIA_CLASSES = frozenset({DocClass.MY_GUIDELINE, DocClass.MY_FORM, DocClass.MY_ACT,
+                              DocClass.MY_SUBSIDIARY_LEGISLATION})
 # what India's classifier may answer (the Qwen prompt and its schema list exactly these)
 INDIA_CLASSES = [c for c in DocClass if c not in THAI_CLASSES | MALAYSIA_CLASSES]
 

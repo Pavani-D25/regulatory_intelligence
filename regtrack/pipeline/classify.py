@@ -225,7 +225,11 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
     # ---- Malaysia: JPJ / DOE pages and the files they link (all automotive by source)
     my = malaysia.source_of(ctx.listings)
     if my:
-        dc = DocClass.MY_FORM if malaysia.is_form(ctx.names, eng) else DocClass.MY_GUIDELINE
+        leg = malaysia.legal_identity(full_text(ctx.pages)) if ctx.ext != "html" else None
+        if leg:  # an Act or a P.U.(A) regulation, by its own first page
+            dc = DocClass.MY_ACT if leg["kind"] == "act" else DocClass.MY_SUBSIDIARY_LEGISLATION
+        else:
+            dc = DocClass.MY_FORM if malaysia.is_form(ctx.names, eng) else DocClass.MY_GUIDELINE
         return ClassResult(dc, "final", malaysia.ISSUER[malaysia.MY_SOURCES[my]], rel, None, "rules", f"Malaysia {my}")
 
     # ---- source/folder rules for document families with a fixed home

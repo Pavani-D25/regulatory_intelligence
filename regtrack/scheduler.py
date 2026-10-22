@@ -26,7 +26,8 @@ CRAWLERS_BY_COUNTRY: dict[str, dict[str, str]] = {
     "IN": {"MORTH_API": "morth", "ARAI_AIS": "arai", "EGAZETTE": "egazette", "INDIACODE": "indiacode"},
     "TH": {"TH_TISI_MANDATORY": "thailand_tisi"},
     # one module for the five JPJ / DOE pages: its crawl(code) takes the source code
-    "MY": {c: "malaysia" for c in ("MY_JPJ_VTA", "MY_JPJ_CTA", "MY_JPJ_AED", "MY_DOE_EMISSION", "MY_DOE_VTA_GUIDE")},
+    "MY": {c: "malaysia" for c in ("MY_JPJ_VTA", "MY_JPJ_CTA", "MY_JPJ_AED", "MY_DOE_EMISSION", "MY_DOE_VTA_GUIDE",
+                                     "MY_JPJ_ACTS", "MY_DOE_REGS")},
 }
 CRAWLERS = CRAWLERS_BY_COUNTRY["IN"]  # India's; code that runs crawls uses crawlers()
 

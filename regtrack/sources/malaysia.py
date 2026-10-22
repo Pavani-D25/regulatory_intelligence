@@ -9,8 +9,10 @@ by their URL, like every other source.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import html as htmllib
+import json
 import logging
 import re
 from urllib.parse import urljoin, urlparse
@@ -27,11 +29,38 @@ PAGES = {
     "MY_JPJ_AED": "https://www.jpj.gov.my/en/jpj-service-information/automotive-engineering-division/",
     "MY_DOE_EMISSION": "https://www.doe.gov.my/en/emission-control-from-motor-vehicles/",
     "MY_DOE_VTA_GUIDE": "https://www.doe.gov.my/en/motor-vehicle-type-approval-guidelines-for-gas-and-noise-emissions/",
+    # the legal texts (migration 0019): each page shows its act / regulation PDF in a viewer widget
+    "MY_JPJ_ACTS": ["https://www.jpj.gov.my/akta-333/", "https://www.jpj.gov.my/akta-334-2/"],
+    "MY_DOE_REGS": [
+        "https://www.doe.gov.my/en/environmental-quality-control-of-emissions-from-petrol-engines-regulations-1996-p-u-a-543-96/",
+        "https://www.doe.gov.my/en/environmental-quality-control-of-emissions-from-diesel-engines-regulations-1996-p-u-a-429-96/",
+        "https://www.doe.gov.my/en/environmental-quality-control-emissions-from-diesel-engines-amendment-regulations-2000-p-u-a-488-2000/",
+        "https://www.doe.gov.my/en/environmental-quality-control-of-emissions-from-motorcycles-regulations-2003-p-u-a-464-2003/",
+    ],
 }
 DOC_LINK = re.compile(r"""href=["']([^"']+\.(?:pdf|docx?|xlsx?))["'][^>]*>(.*?)</a>""", re.I | re.S)
 TITLE = re.compile(r"<title>(.*?)</title>", re.I | re.S)
 # the page's own content ends where the shared footer begins
 FOOTER = re.compile(r"Contact Information|Contact Us|Hubungi Kami", re.I)
+# PDF viewer widgets: their settings, in the page itself, give the PDF's public URL (no token, no session)
+FB3D_DATA = re.compile(r"FB3D_CLIENT_DATA\.push\('([A-Za-z0-9+/=]+)'\)")      # JPJ: 3D FlipBook, base64 JSON
+DEARFLIP = re.compile(r"window\.option_df_\d+ = (\{.*?\});", re.S)             # DOE: DearFlip options
+
+
+def viewer_pdfs(html: str) -> list[str]:
+    out = []
+    for b in FB3D_DATA.findall(html):
+        try:
+            posts = json.loads(base64.b64decode(b)).get("posts", {})
+        except ValueError:
+            continue
+        out += [(v.get("data") or {}).get("guid") for v in posts.values() if v.get("type") == "pdf"]
+    for o in DEARFLIP.findall(html):
+        try:
+            out.append(json.loads(o).get("source"))
+        except ValueError:
+            continue
+    return [u for u in out if u and u.lower().endswith(".pdf")]
 
 
 def page_text(raw: bytes) -> str:
@@ -64,7 +93,9 @@ def page_listing(code: str, url: str, raw: bytes) -> tuple[Listing, list[Listing
     host = urlparse(url).netloc
     seen: set[str] = set()
     files: list[Listing] = []
-    for href, label in DOC_LINK.findall(raw.decode("utf-8", errors="ignore")):
+    html = raw.decode("utf-8", errors="ignore")
+    links = DOC_LINK.findall(html) + [(u, title or "") for u in viewer_pdfs(html)]
+    for href, label in links:
         link = urljoin(url, href)
         if urlparse(link).netloc != host or link in seen:
             continue
@@ -76,6 +107,7 @@ def page_listing(code: str, url: str, raw: bytes) -> tuple[Listing, list[Listing
 
 
 CRAWLS_BY_CODE = True  # regtrack.scheduler calls crawl(<source code>)
+VIEWER_SOURCES = {"MY_JPJ_ACTS", "MY_DOE_REGS"}
 
 
 def crawl(code: str | None = None) -> dict:
@@ -86,21 +118,23 @@ def crawl(code: str | None = None) -> dict:
         return {k: crawl_source(c, k, u) for k, u in PAGES.items()}
 
 
-def crawl_source(c, code: str, url: str) -> dict:
+def crawl_source(c, code: str, urls: str | list[str]) -> dict:
     stats = RunStats()
     with connect() as conn:
         run_id = start_run(conn, code)
         notes: list[str] = []
         status = "failed"
         try:
-            r = http.get(c, url)
-            if r.status_code != 200:
-                raise RuntimeError(f"HTTP {r.status_code} for {url}")
-            page, files = page_listing(code, url, r.content)
             seen = set()
-            for lst in [page, *files]:
-                seen.add(lst.item_id)
-                record_listing(conn, c, code, run_id, lst, stats)
+            for url in [urls] if isinstance(urls, str) else urls:
+                r = http.get(c, url)
+                if r.status_code != 200:
+                    raise RuntimeError(f"HTTP {r.status_code} for {url}")
+                page, files = page_listing(code, url, r.content)
+                # a legal-text page is only a viewer around its PDF: the PDF is the document
+                for lst in files if code in VIEWER_SOURCES else [page, *files]:
+                    seen.add(lst.item_id)
+                    record_listing(conn, c, code, run_id, lst, stats)
             # an older version of the page is no longer published once its content hash changed
             stats.gone = mark_gone(conn, code, seen)
             status = "ok" if not stats.errors else "partial"

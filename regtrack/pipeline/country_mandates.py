@@ -93,6 +93,13 @@ RULES: dict[str, list[tuple[str, str, object]]] = {
     ],
     "MY": [
         ("MY-01", "primary", _src("MY_JPJ_VTA")),
+        ("MY-01", "supporting", _id("MY-ACT-333")),         # Road Transport Act 1987: registration needs approval
+        ("MY-16", "primary", _id("MY-ACT-333")),
+        ("MY-03", "primary", _id("PUA-543-1996")),          # EQ (Control of Emissions from Petrol Engines) 1996
+        ("MY-04", "primary", _id("PUA-429-1996", "PUA-488-2000")),  # Diesel Engines 1996 + amendment 2000
+        ("MY-05", "supporting", _id("PUA-429-1996", "PUA-488-2000")),
+        ("MY-06", "supporting", _id("PUA-464-2003")),       # Motorcycles 2003 (the motorcycle route)
+        ("MY-07", "supporting", _id("PUA-464-2003")),
         ("MY-16", "primary", _src("MY_JPJ_VTA")),
         ("MY-02", "primary", _src("MY_JPJ_CTA")),
         ("MY-03", "primary", _src("MY_DOE_EMISSION")),
