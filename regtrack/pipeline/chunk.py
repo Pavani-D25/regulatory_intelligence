@@ -181,7 +181,9 @@ def embed_pending(conn: psycopg.Connection, batch: int = 64, limit: int | None =
     while True:
         rows = conn.execute(f"SELECT id, content, heading FROM document_chunks c WHERE embedding IS NULL "
                             f"AND language='en' AND {country.region_sql('c')} "
-                            "ORDER BY is_boilerplate, id LIMIT %s", (batch,)).fetchall()
+                            # what the portal searches first: current, in-scope text, then the rest
+                            "ORDER BY (in_scope AND is_current) IS NOT TRUE, is_boilerplate, id LIMIT %s",
+                            (batch,)).fetchall()
         if not rows:
             break
         try:

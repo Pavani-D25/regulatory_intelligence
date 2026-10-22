@@ -152,7 +152,7 @@ if ($Files) {
 
 # ---------------------------------------------------------------- 5. data
 Step "Data"
-$docs = & $Py -c "from regtrack.db import connect; print(connect().execute('select count(*) AS n from document').fetchone()['n'])" 2>$null
+$docs = & $Py -c "from regtrack.db import connect; print(connect().execute('select count(*) AS n from documents').fetchone()['n'])" 2>$null
 if (-not $docs) { $docs = 0 } else { $docs = ("$docs").Trim() }
 if ([int]$docs -gt 0) {
     Ok "$docs documents in the database"

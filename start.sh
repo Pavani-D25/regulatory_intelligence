@@ -132,7 +132,7 @@ if [ -n "$FILES" ]; then [ -f "$FILES" ] || fail "files zip not found: $FILES"; 
 
 # ---------------------------------------------------------------- 5. data
 step "Data"
-DOCS="$("$PY" -c "from regtrack.db import connect; print(connect().execute('select count(*) AS n from document').fetchone()['n'])" 2>/dev/null | tr -d '[:space:]')"
+DOCS="$("$PY" -c "from regtrack.db import connect; print(connect().execute('select count(*) AS n from documents').fetchone()['n'])" 2>/dev/null | tr -d '[:space:]')"
 if [ "${DOCS:-0}" -gt 0 ] 2>/dev/null; then ok "$DOCS documents in the database"
 else
   SEED="$("$PY" -c 'from regtrack.config import get_settings; print(get_settings().seed_corpus_dir)')"
