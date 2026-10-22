@@ -984,3 +984,37 @@ def portal_meta(cc: CountryParam = None) -> dict:
             "scheduler": scheduler_status(settings),
             "categories": [{"code": c, "label": vocab["cat_label"].get(c, c)} for c in vocab["categories"]],
             "statuses": STATUSES, "domains": [{"code": k, "label": v} for k, v in vocab["domain_label"].items()]}
+
+
+# ====================================================================== client regulatory register (TH / MY)
+REQ_SQL = """SELECT x.id, x.code, x.topic, x.requirement_text, x.applies_to, x.authority, x.source_url, x.source_name,
+                    x.client_status, x.caution
+             FROM client_requirements x WHERE x.region_id = (SELECT id FROM regions WHERE code = %s) ORDER BY x.code"""
+REQ_LINK_SQL = """SELECT l.requirement_id, l.role, g.external_code AS canonical_id, coalesce(g.summary, g.title) AS subject,
+                         g.local_class AS doc_class, g.in_scope,
+                         (SELECT count(*) FROM requirement_versions v WHERE v.valid_to IS NULL
+                            AND (v.source_regulation_id = g.id OR g.id = ANY(v.standard_regulation_ids))) AS mandates
+                  FROM client_requirement_regulations l JOIN regulations g ON g.id = l.regulation_id
+                  JOIN client_requirements x ON x.id = l.requirement_id
+                  WHERE x.region_id = (SELECT id FROM regions WHERE code = %s) AND l.role <> 'rejected'
+                  ORDER BY CASE l.role WHEN 'primary' THEN 0 WHEN 'supporting' THEN 1 ELSE 2 END, g.external_code"""
+
+
+@router.get("/requirements")
+def requirements(cc: CountryParam = None) -> dict:
+    """The client's regulatory register, each row with the stored regulations that cover it (rules-matched)."""
+    cc = resolve_country(cc)
+    with connect() as conn:
+        rows = _rows(conn, REQ_SQL, (cc,))
+        links = _rows(conn, REQ_LINK_SQL, (cc,))
+    by_req: dict[int, list[dict]] = {}
+    for link in links:
+        by_req.setdefault(link.pop("requirement_id"), []).append(link)
+    for r in rows:
+        r["regulations"] = by_req.get(r.pop("id"), [])
+        roles = {x["role"] for x in r["regulations"]}
+        r["coverage"] = "Covered" if "primary" in roles else "Partial" if roles else "Gap"
+        r["mandates"] = sum(x["mandates"] for x in r["regulations"])
+    count = {s: sum(1 for r in rows if r["coverage"] == s) for s in ("Covered", "Partial", "Gap")}
+    return {"kpis": {"requirements": len(rows), **{k.lower(): v for k, v in count.items()},
+                     "covered_pct": round(100 * count["Covered"] / (len(rows) or 1))}, "rows": rows}

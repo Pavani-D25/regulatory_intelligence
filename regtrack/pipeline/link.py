@@ -22,6 +22,7 @@ import psycopg
 from regtrack import country
 from regtrack.db import Jsonb
 from regtrack.models.enums import DocClass, FlagRule
+from regtrack.pipeline import country_mandates as CM
 from regtrack.pipeline import mandates as M
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline import repo as R
@@ -221,6 +222,10 @@ def stage_link(conn: psycopg.Connection, f: dict) -> str:
                     M.finalise_drafts(conn, doc["id"], rel["to_regulation_id"], doc["doc_date"])
         elif dc.is_ais:
             link_ais(conn, doc)
+        elif dc == DocClass.TIS_STANDARD:
+            CM.tis_mandate(conn, doc)
+        elif dc == DocClass.MY_GUIDELINE:
+            CM.my_mandates(conn, doc, english_text(pages, df["page_from"], df["page_to"]))
         if doc["family_key"]:
             families.add(doc["family_key"])
     for fam in families:

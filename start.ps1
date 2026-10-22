@@ -214,7 +214,11 @@ function Launch($title, $command) {
     Start-Process powershell -ArgumentList "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $cmd -WindowStyle Minimized | Out-Null
 }
 Launch "API" "& '$Py' -m regtrack.cli api"
-if (-not $NoSchedule) { Launch "auto-sync" "& '$Py' -m regtrack.cli schedule" }
+# one auto-sync per country (a scheduler serves the country in REGTRACK_COUNTRY); their pipeline runs share one
+# database advisory lock, so they never overlap
+if (-not $NoSchedule) {
+    foreach ($cc in @("IN", "TH", "MY")) { Launch "auto-sync $cc" "`$env:REGTRACK_COUNTRY='$cc'; & '$Py' -m regtrack.cli schedule" }
+}
 Launch "portal" "Set-Location dashboard; npm run dev"
 
 $up = $false

@@ -16,6 +16,7 @@ from regtrack import country
 from regtrack.db import connect
 from regtrack.pipeline import alerts as A
 from regtrack.pipeline import chunk as C
+from regtrack.pipeline import country_mandates as CM
 from regtrack.pipeline import events as E
 from regtrack.pipeline import extract as X
 from regtrack.pipeline import link as L
@@ -94,6 +95,7 @@ def post_run() -> dict:
         # country-neutral fields of regulations (doc_type, doc_role, legal_force, local name, language) and the
         # rule-based impact: one SQL definition in the database (migrations 0008, 0010); before the chunk sync, which
         # copies doc_type to the chunks
+        out["requirement_links"] = CM.match_requirements(conn)  # the client register (TH / MY) -> regulations
         out["regulation_fields"] = conn.execute("SELECT refresh_regulation_fields(%s) AS n",
                                                 (country.code(),)).fetchone()["n"]
         out["chunk_filters_synced"] = C.sync_chunk_filters(conn)

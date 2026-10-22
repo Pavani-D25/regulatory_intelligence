@@ -4,12 +4,12 @@ import { api, docPath, familyPath, fileUrl, portal, setApiCountry } from "../api
 import "./portal.css";
 import { ago, Badge, fmt, fmtTime } from "./ui";
 
-export const COUNTRIES = [["IN", "India"], ["TH", "Thailand"]];
+export const COUNTRIES = [["IN", "India"], ["TH", "Thailand"], ["MY", "Malaysia"]];
 
 // views of the approved design, in its order; "Tools" are the earlier RegTrack pages kept reachable
 const NAV = [
   ["/", "▦", "Dashboard"], ["/regulations", "≡", "Regulations"], ["/changes", "↻", "Change Monitor"],
-  ["/compliance", "✓", "Compliance Matrix"], ["/impact", "⌁", "Impact View"], ["/ai", "✦", "Ask Regulatory AI"],
+  ["/compliance", "✓", "Compliance Matrix"], ["/requirements", "▥", "Requirements Register"], ["/impact", "⌁", "Impact View"], ["/ai", "✦", "Ask Regulatory AI"],
   ["/reports", "▤", "Reports"], ["/alerts", "◉", "Alerts"], ["/team", "◍", "Teams"], ["/admin", "⚙", "Admin"],
 ];
 const TOOLS = [["/vehicle", "◎", "Vehicle Check"], ["/versions", "⇄", "Versions"]];

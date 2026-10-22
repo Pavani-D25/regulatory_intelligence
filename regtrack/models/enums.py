@@ -40,6 +40,9 @@ class DocClass(StrEnum):
     DLT_NOTIFICATION = "DLT_NOTIFICATION"
     MINISTERIAL_REGULATION = "MINISTERIAL_REGULATION"
     NEWS = "NEWS"
+    # Malaysia (migration 0017)
+    MY_GUIDELINE = "MY_GUIDELINE"
+    MY_FORM = "MY_FORM"
 
     @property
     def is_notification(self) -> bool:
@@ -54,8 +57,9 @@ AIS_CLASSES = {c for c in DocClass if c.is_ais}
 NOTIFICATION_CLASSES = {c for c in DocClass if c.is_notification}
 THAI_CLASSES = frozenset({DocClass.TIS_STANDARD, DocClass.GAZETTE_NOTICE, DocClass.DLT_NOTIFICATION,
                           DocClass.MINISTERIAL_REGULATION, DocClass.NEWS})
+MALAYSIA_CLASSES = frozenset({DocClass.MY_GUIDELINE, DocClass.MY_FORM})
 # what India's classifier may answer (the Qwen prompt and its schema list exactly these)
-INDIA_CLASSES = [c for c in DocClass if c not in THAI_CLASSES]
+INDIA_CLASSES = [c for c in DocClass if c not in THAI_CLASSES | MALAYSIA_CLASSES]
 
 
 # ---- country-neutral classification (migration 0006, docs/CLASSIFICATION_DESIGN.md); the per-country mapping
@@ -198,6 +202,7 @@ IN_SCOPE_CATEGORIES_BY_COUNTRY: dict[str, tuple[str, ...]] = {
     "IN": ("L1", "L2", "M1", "N1", "ALL"),
     # UNECE L2 = three-wheeled moped, not India's L2 meaning (motorcycle); Thailand's motorcycle-equivalent is L3
     "TH": ("L1", "L3", "M1", "N1", "ALL"),
+    "MY": ("L1", "L3", "M1", "N1", "ALL"),  # UNECE meanings, like Thailand
 }
 
 

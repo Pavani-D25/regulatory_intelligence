@@ -23,9 +23,9 @@ from regtrack.config import get_settings
 from regtrack.db import Jsonb
 from regtrack.models import model_for
 from regtrack.models.enums import DocClass, FlagRule, Status
+from regtrack.pipeline import malaysia, thai
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline import repo as R
-from regtrack.pipeline import thai
 from regtrack.pipeline.dbutil import add_flag
 from regtrack.pipeline.text import PageText, english_text, full_text, load_pages
 from regtrack.storage import open_local
@@ -369,7 +369,20 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         cols["subject"] = data.get("title")
         cats = thai.categories_of(allt)
         text_for_tags = ""
+        cols["domains"], cols["powertrains"] = thai.domains_of(allt), thai.powertrains_of(allt)
+        if data.get("effective_date"):
+            cols["effective_date"] = date.fromisoformat(data["effective_date"])  # วันที่มีผลบังคับใช้
         conf["subject"] = 0.9 if cols["subject"] else 0.0
+    elif dc in (DocClass.MY_GUIDELINE, DocClass.MY_FORM):
+        # a JPJ / DOE page (its own <title>) or a linked PDF/DOCX; UNECE category words (malaysia.py)
+        g = generic_fields(eng, names[0] if names else "")
+        title = malaysia.page_title(eng) or g.get("title")
+        refs = [f"{c['component']}: {', '.join(c['refs'])}" for c in malaysia.cta_components(eng)]
+        data.update({k: v for k, v in {"title": title, "references": refs, "file_name": names[0] if names else None}.items()
+                     if v not in (None, [], {})})
+        cols["subject"] = title
+        cats = malaysia.categories_of(eng[:20000])
+        text_for_tags = eng[:30000]
     else:
         g = generic_fields(eng, names[0] if names else "")
         model_keys = set(model_for(dc).model_fields)
@@ -385,7 +398,7 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
                 cols["subject"] = re.sub(r"\s+", " ", m.group(1)).title()
         cats = categories_of(eng[:20000]) if dc != DocClass.OFF_TOPIC else []
         text_for_tags = eng[:30000]
-    if dc != DocClass.OFF_TOPIC:
+    if dc not in (DocClass.OFF_TOPIC, DocClass.TIS_STANDARD):
         cols["usage"] = P.find_usage(text_for_tags[:30000])
         cols["powertrains"] = P.find_powertrains(text_for_tags[:30000], min_hits=2)
         cols["domains"] = find_domains(text_for_tags)

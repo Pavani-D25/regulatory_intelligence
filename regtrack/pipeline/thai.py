@@ -120,3 +120,22 @@ def fields_of(text: str) -> dict:
     return {"title": title_of(text), "tis_no": n.get("tis_no"), "year_be": n.get("year_be"),
             "effective_date": eff_date.isoformat() if eff_date else None, "scope_text": scope_of(text),
             "hs_codes": sorted(set(HS_CODE.findall(text)))}
+
+
+# domains and powertrains from the Thai title + scope (the English vocabularies of regtrack/vocab.py do not apply)
+DOMAIN_WORDS = [("EMISSION", re.compile(r"สารมลพิษ|ไอเสีย")),
+                ("SAFETY_EQUIPMENT", re.compile(r"ยางล้อ|ยางใน|เข็มขัดนิรภัย|หมวกนิรภัย|กระจกนิรภัย")),
+                ("EV_ALT_FUEL", re.compile(r"ก๊าซธรรมชาติ|ก๊าซปิโตรเลียมเหลว"))]
+POWERTRAIN_WORDS = [("petrol", re.compile(r"จุดระเบิดด้วยประกายไฟ")), ("diesel", re.compile(r"จุดระเบิดด้วยการอัด")),
+                    ("cng", re.compile(r"ก๊าซธรรมชาติ")), ("lpg", re.compile(r"ก๊าซปิโตรเลียมเหลว"))]
+
+
+def domains_of(text: str) -> list[str]:
+    """Every mandatory TIS needs TISI certification (TYPE_APPROVAL), plus the subject's own domain."""
+    head = f"{title_of(text) or ''} {scope_of(text) or ''}"
+    return ["TYPE_APPROVAL"] + [d for d, rx in DOMAIN_WORDS if rx.search(head)]
+
+
+def powertrains_of(text: str) -> list[str]:
+    head = f"{title_of(text) or ''} {scope_of(text) or ''}"
+    return [p for p, rx in POWERTRAIN_WORDS if rx.search(head)]

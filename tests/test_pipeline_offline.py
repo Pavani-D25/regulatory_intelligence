@@ -324,3 +324,52 @@ def test_thai_dates():
     assert parse_thai_date("1 ม.ค. 68") == date(2025, 1, 1)
     assert parse_thai_date("ไม่ระบุ") is None
     assert tis_number("มอก.60947 เล่ม 2-2569")["canonical_id"] == "TIS-60947(Part2)-2569"
+
+
+# ---------------------------------------------------------------- Malaysia: JPJ / DOE pages
+def my_text(name: str) -> str:
+    return english_text(extract(FX / name, "html").pages)
+
+
+def test_my_cta_component_table():
+    from regtrack.pipeline import malaysia
+
+    comps = {c["component"]: c for c in malaysia.cta_components(my_text("my_jpj_cta.html"))}
+    assert len(comps) == 11
+    assert comps["Protective Helmet"]["refs"][0] == "UNR-22" and comps["Protective Helmet"]["vehicle_categories"] == ["L1", "L3"]
+    assert comps["Safety Seatbelts"]["refs"] == ["UNR-16"]
+    assert {"UNR-54", "UNR-108", "UNR-109"} <= set(comps["New Pneumatic Tyres & New Retreaded Pneumatic Tyres"]["refs"])
+
+
+def test_my_doe_type_approval_stages():
+    from regtrack.pipeline import malaysia
+
+    st = {s["key"]: s for s in malaysia.doe_stages(my_text("my_doe_emission.html"))}
+    assert st["MY-DOE-TA-PETROL"]["effective_date"] == date(2000, 1, 1)
+    assert st["MY-DOE-TA-DIESEL"]["effective_date"] == date(1997, 1, 1)  # "diesel vehicles" inside the text is no heading
+    assert "Second Schedule" in st["MY-DOE-TA-DIESEL"]["legal_basis"]
+    assert "50% opacity" in st["MY-DOE-INUSE-DIESEL-SMOKE"]["subject"]
+
+
+def test_my_classify_and_identity():
+    r = extract(FX / "my_jpj_cta.html", "html")
+    ctx = FileCtx(None, "3" * 64, "html", ["05_x"], ["component-type-approval-cta.html"], r.pages, r.page_count,
+                  r.text_layer, [], [{"source": "MY_JPJ_CTA", "title": "x", "date": None, "category": "page", "raw": {}}])
+    fa = identify(ctx)
+    assert fa.cls.doc_class == DocClass.MY_GUIDELINE
+    assert fa.canonical_id == "MY-JPJ-COMPONENT-TYPE-APPROVAL-CTA"
+
+
+def test_my_page_hash_ignores_counters():
+    from regtrack.sources.malaysia import page_listing
+
+    url = "https://www.doe.gov.my/en/emission-control-from-motor-vehicles/"
+    raw = (FX / "my_doe_emission.html").read_bytes()
+    assert b"<code>22 October 2026 @ 4:39 pm</code>" in raw  # the stamp changes on every request
+    a, _ = page_listing("MY_DOE_EMISSION", url, raw)
+    b, _ = page_listing("MY_DOE_EMISSION", url, raw.replace(b"22 October 2026 @ 4:39 pm", b"23 October 2026 @ 9:30 am"))
+    c, _ = page_listing("MY_DOE_EMISSION", url, raw.replace(b"1 January 1997", b"1 January 1998"))
+    assert a.item_id == b.item_id != c.item_id  # only a change of the page's own content is a new version
+    _, files = page_listing("MY_JPJ_CTA", "https://www.jpj.gov.my/en/component-type-approval-cta/",
+                            (FX / "my_jpj_cta.html").read_bytes())
+    assert {f.file_name for f in files} == {"BORANG-PERMOHONAN-CTA-2021.rev0_.pdf", "Garis-Panduan-CTA-2020.pdf"}

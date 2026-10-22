@@ -25,6 +25,8 @@ _lock = threading.Lock()  # one pipeline run at a time
 CRAWLERS_BY_COUNTRY: dict[str, dict[str, str]] = {
     "IN": {"MORTH_API": "morth", "ARAI_AIS": "arai", "EGAZETTE": "egazette", "INDIACODE": "indiacode"},
     "TH": {"TH_TISI_MANDATORY": "thailand_tisi"},
+    # one module for the five JPJ / DOE pages: its crawl(code) takes the source code
+    "MY": {c: "malaysia" for c in ("MY_JPJ_VTA", "MY_JPJ_CTA", "MY_JPJ_AED", "MY_DOE_EMISSION", "MY_DOE_VTA_GUIDE")},
 }
 CRAWLERS = CRAWLERS_BY_COUNTRY["IN"]  # India's; code that runs crawls uses crawlers()
 
@@ -41,7 +43,8 @@ def crawl_source(code: str, cc: str | None = None) -> dict:
         raise ValueError(f"no crawler for {code} in country {country.code(cc)}")
     import importlib
 
-    return importlib.import_module(f"regtrack.sources.{mods[code]}").crawl()
+    mod = importlib.import_module(f"regtrack.sources.{mods[code]}")
+    return mod.crawl(code) if getattr(mod, "CRAWLS_BY_CODE", False) else mod.crawl()
 
 
 PIPELINE_LOCK = 774201  # pg advisory lock: one pipeline run at a time across processes (scheduler, API sync)

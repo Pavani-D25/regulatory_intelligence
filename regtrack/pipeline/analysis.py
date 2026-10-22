@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from regtrack.models.enums import DocClass
+from regtrack.pipeline import malaysia, thai
 from regtrack.pipeline import patterns as P
-from regtrack.pipeline import thai
 from regtrack.pipeline.classify import DRAFT_CITE, ClassResult, FileCtx, classify
 from regtrack.pipeline.identity import (
     Identity,
@@ -143,7 +143,13 @@ def identify(ctx: FileCtx) -> FileAnalysis:
         n = thai.tis_number(allt)  # the page's own มอก. heading, not the listing title
         if n:
             ident = Identity(kind="tis", canonical_id=n["canonical_id"], series="TIS", number=n["number"],
-                             part=n["part"], year=n["year"], family_key=n["family_key"], evidence=n["tis_no"])
+                             part=n["part"], year=n["year"], family_key=n["family_key"], evidence=n["tis_no"],
+                             doc_date=date(n["year"], 1, 1), doc_date_precision="year")  # the edition year
+    elif dc in (DocClass.MY_GUIDELINE, DocClass.MY_FORM):
+        src = malaysia.source_of(ctx.listings)
+        if src:
+            n = malaysia.identity(src, ctx.ext, ctx.names, allt)
+            ident = Identity(kind="my", canonical_id=n["canonical_id"], series="MY", evidence=n["title"])
     elif dc in (DocClass.ENERGY_STANDARD, DocClass.FUEL_ORDER, DocClass.CIRCULAR_OM, DocClass.GUIDELINE_POLICY,
                 DocClass.BIS_REGULATION) and n_ident:
         ident = n_ident  # (Acts and consolidated rule texts reproduce other notifications: no notification identity)

@@ -85,6 +85,8 @@ def ext_from(content: bytes, url: str, ctype: str | None) -> str:
         return "docx" if url.lower().endswith(".docx") or "word" in (ctype or "") else normalise_ext(url) or "zip"
     if content[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
         return "doc"
+    if content[:1024].lstrip()[:15].lower().startswith((b"<!doctype html", b"<html")):
+        return "html"  # a page fetched by the crawler itself (no content-type passed along)
     if ctype:
         guess = mimetypes.guess_extension(ctype.split(";")[0].strip())
         if guess:

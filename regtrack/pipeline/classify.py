@@ -13,8 +13,8 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from regtrack.models.enums import INDIA_CLASSES, DocClass, Nature
+from regtrack.pipeline import malaysia, thai
 from regtrack.pipeline import patterns as P
-from regtrack.pipeline import thai
 from regtrack.pipeline.text import PageText, english_text, full_text
 
 # folder priority when the same bytes sit in several folders
@@ -219,6 +219,12 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
         if thai.is_automotive(cat, allt):
             return ClassResult(DocClass.TIS_STANDARD, "final", "TISI", rel, None, "rules", f"TISI automotive ({cat})")
         return ClassResult(DocClass.OFF_TOPIC, "final", "TISI", rel, None, "rules", f"TISI non-automotive ({cat})")
+
+    # ---- Malaysia: JPJ / DOE pages and the files they link (all automotive by source)
+    my = malaysia.source_of(ctx.listings)
+    if my:
+        dc = DocClass.MY_FORM if malaysia.is_form(ctx.names, eng) else DocClass.MY_GUIDELINE
+        return ClassResult(dc, "final", malaysia.ISSUER[malaysia.MY_SOURCES[my]], rel, None, "rules", f"Malaysia {my}")
 
     # ---- source/folder rules for document families with a fixed home
     if fo == "28":

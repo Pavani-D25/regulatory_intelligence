@@ -7,6 +7,7 @@ import Dashboard from "./portal/pages/Dashboard";
 import Regulations from "./portal/pages/Regulations";
 import ChangeMonitor from "./portal/pages/ChangeMonitor";
 import Compliance from "./portal/pages/Compliance";
+import Requirements from "./portal/pages/Requirements";
 import Impact from "./portal/pages/Impact";
 import AskAI from "./portal/pages/AskAI";
 import Reports from "./portal/pages/Reports";
@@ -30,6 +31,7 @@ createRoot(document.getElementById("root")).render(
           <Route path="regulations" element={<Regulations />} />
           <Route path="changes" element={<ChangeMonitor />} />
           <Route path="compliance" element={<Compliance />} />
+          <Route path="requirements" element={<Requirements />} />
           <Route path="impact" element={<Impact />} />
           <Route path="ai" element={<AskAI />} />
           <Route path="reports" element={<Reports />} />

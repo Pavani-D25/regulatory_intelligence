@@ -10,7 +10,7 @@ from datetime import date
 import psycopg
 import pytest
 
-from regtrack.models.enums import THAI_CLASSES, DocClass, DocRole, DocType, LegalForce
+from regtrack.models.enums import MALAYSIA_CLASSES, THAI_CLASSES, DocClass, DocRole, DocType, LegalForce
 
 pytestmark = pytest.mark.db
 
@@ -48,7 +48,7 @@ def test_every_doc_class_has_a_meaning(conn):
     rows = {(r["cc"], r["code"]): r for r in conn.execute(
         "SELECT r.code AS cc, c.* FROM document_classes c JOIN regions r ON r.id=c.region_id")}
     for dc in DocClass:
-        cc = "TH" if dc in THAI_CLASSES else "IN"
+        cc = "TH" if dc in THAI_CLASSES else "MY" if dc in MALAYSIA_CLASSES else "IN"
         assert (cc, dc.value) in rows, f"document_classes has no row for {cc} {dc.value}"
     assert {r["doc_type"] for r in rows.values()} <= {t.value for t in DocType}
     assert {r["doc_role"] for r in rows.values() if r["doc_role"]} <= {t.value for t in DocRole}
