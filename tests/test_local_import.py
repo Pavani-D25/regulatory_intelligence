@@ -93,3 +93,14 @@ def test_tesseract_thai_spacing_and_confidence():
     assert thai.tis_number(text)["canonical_id"] == "TIS-341-2528"  # "มอก ." as Tesseract writes it
     assert heuristic_confidence("มาตรฐานผลิตภัณฑ์อุตสาหกรรม ท่อไอเสียรถจักรยานยนต์ ที่ต้องเป็นไปตามมาตรฐาน") > 0.8
     assert heuristic_confidence("ราคพอ «8 ว๒ 08 หห 071080 ช 0105 5 พฐแบราร «= ฆ <") < 0.8  # OCR junk scores lower
+
+
+def test_thai_pages_are_chunked_with_their_language():
+    from regtrack.pipeline.chunk import chunk_language, chunk_pages
+    from regtrack.pipeline.text import PageText
+
+    thai_page = PageText(1, "1. ขอบข่าย\n" + "มาตรฐานผลิตภัณฑ์อุตสาหกรรมนี้ครอบคลุมท่อไอเสียรถจักรยานยนต์ " * 8).analyse()
+    assert chunk_pages([thai_page]) == []  # India's rule: English pages only
+    chunks = chunk_pages([thai_page], all_scripts=True)  # Thailand / Malaysia: every page with text
+    assert chunks and chunk_language(chunks[0].content) == "th"
+    assert chunk_language("This marking shall only be mandatory for tyre types") == "en"

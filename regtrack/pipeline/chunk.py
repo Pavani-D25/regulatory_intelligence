@@ -54,8 +54,19 @@ def _lines_with_pages(pages: list[PageText]) -> list[tuple[int, str]]:
     return out
 
 
-def chunk_pages(pages: list[PageText], notification: bool = False) -> list[Chunk]:
-    eng = [p for p in pages if p.is_english]
+LOCAL_SCRIPT_COUNTRIES = {"TH", "MY"}  # their documents are in Thai / Malay: every text page is chunked
+THAI_CHAR = re.compile("[ก-๛]")
+
+
+def chunk_language(text: str) -> str:
+    """'th' for a mostly-Thai passage, else 'en' (English, and Malay in Latin script)."""
+    return "th" if len(THAI_CHAR.findall(text)) > len(re.findall(r"[A-Za-z]", text)) else "en"
+
+
+def chunk_pages(pages: list[PageText], notification: bool = False, all_scripts: bool = False) -> list[Chunk]:
+    """English pages (India: Hindi pages are never chunked), or with all_scripts every page with text (Thai, Malay)."""
+    eng = ([p for p in pages if p.chars and p.lang not in ("hi", "hi_legacy", "empty")] if all_scripts
+           else [p for p in pages if p.is_english])
     if not eng:
         return []
     lines = _lines_with_pages(eng)
@@ -113,12 +124,17 @@ def stage_chunk(conn: psycopg.Connection, f: dict) -> str:
             continue
         a, b = df["page_from"] or 1, df["page_to"] or (pages[-1].page if pages else 1)
         sel = [p for p in pages if a <= p.page <= b]
-        chunks = chunk_pages(sel, notification=doc["doc_class"].startswith("NOTIFICATION"))
+        chunks = chunk_pages(sel, notification=doc["doc_class"].startswith("NOTIFICATION"),
+                             all_scripts=(doc.get("country") or "").upper() in LOCAL_SCRIPT_COUNTRIES)
         old = [r["content"] for r in conn.execute(
             "SELECT content FROM document_chunks WHERE regulation_id=%s AND document_id=%s ORDER BY chunk_index",
             (doc["id"], f["id"]))]
         if old and old != [c.content for c in chunks]:
             # the document's page range changed (e.g. a re-split found another amendment): rebuild its chunks
+            # an Ask AI answer that cited one of the old chunks keeps its regulation, loses only the chunk link
+            conn.execute("""UPDATE assistant_message_citations SET document_chunk_id=NULL WHERE document_chunk_id IN
+                            (SELECT id FROM document_chunks WHERE regulation_id=%s AND document_id=%s)""",
+                         (doc["id"], f["id"]))
             conn.execute("DELETE FROM document_chunks WHERE regulation_id=%s AND document_id=%s", (doc["id"], f["id"]))
         write_chunks(conn, doc, f["id"], chunks, offset_for(conn, doc["id"], f["id"]))
     set_stage(conn, f["id"], "chunked")
@@ -156,9 +172,10 @@ def write_chunks(conn: psycopg.Connection, doc: dict, file_id: int, chunks: list
         r = conn.execute(
             f"""INSERT INTO document_chunks (regulation_id, document_id, chunk_index, clause_no, heading, page_from, page_to,
                                              language, is_boilerplate, content, {', '.join(FILTER_COLS)})
-               VALUES (%s,%s,%s,%s,%s,%s,%s,'en',%s,%s,{', '.join(['%s'] * len(FILTER_COLS))})
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,{', '.join(['%s'] * len(FILTER_COLS))})
                ON CONFLICT (regulation_id, chunk_index) DO NOTHING RETURNING id""",
-            (doc["id"], file_id, offset + c.index, c.clause_no, c.heading, c.page_from, c.page_to, c.is_boilerplate,
+            (doc["id"], file_id, offset + c.index, c.clause_no, c.heading, c.page_from, c.page_to,
+             chunk_language(c.content), c.is_boilerplate,
              c.content, *[flt[k] for k in FILTER_COLS])).fetchone()
         n += bool(r)
     return n
@@ -180,7 +197,7 @@ def embed_pending(conn: psycopg.Connection, batch: int = 64, limit: int | None =
     done = 0
     while True:
         rows = conn.execute(f"SELECT id, content, heading FROM document_chunks c WHERE embedding IS NULL "
-                            f"AND language='en' AND {country.region_sql('c')} "
+                            f"AND language IN ('en','th') AND {country.region_sql('c')} "
                             # what the portal searches first: current, in-scope text, then the rest
                             "ORDER BY (in_scope AND is_current) IS NOT TRUE, is_boilerplate, id LIMIT %s",
                             (batch,)).fetchall()
@@ -205,7 +222,7 @@ def advance_embedded(conn: psycopg.Connection) -> int:
     cur = conn.execute(
         """UPDATE documents f SET stage='done', stage_error=NULL WHERE f.stage IN ('chunked','embedded')
            AND """ + country.region_sql("f") + """ AND NOT EXISTS (SELECT 1 FROM document_chunks c
-               WHERE c.document_id=f.id AND c.embedding IS NULL AND c.language='en')""")
+               WHERE c.document_id=f.id AND c.embedding IS NULL AND c.language IN ('en','th'))""")
     return cur.rowcount
 
 
