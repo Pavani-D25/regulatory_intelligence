@@ -5,9 +5,9 @@ whose มอก. (Thai Industrial Standard) is legally mandatory. No captcha, no
 separate PDF - it is itself the record - so it is stored as the write-once original (.html), same as any
 other downloaded file.
 
-Ingestion only: this crawler discovers, downloads and records listings. It does not classify or extract
-the content (regtrack/pipeline/text.py's language detection does not yet recognise Thai script, so English-
-oriented deterministic/Qwen extraction would silently produce nothing useful - a separate piece of work).
+This crawler only discovers, downloads and records listings (with TISI's product group as the listing
+category). The pipeline reads the pages with regtrack/pipeline/thai.py: automotive ones become TIS_STANDARD,
+the rest (steel, plastics, circuit breakers, ...) OFF_TOPIC.
 """
 
 from __future__ import annotations
@@ -15,35 +15,16 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import date
 
 from regtrack.config import get_settings
 from regtrack.db import connect
+from regtrack.pipeline.thai import parse_thai_date
 from regtrack.sources import http
 from regtrack.sources.common import Listing, RunStats, finish_run, mark_gone, record_listing, start_run
 
 log = logging.getLogger(__name__)
 URL = "https://www.tisi.go.th/website/standardlist/comp_thai/th"
 SOURCE = "TH_TISI_MANDATORY"
-
-THAI_MONTH = {"ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
-              "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12}
-DATE_RE = re.compile(r"(\d{1,2})\s+([ก-๙.]+)\s+(\d{4})")
-
-
-def parse_thai_date(s: str | None) -> date | None:
-    """'14 ก.ค. 2551' (Buddhist Era) -> a Gregorian date, or None if it doesn't parse."""
-    if not s:
-        return None
-    m = DATE_RE.search(s)
-    if not m or m.group(2) not in THAI_MONTH:
-        return None
-    day, mon, year_be = int(m.group(1)), THAI_MONTH[m.group(2)], int(m.group(3))
-    try:
-        return date(year_be - 543, mon, day)
-    except ValueError:
-        return None
-
 
 def _launch(p):
     from regtrack.sources.browser import launch

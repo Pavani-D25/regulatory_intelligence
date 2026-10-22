@@ -25,8 +25,9 @@ from regtrack.models import model_for
 from regtrack.models.enums import DocClass, FlagRule, Status
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline import repo as R
+from regtrack.pipeline import thai
 from regtrack.pipeline.dbutil import add_flag
-from regtrack.pipeline.text import PageText, english_text, load_pages
+from regtrack.pipeline.text import PageText, english_text, full_text, load_pages
 from regtrack.storage import open_local
 from regtrack.validators import in_scope, validate_data
 from regtrack.vocab import find_domains
@@ -360,6 +361,15 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
     elif dc == DocClass.FORM_TEMPLATE:
         cols["subject"] = data.get("purpose")
         cats, text_for_tags = [], eng[:5000]
+    elif dc == DocClass.TIS_STANDARD:
+        # a Thai TISI page: every field is read from its Thai text (regtrack/pipeline/thai.py); the English
+        # keyword vocabularies (usage, powertrains, domains) do not apply to it
+        allt = full_text(pages, a, b)
+        data.update({k: v for k, v in thai.fields_of(allt).items() if v not in (None, [], {})})
+        cols["subject"] = data.get("title")
+        cats = thai.categories_of(allt)
+        text_for_tags = ""
+        conf["subject"] = 0.9 if cols["subject"] else 0.0
     else:
         g = generic_fields(eng, names[0] if names else "")
         model_keys = set(model_for(dc).model_fields)
@@ -567,7 +577,8 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
             conf["subject"] = 0.8
             if dc != DocClass.AIS_DRAFT and is_junk_title(doc.get("official_title")):
                 cols["official_title"] = alt
-    if dc not in (DocClass.OFF_TOPIC, DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and is_junk_title(cols.get("subject")):
+    if dc not in (DocClass.OFF_TOPIC, DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM, DocClass.TIS_STANDARD) \
+            and is_junk_title(cols.get("subject")):
         alt = listing_subject(conn, doc, f["id"])
         if alt:
             cols["subject"] = alt
@@ -588,8 +599,9 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
     if old.get("model") not in (None, "rules"):  # keep an earlier Qwen result for this document
         extraction.update({k: old[k] for k in ("model", "prompt", "agreement") if k in old})
         data = {**data, **{k: v for k, v in (doc["data"] or {}).items() if k in ("provisions", "instructions")}}
+    # TIS_STANDARD: a one-page TISI summary in Thai, read completely by the rules (thai.py)
     needs_llm = dc not in (DocClass.OFF_TOPIC, DocClass.FORM_TEMPLATE, DocClass.BIS_CATALOGUE, DocClass.AIS_FORM_TABLE,
-                           DocClass.REPORT, DocClass.TAP_DOCUMENT)
+                           DocClass.REPORT, DocClass.TAP_DOCUMENT, DocClass.TIS_STANDARD)
     if needs_llm and old.get("model") in (None, "rules"):
         ok = use_llm and llm.reachable()[0]
         if ok:
@@ -612,7 +624,7 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
         extraction["needs_check"].append("data")
         add_flag(conn, "regulation", doc["id"], FlagRule.SCHEMA_VIOLATION, {"errors": errors[:10]})
     cats = cols.get("vehicle_categories") or []
-    if not cats and (dc.is_notification or dc in (DocClass.AIS_STANDARD,)):
+    if not cats and (dc.is_notification or dc in (DocClass.AIS_STANDARD, DocClass.TIS_STANDARD)):
         extraction["needs_check"].append("vehicle_categories")
         add_flag(conn, "regulation", doc["id"], FlagRule.NO_VEHICLE_CATEGORY, {})
     extraction["needs_check"] = sorted(set(extraction["needs_check"]))

@@ -8,6 +8,7 @@ legacy font), pdf_meta, and the English page range used by later stages.
 
 from __future__ import annotations
 
+import codecs
 import html
 import json
 import re
@@ -143,8 +144,24 @@ def read_xlsx(path: Path) -> list[str]:
     return pages or ["\n".join(shared)]
 
 
+HTML_CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?([\w-]+)""", re.I)
+
+
+def html_encoding(raw: bytes) -> str:
+    """The charset the page declares (TISI pages are windows-874), else UTF-8."""
+    m = HTML_CHARSET.search(raw[:4096])
+    if m:
+        enc = m.group(1).decode("ascii").lower()
+        try:
+            return codecs.lookup({"windows-874": "cp874", "tis-620": "cp874"}.get(enc, enc)).name
+        except LookupError:
+            pass
+    return "utf-8"
+
+
 def read_html(path: Path) -> list[str]:
-    t = path.read_text(encoding="utf-8", errors="ignore")
+    raw = path.read_bytes()
+    t = raw.decode(html_encoding(raw), errors="ignore")
     t = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", t)
     t = re.sub(r"(?i)<br\s*/?>|</p>|</tr>|</h\d>|</li>", "\n", t)
     t = re.sub(r"(?i)</t[dh]>", " | ", t)

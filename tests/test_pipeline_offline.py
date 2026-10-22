@@ -247,3 +247,80 @@ def test_notification_heading_tolerates_ocr():
     # a citation is still not a heading
     assert notification_identity("as published vide notification number G.S.R. 31(E) dated the 15th January, 2002, "
                                  "and the draft rules") is None
+
+
+# ---------------------------------------------------------------- Thailand: TISI mandatory-standard pages
+def tisi_ctx(name: str, category: str, title: str) -> FileCtx:
+    r = extract(FX / name, "html")
+    return FileCtx(None, "2" * 64, "html", ["05_MoRTH_Gazette_Notifications"], [], r.pages, r.page_count, r.text_layer,
+                   [], [{"source": "TH_TISI_MANDATORY", "title": title, "date": None, "category": category, "raw": {}}])
+
+
+def test_tisi_page_is_decoded_from_its_declared_charset():
+    from regtrack.pipeline.text import html_encoding
+
+    raw = (FX / "tisi_65_seat_belt.html").read_bytes()
+    assert html_encoding(raw) == "cp874"
+    assert "เข็มขัดนิรภัยสำหรับรถยนต์" in extract(FX / "tisi_65_seat_belt.html", "html").pages[0].text
+    assert html_encoding(b"<html><body>plain</body></html>") == "utf-8"
+
+
+def test_tisi_circuit_breaker_is_off_topic():
+    # มอก.60947-2 low-voltage circuit breakers (MCB): on TISI's mandatory list, but not a vehicle standard
+    fa = identify(tisi_ctx("tisi_184_circuit_breaker.html", "ไฟฟ้ากำลัง",
+                           "มอก.60947 เล่ม 2-2569 สวิตช์เกียร์และเกียร์ควบคุมไฟฟ้าแรงดันต่ำ เล่ม 2 เครื่องตัดวงจร"))
+    assert fa.cls.doc_class == DocClass.OFF_TOPIC
+    assert fa.cls.issuer == "TISI"
+
+
+def test_tisi_lpg_cylinder_excluding_engines_is_off_topic():
+    # its scope names engine tanks only as an exclusion ("ไม่ครอบคลุมถังสำหรับเครื่องยนต์สันดาปภายใน")
+    fa = identify(tisi_ctx("tisi_46_lpg_cylinder.html", "เครื่องกล", "มอก.27-2543 ถังก๊าซปิโตรเลียมเหลว"))
+    assert fa.cls.doc_class == DocClass.OFF_TOPIC
+
+
+def test_tisi_seat_belt_is_an_in_scope_tis_standard():
+    from regtrack.pipeline import thai
+    from regtrack.pipeline.text import full_text
+
+    ctx = tisi_ctx("tisi_65_seat_belt.html", "ยานยนต์", "มอก.721-2551 เข็มขัดนิรภัยสำหรับรถยนต์")
+    fa = identify(ctx)
+    assert fa.cls.doc_class == DocClass.TIS_STANDARD
+    assert (fa.canonical_id, fa.identity.year, fa.identity.family_key) == ("TIS-721-2551", 2008, "TIS-721")
+    assert fa.title_mismatch == []
+    text = full_text(ctx.pages)
+    assert thai.categories_of(text) == ["M1", "N1"]
+    assert in_scope(thai.categories_of(text), "TH")
+    f = thai.fields_of(text)
+    assert f["title"] == "เข็มขัดนิรภัยสำหรับรถยนต์"
+    assert f["effective_date"] == "2011-02-26"  # "26 ก.พ. 54": two-digit Buddhist-Era year
+    assert "8708.21.00.000" in f["hs_codes"]
+    assert validate_data("TIS_STANDARD", {k: v for k, v in f.items() if v not in (None, [])}) == []
+
+
+def test_tisi_identity_comes_from_the_page_not_the_listing():
+    fa = identify(tisi_ctx("tisi_65_seat_belt.html", "ยานยนต์", "มอก.722-2551 something else"))
+    assert fa.canonical_id == "TIS-721-2551"
+    assert fa.title_mismatch[0]["claimed"] == ["TIS-722-2551"]
+
+
+def test_tisi_bare_class_letters_and_title_only_vehicle_words():
+    from regtrack.pipeline import thai
+    from regtrack.pipeline.text import full_text
+
+    glass = full_text(extract(FX / "tisi_116_safety_glass.html", "html").pages)  # "ประเภท L ... M N O และ T"
+    assert thai.categories_of(glass) == ["L1", "L3", "M1", "N1"]
+    breaker = full_text(extract(FX / "tisi_184_circuit_breaker.html", "html").pages)  # "ภาคผนวก L" = Annex L
+    assert thai.categories_of(breaker) == []
+    tank = tisi_ctx("tisi_63_engine_lpg_tank.html", "เครื่องกล", "มอก.370-2552 ถังก๊าซปิโตรเลียมเหลวสำหรับเครื่องยนต์สันดาปภายใน")
+    assert identify(tank).cls.doc_class == DocClass.TIS_STANDARD
+    assert thai.categories_of(full_text(tank.pages)) == []  # no vehicle named: empty, flagged by extract
+
+
+def test_thai_dates():
+    from regtrack.pipeline.thai import parse_thai_date, tis_number
+
+    assert parse_thai_date("14 ก.ค. 2551") == date(2008, 7, 14)
+    assert parse_thai_date("1 ม.ค. 68") == date(2025, 1, 1)
+    assert parse_thai_date("ไม่ระบุ") is None
+    assert tis_number("มอก.60947 เล่ม 2-2569")["canonical_id"] == "TIS-60947(Part2)-2569"

@@ -231,3 +231,14 @@ class GenericData(_Data):
     summary: str | None = None
     references: list[str] = Field(default_factory=list)
     file_name: str | None = None
+
+
+class TisStandardData(_Data):
+    """TIS_STANDARD: a Thai mandatory standard (มอก.) as its TISI page gives it (regtrack/pipeline/thai.py)."""
+
+    title: str | None = None                      # Thai title
+    tis_no: str | None = None                     # as printed, e.g. "มอก. 721-2551"
+    year_be: int | None = None                    # Buddhist-Era year of the edition (the regulations.year column is CE)
+    effective_date: str | None = Field(None, pattern=ISO_DATE)  # วันที่มีผลบังคับใช้
+    scope_text: str | None = None                 # ขอบข่าย
+    hs_codes: list[str] = Field(default_factory=list)

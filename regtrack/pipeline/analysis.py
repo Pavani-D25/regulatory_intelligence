@@ -12,6 +12,7 @@ from datetime import date
 
 from regtrack.models.enums import DocClass
 from regtrack.pipeline import patterns as P
+from regtrack.pipeline import thai
 from regtrack.pipeline.classify import DRAFT_CITE, ClassResult, FileCtx, classify
 from regtrack.pipeline.identity import (
     Identity,
@@ -138,6 +139,11 @@ def identify(ctx: FileCtx) -> FileAnalysis:
                                               family_key="TAP-115/116")
     elif dc == DocClass.FORM_TEMPLATE:
         ident = form_identity(eng, ctx.name)
+    elif dc == DocClass.TIS_STANDARD:
+        n = thai.tis_number(allt)  # the page's own มอก. heading, not the listing title
+        if n:
+            ident = Identity(kind="tis", canonical_id=n["canonical_id"], series="TIS", number=n["number"],
+                             part=n["part"], year=n["year"], family_key=n["family_key"], evidence=n["tis_no"])
     elif dc in (DocClass.ENERGY_STANDARD, DocClass.FUEL_ORDER, DocClass.CIRCULAR_OM, DocClass.GUIDELINE_POLICY,
                 DocClass.BIS_REGULATION) and n_ident:
         ident = n_ident  # (Acts and consolidated rule texts reproduce other notifications: no notification identity)
@@ -158,6 +164,12 @@ def identify(ctx: FileCtx) -> FileAnalysis:
             if claimed and content not in claimed and not any(c in others for c in claimed):
                 fa.title_mismatch.append({"source": lst.get("source"), "title": lst.get("title"),
                                           "claimed": [f"{s}-{n}" for s, n in claimed], "content": ident.canonical_id})
+    if ident and ident.kind == "tis":
+        for lst in ctx.listings:
+            claimed = thai.tis_number(lst.get("title") or "")
+            if claimed and claimed["canonical_id"] != ident.canonical_id:
+                fa.title_mismatch.append({"source": lst.get("source"), "title": lst.get("title"),
+                                          "claimed": [claimed["canonical_id"]], "content": ident.canonical_id})
     for lst in ctx.listings:
         d = lst.get("date")
         if isinstance(d, str):

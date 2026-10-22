@@ -1,12 +1,12 @@
 {
   "$id": "regtrack/TIS_STANDARD",
   "additionalProperties": false,
-  "description": "ACT, CONSOLIDATED_RULES, BIS_REGULATION, ENERGY_STANDARD, FUEL_ORDER, APPROVED_LIST, REPORT, OFF_TOPIC...",
+  "description": "TIS_STANDARD: a Thai mandatory standard (\u0e21\u0e2d\u0e01.) as its TISI page gives it (regtrack/pipeline/thai.py).",
   "properties": {
-    "date": {
+    "effective_date": {
       "anyOf": [
         {
-          "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
           "type": "string"
         },
         {
@@ -14,52 +14,16 @@
         }
       ],
       "default": null,
-      "title": "Date"
+      "title": "Effective Date"
     },
-    "file_name": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "File Name"
-    },
-    "issuer_text": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Issuer Text"
-    },
-    "ref_no": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Ref No"
-    },
-    "references": {
+    "hs_codes": {
       "items": {
         "type": "string"
       },
-      "title": "References",
+      "title": "Hs Codes",
       "type": "array"
     },
-    "summary": {
+    "scope_text": {
       "anyOf": [
         {
           "type": "string"
@@ -69,7 +33,19 @@
         }
       ],
       "default": null,
-      "title": "Summary"
+      "title": "Scope Text"
+    },
+    "tis_no": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tis No"
     },
     "title": {
       "anyOf": [
@@ -82,8 +58,20 @@
       ],
       "default": null,
       "title": "Title"
+    },
+    "year_be": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Year Be"
     }
   },
-  "title": "TIS_STANDARD (GenericData)",
+  "title": "TIS_STANDARD (TisStandardData)",
   "type": "object"
 }

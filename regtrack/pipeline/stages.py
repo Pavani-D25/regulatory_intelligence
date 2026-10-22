@@ -243,10 +243,12 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
             if not (ident and ident.year):
                 flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "no G.S.R./S.O. heading in English text",
                                                             "scan": not ctx.text_layer}))
-        elif ident and ident.canonical_id and dc in (DocClass.FORM_TEMPLATE,) or (ident and ident.kind == "notification"):
+        elif ident and ident.canonical_id and dc in (DocClass.FORM_TEMPLATE, DocClass.TIS_STANDARD) or (ident and ident.kind == "notification"):
             cid = ident.canonical_id
         else:
             cid = synthetic_id("DOC", ctx.sha)
+            if dc == DocClass.TIS_STANDARD:
+                flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "no มอก. number on the TISI page"}))
         data = notification_header_data(fa) if dc.is_notification or (ident and ident.kind == "notification") else {}
         if dc == DocClass.FORM_TEMPLATE:
             data = form_data(ctx, ident)

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from regtrack.models.enums import INDIA_CLASSES, DocClass, Nature
 from regtrack.pipeline import patterns as P
+from regtrack.pipeline import thai
 from regtrack.pipeline.text import PageText, english_text, full_text
 
 # folder priority when the same bytes sit in several folders
@@ -209,6 +210,15 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
 
     def res(dc: DocClass, status: str = "final", why: str = "", iss: str | None = None) -> ClassResult:
         return ClassResult(dc, status, iss or issuer, rel, nature_of(eng, dc), "rules", why)
+
+    # ---- Thailand: a TISI mandatory-standard page (every product type; only the automotive ones are TIS_STANDARD)
+    tisi = [x for x in ctx.listings if x.get("source") == thai.TISI_SOURCE]
+    if tisi:
+        allt = full_text(ctx.pages)
+        cat = tisi[0].get("category")
+        if thai.is_automotive(cat, allt):
+            return ClassResult(DocClass.TIS_STANDARD, "final", "TISI", rel, None, "rules", f"TISI automotive ({cat})")
+        return ClassResult(DocClass.OFF_TOPIC, "final", "TISI", rel, None, "rules", f"TISI non-automotive ({cat})")
 
     # ---- source/folder rules for document families with a fixed home
     if fo == "28":

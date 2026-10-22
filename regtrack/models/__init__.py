@@ -19,6 +19,7 @@ from regtrack.models.data import (
     GenericData,
     NotificationData,
     TapDocumentData,
+    TisStandardData,
 )
 from regtrack.models.enums import DocClass
 
@@ -44,6 +45,7 @@ DATA_MODEL: dict[DocClass, type[BaseModel]] = {
     DocClass.GUIDELINE_POLICY: CircularData,
     DocClass.FORM_TEMPLATE: FormTemplateData,
     DocClass.BIS_CATALOGUE: BisCatalogueData,
+    DocClass.TIS_STANDARD: TisStandardData,
 }
 
 
