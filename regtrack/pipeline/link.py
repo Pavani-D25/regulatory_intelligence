@@ -268,6 +268,26 @@ def resolve_refs(conn: psycopg.Connection) -> int:
                              AND src.id=r.from_regulation_id AND src.region_id=g.region_id
                              AND {country.region_sql('g')}""")
     n = cur.rowcount
+    # a plain reference without the revision ("AIS-002(Part1)") means the standard: its current edition. Not for
+    # amends / revises / finalises, which name one exact document (Rev.1's amendment never amends Rev.3).
+    n += conn.execute(f"""UPDATE regulation_relations r SET to_regulation_id=g.id
+                          FROM regulations g, regulations src
+                          WHERE r.to_regulation_id IS NULL AND r.type='references' AND r.to_ref=g.family_key
+                            AND g.is_current AND g.id<>r.from_regulation_id
+                            AND src.id=r.from_regulation_id AND src.region_id=g.region_id
+                            AND {country.region_sql('g')}""").rowcount
+    # G.S.R. 590(E) of 1989 notified the Central Motor Vehicles Rules: a reference to it means the CMVR, held as
+    # consolidated texts (the original 1989 notification is not collected) - the most complete one (most pages)
+    n += conn.execute(f"""UPDATE regulation_relations r SET to_regulation_id=c.id
+                          FROM regulations src,
+                               (SELECT g.id, g.region_id FROM regulations g JOIN document_parts p ON p.regulation_id = g.id
+                                JOIN documents f ON f.id = p.document_id
+                                WHERE g.local_class = 'CONSOLIDATED_RULES' AND {country.region_sql('g')}
+                                  AND coalesce(g.title, g.summary) ILIKE '%%CENTRAL MOTOR VEHICLES RULES%%'
+                                ORDER BY f.page_count DESC NULLS LAST, g.id LIMIT 1) c
+                          WHERE r.to_regulation_id IS NULL AND r.type = 'references' AND r.to_ref = 'GSR-590(E)-1989'
+                            AND src.id = r.from_regulation_id AND src.region_id = c.region_id
+                            AND r.from_regulation_id <> c.id""").rowcount
     if n:
         conn.execute("""UPDATE quality_flags q SET resolved_at=now() FROM regulation_relations r, regulations g
                         WHERE q.rule='unresolved_reference' AND q.resolved_at IS NULL AND q.entity='regulation'

@@ -102,8 +102,10 @@ function Drawer({ id, onClose, toast, openReg, teams }) {
     setD({ ...d, status: form.status, owner: form.owner });
   };
   const go = (cid) => { if (cid && cid !== id) openReg(cid); };
+  // amendments / revisions first, then the regulations it references that are collected (clickable)
   const rels = [...(full?.relations_out || []).filter((r) => r.type !== "references").map((r) => ({ ...r, dir: "out" })),
-    ...(full?.relations_in || []).map((r) => ({ ...r, dir: "in", target: r.source, resolved: true }))];
+    ...(full?.relations_in || []).map((r) => ({ ...r, dir: "in", target: r.source, resolved: true })),
+    ...(full?.relations_out || []).filter((r) => r.type === "references" && r.resolved).map((r) => ({ ...r, dir: "out" }))];
   const versions = fam?.versions || [];
   return (
     <>
@@ -151,7 +153,7 @@ function Drawer({ id, onClose, toast, openReg, teams }) {
               <DrawerSection title="Related Documents" empty={full ? "No links to other documents found." : "Loading…"}>
                 {rels.length > 0 && (
                   <div className="stack">
-                    {rels.slice(0, 8).map((r, i) => (
+                    {rels.slice(0, 20).map((r, i) => (
                       <div key={i} className="taskitem" style={{ cursor: r.resolved ? "pointer" : "default" }} onClick={() => r.resolved && go(r.target)}>
                         <div className="itemmain"><div>
                           <small>{r.dir === "in" ? REL_IN[r.type] || r.type : REL_LABEL[r.type] || r.type}</small>
@@ -159,6 +161,7 @@ function Drawer({ id, onClose, toast, openReg, teams }) {
                         {!r.resolved && <Badge v="not collected" tone="blue" />}
                       </div>
                     ))}
+                    {rels.length > 20 && <p className="note">+{rels.length - 20} more on the full record.</p>}
                   </div>
                 )}
               </DrawerSection>

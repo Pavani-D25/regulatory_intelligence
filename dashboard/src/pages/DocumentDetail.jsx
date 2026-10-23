@@ -147,7 +147,10 @@ export default function DocumentDetail() {
       <Card title={`Relations · ${d.relations_out.length + d.relations_in.length}`}>
         {d.relations_out.length + d.relations_in.length === 0 ? <Empty>No relations.</Empty> : (
           <Table head={["Direction", "Relation", "Document", "Details"]}>
-            {d.relations_out.filter((r) => r.type !== "references").concat(d.relations_out.filter((r) => r.type === "references").slice(0, 15)).map((r, i) => (
+            {d.relations_out.filter((r) => r.type !== "references")
+              // every reference, the collected (clickable) ones first
+              .concat(d.relations_out.filter((r) => r.type === "references").sort((a, b) => Number(b.resolved) - Number(a.resolved)))
+              .map((r, i) => (
               <tr key={`o${i}`}>
                 <Td className="text-zinc-500">this →</Td>
                 <Td>{RELATION[r.type] || r.type}{r.requires_reapproval && <span className="ml-1"><Badge tone="red">re-approval</Badge></span>}</Td>
