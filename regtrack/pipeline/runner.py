@@ -117,6 +117,9 @@ def post_run() -> dict:
         conn.commit()
         out["llm_enriched"] = X.enrich_pending(conn)
         conn.commit()
+        from regtrack.pipeline.translate import translate_pending
+
+        out["translated"] = translate_pending(conn)  # Thai TIS titles / scopes without official English
         out["events"] = E.emit_events(conn)
         conn.commit()
         out["alerts"] = A.run(conn)  # after the changes they react to

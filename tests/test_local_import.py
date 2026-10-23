@@ -57,7 +57,7 @@ def test_thai_law_rules_back_the_register_rows():
 
 
 def test_ocr_language_per_country():
-    assert ocr.ocr_lang("TH") == ("th", "tha")
+    assert ocr.ocr_lang("TH") == ("th", "tha+eng")  # Thai documents print English too (cover titles)
     assert ocr.ocr_lang("MY")[0] == "en-US" and ocr.ocr_lang("IN") == ("en-US", "eng")
     assert ocr.can_ocr("tesseract", "TH") and not ocr.can_ocr(None, "IN")
     # Windows OCR reads Thai only once the Thai OCR language is installed in Windows settings
@@ -104,3 +104,11 @@ def test_thai_pages_are_chunked_with_their_language():
     chunks = chunk_pages([thai_page], all_scripts=True)  # Thailand / Malaysia: every page with text
     assert chunks and chunk_language(chunks[0].content) == "th"
     assert chunk_language("This marking shall only be mandatory for tyre types") == "en"
+
+
+def test_english_cover_titles():
+    assert thai.nice_case("LIQUEFIED  PETROLEUM  GAS  CYLINDERS ON WET SURFACES") == "Liquefied Petroleum Gas Cylinders on Wet Surfaces"
+    assert thai.nice_case("UN R100 ELECTRIC VEHICLES, LEVEL 10") == "UN R100 Electric Vehicles, Level 10"
+    cover = "มอก. 341\nUDC 621.43.06:629.118.6\nSTANDARD FOR MOTORCYCLE EXHAUST\nMUFFLER\n<<<PAGE 2>>>\nTHAI INDUSTRIAL STANDARD"
+    assert thai.english_cover_title(cover) == "Standard for Motorcycle Exhaust Muffler"
+    assert thai.english_cover_title("ข้อความภาษาไทยเท่านั้น") is None

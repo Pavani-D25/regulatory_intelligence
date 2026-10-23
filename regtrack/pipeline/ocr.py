@@ -79,7 +79,7 @@ GOOD_TOKEN = re.compile(r"^[(\[\"']?(?:[A-Z]?[a-z]+|[A-Z]+|\d+(?:[.,/\-]\d+)*(?:
 
 # ------------------------------------------------------------------ engines
 # OCR language per country: Thai script needs Thai; Malay (Latin script) reads well with English
-OCR_LANG = {"TH": ("th", "tha"), "MY": ("en-US", "eng+msa"), "IN": ("en-US", "eng")}
+OCR_LANG = {"TH": ("th", "tha+eng"), "MY": ("en-US", "eng+msa"), "IN": ("en-US", "eng")}
 
 
 def ocr_lang(cc: str | None) -> tuple[str, str]:

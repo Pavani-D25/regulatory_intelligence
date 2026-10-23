@@ -282,3 +282,45 @@ LAW_DOMAIN_WORDS = [
 def law_domains(text: str) -> list[str]:
     head = thai_digits(text[:12000])
     return [d for d, rx in LAW_DOMAIN_WORDS if rx.search(head)]
+
+
+# ------------------------------------------------------------------ English titles (dashboard)
+COVER_SKIP = re.compile(r"THAI INDUSTRIAL STANDARD|INDUSTRIAL STANDARDS INSTITUTE|MINISTRY OF INDUSTRY|ISBN|\bICS\b|UDC|^TIS\b|"
+                        r"<<<PAGE",
+                        re.I)
+SMALL_WORDS = {"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"}
+ACRONYMS = {"UN", "EU", "EV", "LPG", "NGV", "CNG", "ABS", "EMC", "HV", "TIS", "ISO", "IEC", "ECE", "GVW"}
+
+
+def nice_case(s: str) -> str:
+    """'SAFETY–BELTS  FOR  AUTOMOBILES' -> 'Safety–Belts for Automobiles' (codes like M1, UN R, CO2 kept)."""
+    words = clean(s).split(" ")
+    out = []
+    for i, w in enumerate(words):
+        if re.search(r"\d", w) or w.strip(":;,()") in ACRONYMS:
+            out.append(w)
+        elif i and w.lower() in SMALL_WORDS:
+            out.append(w.lower())
+        else:
+            out.append("-".join(p[:1].upper() + p[1:].lower() for p in w.split("-")))
+    return " ".join(out)
+
+
+def english_cover_title(text: str) -> str | None:
+    """The upper-case English title on a TIS full text's cover (first pages): TISI's own English wording."""
+    lines = [ln.strip() for ln in text[:6000].splitlines()]
+    cand: list[str] = []
+    for ln in lines:
+        letters = re.findall(r"[A-Za-z]", ln)
+        title_like = (len(letters) >= (3 if cand else 8) and not THAI_ANY.search(ln) and not COVER_SKIP.search(ln)
+                      and sum(ch.isupper() for ch in letters) / len(letters) > 0.8)
+        if title_like:
+            cand.append(ln)
+        elif cand and not ln:
+            continue
+        elif cand:
+            break
+    return nice_case(" ".join(cand)) if cand else None
+
+
+THAI_ANY = re.compile("[ก-๛]")

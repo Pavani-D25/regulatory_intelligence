@@ -23,6 +23,18 @@
       "title": "Hs Codes",
       "type": "array"
     },
+    "scope_en": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope En"
+    },
     "scope_text": {
       "anyOf": [
         {
@@ -58,6 +70,30 @@
       ],
       "default": null,
       "title": "Title"
+    },
+    "title_en": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title En"
+    },
+    "title_en_source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title En Source"
     },
     "year_be": {
       "anyOf": [

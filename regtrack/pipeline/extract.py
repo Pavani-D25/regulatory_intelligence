@@ -368,9 +368,15 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         if file_row.get("ext") == "pdf":
             # the standard's full text (linked from its TISI page): the page's fields stay, the PDF fills gaps only
             data.update({k: v for k, v in thai.full_text_fields(allt).items() if v and not data.get(k)})
+            cover = thai.english_cover_title(allt)
+            # TISI's own English beats a machine translation; a better reading of the cover replaces an older one
+            if cover and (data.get("title_en_source") != "cover" or data.get("title_en") != cover):
+                data.update(title_en=cover, title_en_source="cover")
         else:
             data.update({k: v for k, v in thai.fields_of(allt).items() if v not in (None, [], {})})
-        cols["subject"] = data.get("title")
+        cols["subject"] = data.get("title")  # Thai title; the portal shows the English one first (official_title)
+        if data.get("title_en"):
+            cols["official_title"] = data["title_en"]
         title, scope = data.get("title"), data.get("scope_text")
         cats = thai.categories_from(title, scope)
         text_for_tags = ""

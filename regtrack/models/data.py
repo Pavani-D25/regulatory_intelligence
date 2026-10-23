@@ -242,3 +242,6 @@ class TisStandardData(_Data):
     effective_date: str | None = Field(None, pattern=ISO_DATE)  # วันที่มีผลบังคับใช้
     scope_text: str | None = None                 # ขอบข่าย
     hs_codes: list[str] = Field(default_factory=list)
+    title_en: str | None = None                   # English title: the PDF cover's, else a machine translation
+    title_en_source: str | None = None            # "cover" (TISI's own wording) | "machine translation"
+    scope_en: str | None = None                   # machine translation of scope_text (labelled in the portal)

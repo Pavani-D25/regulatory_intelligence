@@ -45,6 +45,7 @@ DRAFTS = ("NOTIFICATION_DRAFT", "AIS_DRAFT")
 # not regulations themselves: reports, AIS-007 form tables, catalogues, lists, unclassified - kept out of the register by default
 REFERENCE_CLASSES = ("REPORT", "OTHER", "AIS_FORM_TABLE", "FORM_TEMPLATE", "BIS_CATALOGUE", "APPROVED_LIST")
 AMENDMENT_RULES = re.compile(r"\((?:[\w-]+\s+)?Amendment\)\s+(?:Rules|Regulations?)", re.I)
+THAI_TEXT = re.compile("[ก-๛]")  # Thai script
 
 
 def _short(label: str) -> str:
@@ -148,7 +149,9 @@ def classify_row(r: dict, vocab: dict, today: date | None = None) -> dict:
     cats = [c for c in vocab["categories"] if c in (r["vehicle_categories"] or [])] or (["ALL"] if "ALL" in (r["vehicle_categories"] or []) else [])
     formal, subject = (r["official_title"] or "").strip(), (r["subject"] or "").strip()
     if formal and subject and subject != formal and AMENDMENT_RULES.search(formal) and not AMENDMENT_RULES.search(subject):
-        name, subtitle = subject, formal  # "Amends CMVR Rule 125 ..." tells more than "Central Motor Vehicles (Tenth Amendment) Rules"
+        name, subtitle = subject, formal
+    elif formal and subject and THAI_TEXT.search(subject) and not THAI_TEXT.search(formal):
+        name, subtitle = formal, subject  # Thai standard: English title (cover or machine translation), Thai below  # "Amends CMVR Rule 125 ..." tells more than "Central Motor Vehicles (Tenth Amendment) Rules"
     else:
         name, subtitle = formal or subject or r["canonical_id"], None
     r.update(
@@ -161,7 +164,8 @@ def classify_row(r: dict, vocab: dict, today: date | None = None) -> dict:
 
 
 def regulations(conn, category: str | None = None, extra_where: str = "", args: tuple = (),
-                history: bool = False, reference: bool = False, cc: str | None = None) -> list[dict]:
+                history: bool = False, reference: bool = False, cc: str | None = None,
+                uncategorised: bool = False) -> list[dict]:
     """In-scope regulations of one country (cc, default the setting) with impact/status. history=False leaves out
     superseded and withdrawn documents, reference=False leaves out reports, form tables, catalogues and unclassified
     documents."""
@@ -173,7 +177,10 @@ def regulations(conn, category: str | None = None, extra_where: str = "", args: 
     cats = [category] if category in vocab["categories"] else vocab["scope"]
     if category in vocab["categories"]:
         cats = [category, "ALL"]
-    rows = _rows(conn, REG_SQL.format(where=extra_where, docs=S.docs(cc), review=S.REVIEW.format(e="e")), (cats, *args))
+    sql = REG_SQL.format(where=extra_where, docs=S.docs(cc), review=S.REVIEW.format(e="e"))
+    if uncategorised:  # also a regulation that names no vehicle category yet (flagged needs_check), e.g. for its detail
+        sql = sql.replace("AND d.vehicle_categories && %s", "AND (d.vehicle_categories && %s OR cardinality(d.vehicle_categories) = 0)")
+    rows = _rows(conn, sql, (cats, *args))
     return [classify_row(r, vocab) for r in rows]
 
 
@@ -311,7 +318,8 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
         vocab = load_vocab(conn, cc)
-        regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,), history=True, reference=True, cc=cc)
+        regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,), history=True, reference=True, cc=cc,
+                           uncategorised=True)
         if not regs:
             raise HTTPException(404, "not an in-scope regulation")
         r = regs[0]
