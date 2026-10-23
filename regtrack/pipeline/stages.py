@@ -39,6 +39,7 @@ from regtrack.storage import open_local
 
 log = logging.getLogger(__name__)
 LOW_OCR = 0.6
+OCR_PARTIAL_COUNTRIES = {"TH", "MY"}  # OCR the scanned pages of partly scanned PDFs too
 
 
 # ====================================================================== text
@@ -54,7 +55,10 @@ def stage_text(conn: psycopg.Connection, f: dict, allow_ocr: bool = True) -> str
         R.update_file(conn, f["id"], {"pdf_meta": Jsonb({**meta["pdf_meta"], "error": meta["error"]})})
         set_stage(conn, f["id"], "failed", meta["error"][:500])
         return "failed"
-    need_ocr = f["ext"] == "pdf" and not meta["text_layer"] and meta["scanned_pages"] and not engine
+    # Thailand / Malaysia: also the scanned pages of a PDF that has some text (TIS 2721: 133 of 141 pages are scans).
+    # India keeps OCRing only fully scanned PDFs (its 319 partly scanned files are a separate, re-validated step).
+    partial = (f.get("country") or "").upper() in OCR_PARTIAL_COUNTRIES
+    need_ocr = (f["ext"] == "pdf" and (not meta["text_layer"] or partial) and meta["scanned_pages"] and not engine)
     if need_ocr and allow_ocr:
         eng = ocr.pick_engine(f.get("country"))
         if eng and ocr.can_ocr(eng, f.get("country")):
