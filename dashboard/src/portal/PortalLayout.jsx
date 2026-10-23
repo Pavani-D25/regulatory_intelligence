@@ -113,7 +113,11 @@ function Drawer({ id, onClose, toast, openReg, teams }) {
         <div className="drawerhead">
           <div><small style={{ color: "var(--muted)" }}>REGULATION DETAIL</small>
             <h2 style={{ margin: "4px 0 0", fontSize: 18 }}>{d ? d.name : id ? "Loading…" : "—"}</h2>
-            {d?.subtitle && <div className="sub">{d.subtitle}</div>}</div>
+            {d?.subtitle && <div className="sub">{d.subtitle}</div>}
+            {d && d.in_scope === false && (
+              <div style={{ marginTop: 6 }}><Badge v="Out of scope" tone="amber" />{" "}
+                <span className="sub">applies to {(d.all_categories || []).join(", ") || "no category named yet"} - kept for reference</span></div>
+            )}</div>
           <button className="close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <div className="drawerbody">

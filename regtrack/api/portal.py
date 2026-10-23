@@ -98,7 +98,7 @@ def team_id(conn, name: str | None) -> int | None:
 # ====================================================================== regulations (shared)
 REG_SQL = """
 SELECT d.id, d.canonical_id, d.doc_class, d.official_title, d.subject, d.issuer, d.status AS doc_status, d.doc_date,
-       d.nature, d.vehicle_categories, d.domains, d.family_key, d.is_current,
+       d.nature, d.vehicle_categories, d.domains, d.family_key, d.is_current, d.in_scope,
        coalesce((d.extraction->>'llm_pending')::boolean, false) AS ai_pending,
        (SELECT min(v.implementation_date) FROM requirement_versions v WHERE v.source_regulation_id=d.id
           AND v.valid_to IS NULL AND NOT v.is_draft AND v.implementation_date >= current_date) AS next_obligation,
@@ -167,7 +167,7 @@ def classify_row(r: dict, vocab: dict, today: date | None = None) -> dict:
 
 def regulations(conn, category: str | None = None, extra_where: str = "", args: tuple = (),
                 history: bool = False, reference: bool = False, cc: str | None = None,
-                uncategorised: bool = False) -> list[dict]:
+                uncategorised: bool = False, any_category: bool = False) -> list[dict]:
     """In-scope regulations of one country (cc, default the setting) with impact/status. history=False leaves out
     superseded and withdrawn documents, reference=False leaves out reports, form tables, catalogues and unclassified
     documents."""
@@ -180,7 +180,9 @@ def regulations(conn, category: str | None = None, extra_where: str = "", args: 
     if category in vocab["categories"]:
         cats = [category, "ALL"]
     sql = REG_SQL.format(where=extra_where, docs=S.docs(cc), review=S.REVIEW.format(e="e"))
-    if uncategorised:  # also a regulation that names no vehicle category yet (flagged needs_check), e.g. for its detail
+    if any_category:  # an out-of-scope regulation (trailers, tractors, N2/N3...) reached through a link: shown, labelled
+        sql = sql.replace("AND d.vehicle_categories && %s", "AND (d.vehicle_categories && %s OR TRUE)")
+    elif uncategorised:  # also a regulation that names no vehicle category yet (flagged needs_check), e.g. for its detail
         sql = sql.replace("AND d.vehicle_categories && %s", "AND (d.vehicle_categories && %s OR cardinality(d.vehicle_categories) = 0)")
     rows = _rows(conn, sql, (cats, *args))
     return [classify_row(r, vocab) for r in rows]
@@ -321,7 +323,7 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
     with connect() as conn:
         vocab = load_vocab(conn, cc)
         regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,), history=True, reference=True, cc=cc,
-                           uncategorised=True)
+                           any_category=True)
         if not regs:
             raise HTTPException(404, "not an in-scope regulation")
         r = regs[0]
@@ -333,7 +335,9 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
                    change=r["last_event_summary"] and f"{r['last_event'].replace('_', ' ')}: {r['last_event_summary']}"
                    or detected_change(conn, r["id"]),
                    action=follow_up(r, vocab), owner=r["review_owner"], note=r["review_note"],
-                   file=files[0] if files else None)
+                   file=files[0] if files else None,
+                   # reached through a link but outside L1/L2/M1/N1 (trailers, tractors, heavy trucks...): labelled
+                   in_scope=bool(r.get("in_scope")), all_categories=r.get("vehicle_categories") or [])
     return out
 
 
