@@ -24,6 +24,14 @@ class LLMUnavailable(RuntimeError):
     """LM Studio is off, ngrok URL changed, or LLM_BASE_URL is not configured."""
 
 
+def _offline(e: BaseException) -> bool:
+    """The endpoint is not answering: connection errors, and a tunnel's 5xx (Cloudflare 530 'unable to reach the
+    tunnel', ngrok 502/504) - the run leaves the work for later instead of failing (CLAUDE.md rule 8)."""
+    if type(e).__name__ in {"APIConnectionError", "APITimeoutError", "ConnectError", "ConnectTimeout"}:
+        return True
+    return (getattr(e, "status_code", None) or 0) >= 500
+
+
 def reachable(force: bool = False, ttl: float = 120.0) -> tuple[bool, str]:
     """GET /models with a short timeout. Cached for `ttl` seconds."""
     s = get_settings()
@@ -63,7 +71,7 @@ def structured(model: type[M], system: str, user: str, timeout: float = 600.0) -
         _reach_cache.pop(get_settings().llm_base_url, None)
         raise LLMUnavailable(str(e)) from e
     except Exception as e:
-        if type(e).__name__ in {"APIConnectionError", "APITimeoutError"}:
+        if _offline(e):
             _reach_cache.pop(get_settings().llm_base_url, None)
             raise LLMUnavailable(str(e)) from e
         raise
@@ -83,7 +91,7 @@ def structured_with_image(model: type[M], system: str, prompt: str, png: bytes, 
     try:
         return llm.invoke([SystemMessage(content=system), msg_h])
     except Exception as e:
-        if type(e).__name__ in {"APIConnectionError", "APITimeoutError", "ConnectError"}:
+        if _offline(e):
             raise LLMUnavailable(str(e)) from e
         raise
 
@@ -106,6 +114,6 @@ def embed(texts: list[str]) -> list[list[float]]:
     try:
         return embedder().embed_documents(texts)
     except Exception as e:
-        if type(e).__name__ in {"APIConnectionError", "APITimeoutError", "ConnectError"}:
+        if _offline(e):
             raise LLMUnavailable(str(e)) from e
         raise
