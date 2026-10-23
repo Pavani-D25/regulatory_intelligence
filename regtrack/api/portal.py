@@ -150,6 +150,8 @@ def classify_row(r: dict, vocab: dict, today: date | None = None) -> dict:
     formal, subject = (r["official_title"] or "").strip(), (r["subject"] or "").strip()
     if formal and subject and subject != formal and AMENDMENT_RULES.search(formal) and not AMENDMENT_RULES.search(subject):
         name, subtitle = subject, formal
+    elif formal and subject and subject != formal and (r["doc_class"] or "").startswith("MY_"):
+        name, subtitle = subject, formal  # Malaysia: the English name first, the official Malay title below
     elif formal and subject and THAI_TEXT.search(subject) and not THAI_TEXT.search(formal):
         name, subtitle = formal, subject  # Thai standard: English title (cover or machine translation), Thai below  # "Amends CMVR Rule 125 ..." tells more than "Central Motor Vehicles (Tenth Amendment) Rules"
     else:

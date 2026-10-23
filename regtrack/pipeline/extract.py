@@ -407,7 +407,9 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         data.update({k: v for k, v in {"title": leg.get("title"), "ref_no": leg.get("ref_no"),
                                        "date": leg["published"].isoformat() if leg.get("published") else None,
                                        "file_name": names[0] if names else None}.items() if v})
-        cols["subject"] = leg.get("title")
+        # official Malay title kept; the official English name (fixed legal wording, no LLM) is what the portal shows
+        cols["official_title"] = leg.get("title")
+        cols["subject"] = malaysia.english_legal_title(leg.get("kind", ""), leg.get("number"), leg.get("title")) or leg.get("title")
         if leg.get("in_force"):
             cols["effective_date"] = leg["in_force"]
         cats = malaysia.categories_of(allt[:20000])
@@ -415,11 +417,18 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
     elif dc in (DocClass.MY_GUIDELINE, DocClass.MY_FORM):
         # a JPJ / DOE page (its own <title>) or a linked PDF/DOCX; UNECE category words (malaysia.py)
         g = generic_fields(eng, names[0] if names else "")
-        title = malaysia.page_title(eng) or g.get("title")
+        malay = None
+        if file_row.get("ext") in ("html", "htm"):
+            title = malaysia.page_title(eng) or g.get("title")
+        else:  # a PDF / DOCX: its title block (letterheads, form codes skipped), JPJ Malay titles by their English name
+            title, malay = malaysia.document_title(full_text(pages, a, b))
+            title = title or g.get("title")
         refs = [f"{c['component']}: {', '.join(c['refs'])}" for c in malaysia.cta_components(eng)]
         data.update({k: v for k, v in {"title": title, "references": refs, "file_name": names[0] if names else None}.items()
                      if v not in (None, [], {})})
         cols["subject"] = title
+        if malay:
+            cols["official_title"] = malay
         cats = malaysia.categories_of(eng[:20000])
         text_for_tags = eng[:30000]
     else:
@@ -654,7 +663,8 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
         data = {**data, **{k: v for k, v in (doc["data"] or {}).items() if k in ("provisions", "instructions")}}
     # TIS_STANDARD: a one-page TISI summary in Thai, read completely by the rules (thai.py)
     needs_llm = dc not in (DocClass.OFF_TOPIC, DocClass.FORM_TEMPLATE, DocClass.BIS_CATALOGUE, DocClass.AIS_FORM_TABLE,
-                           DocClass.REPORT, DocClass.TAP_DOCUMENT, DocClass.TIS_STANDARD) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE)
+                           DocClass.REPORT, DocClass.TAP_DOCUMENT, DocClass.TIS_STANDARD, DocClass.MY_ACT,
+                           DocClass.MY_SUBSIDIARY_LEGISLATION) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE)
     if needs_llm and old.get("model") in (None, "rules"):
         ok = use_llm and llm.reachable()[0]
         if ok:
@@ -681,6 +691,8 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
         extraction["needs_check"].append("vehicle_categories")
         add_flag(conn, "regulation", doc["id"], FlagRule.NO_VEHICLE_CATEGORY, {})
     extraction["needs_check"] = sorted(set(extraction["needs_check"]))
+    if f.get("ext") in ("html", "htm") and dc in (DocClass.MY_GUIDELINE, DocClass.MY_FORM):
+        data.pop("date", None)  # a web page has no publication date: "Updated Date" / copyright stamps are not one
     values = {**{k: v for k, v in cols.items() if v is not None or k == "in_scope"}, "data": Jsonb(data),
               "extraction": Jsonb(extraction)}
     if doc["doc_date"] is None and data.get("date") and re.fullmatch(P.ISO_DATE_RE, str(data["date"])):

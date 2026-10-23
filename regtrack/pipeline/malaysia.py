@@ -175,3 +175,67 @@ def legal_identity(text: str) -> dict | None:
         return {"kind": "act", "canonical_id": f"MY-ACT-{m.group(1)}", "number": m.group(1), "year": int(m.group(3)),
                 "ref_no": f"Akta {m.group(1)}", "title": m.group(2).title(), "published": None, "in_force": None}
     return None
+
+
+# ------------------------------------------------------------------ English names of the legal texts (dashboard)
+# Malaysian legislation has official English titles in fixed legal wording: a phrase map, no machine translation
+ACT_EN = {"333": "Road Transport Act 1987", "334": "Commercial Vehicles Licensing Board Act 1987",
+          "127": "Environmental Quality Act 1974", "715": "Land Public Transport Act 2010"}
+REG_PHRASES = [  # (Malay, English), applied in order
+    (r"^Peraturan-Peraturan Kualiti Alam Sekeliling\s*", "Environmental Quality "),
+    (r"Kawalan Pelepasan Daripada", "Control of Emissions from"),
+    (r"Enjin Petrol", "Petrol Engines"), (r"Enjin Diesel", "Diesel Engines"), (r"Motosikal", "Motorcycles"),
+    (r"\(Pindaan\)", "(Amendment)"),
+]
+
+
+def english_legal_title(kind: str, number: str | None, title: str | None) -> str | None:
+    """Official English title of an Act (by number) or an EQ regulation (by its fixed Malay wording)."""
+    if kind == "act":
+        return ACT_EN.get(number or "")
+    if not title or not re.match(r"Peraturan-Peraturan Kualiti Alam Sekeliling", title, re.I):
+        return None
+    t = title
+    for ms, en in REG_PHRASES:
+        t = re.sub(ms, en, t, flags=re.I)
+    m = re.match(r"(Environmental Quality .*?)\s*((?:\(Amendment\)\s*)?)(\d{4})$", t)
+    return f"{m.group(1)} {m.group(2)}Regulations {m.group(3)}".replace("  ", " ") if m else None
+
+
+# ------------------------------------------------------------------ titles of guideline / form files (dashboard)
+LETTERHEAD = re.compile(r"^(?:BAHAGIAN|IBU PEJABAT|JABATAN|KEMENTERIAN|DEPARTMENT OF|MINISTRY OF|ROAD TRANSPORT DEPARTMENT|"
+                        r"JAS/|JPJ/|(?:JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|"
+                        r"DECEMBER)\s+\d{4}$|LAMPIRAN\b)", re.I)
+MALAY_DOC_EN = [(re.compile(r"^BORANG PERMOHONAN KELULUSAN JENIS KOMPONEN", re.I), "Component Type Approval (CTA) Application Form"),
+                (re.compile(r"^GARIS PANDUAN PERMOHONAN KELULUSAN JENIS KOMPONEN", re.I), "Component Type Approval (CTA) Application Guidelines")]
+
+
+def document_title(text: str) -> tuple[str | None, str | None]:
+    """(English title, Malay title or None) of a guideline / form file: its upper-case title block, letterheads,
+    form codes and dates skipped; the two JPJ Malay titles by their English names."""
+    from regtrack.pipeline.thai import nice_case
+
+    block: list[str] = []
+    for ln in (x.strip() for x in text[:3000].splitlines()):
+        letters = re.findall(r"[A-Za-z]", ln)
+        if ln.startswith("<<<") or not ln:
+            continue
+        if len(letters) >= 4 and sum(ch.isupper() for ch in letters) / len(letters) > 0.85:
+            if ln.endswith(":"):  # a form field label ("BUTIRAN PEMOHON :"): the title is above it
+                break
+            if LETTERHEAD.search(ln):
+                if block:
+                    break
+                continue
+            block.append(ln)
+        elif block:
+            break
+    if not block:
+        return None, None
+    if len(block) > 1 and block[0].upper() in ("GUIDELINES", "GARIS PANDUAN", "GUIDELINE"):
+        block[0] += ":"  # "GUIDELINES" / "APPLICATION FOR ..." -> "Guidelines: Application for ..."
+    raw = re.sub(r"\s+", " ", " ".join(block)).strip()
+    for rx, en in MALAY_DOC_EN:
+        if rx.search(raw):
+            return en, nice_case(raw)
+    return nice_case(raw), None

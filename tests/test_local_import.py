@@ -112,3 +112,16 @@ def test_english_cover_titles():
     cover = "มอก. 341\nUDC 621.43.06:629.118.6\nSTANDARD FOR MOTORCYCLE EXHAUST\nMUFFLER\n<<<PAGE 2>>>\nTHAI INDUSTRIAL STANDARD"
     assert thai.english_cover_title(cover) == "Standard for Motorcycle Exhaust Muffler"
     assert thai.english_cover_title("ข้อความภาษาไทยเท่านั้น") is None
+
+
+def test_malaysian_english_names():
+    from regtrack.pipeline import malaysia
+
+    assert malaysia.english_legal_title("act", "334", None) == "Commercial Vehicles Licensing Board Act 1987"
+    assert (malaysia.english_legal_title("pua", None, "Peraturan-Peraturan Kualiti Alam Sekeliling (Kawalan Pelepasan Daripada "
+                                                      "Enjin Diesel) (Pindaan) 2000")
+            == "Environmental Quality (Control of Emissions from Diesel Engines) (Amendment) Regulations 2000")
+    assert malaysia.document_title("BAHAGIAN KEJURUTERAAN AUTOMOTIF\nBORANG PERMOHONAN KELULUSAN JENIS KOMPONEN (COMPONENT "
+                                   "TYPE APPROVAL)\nBUTIRAN PEMOHON :")[0] == "Component Type Approval (CTA) Application Form"
+    assert malaysia.document_title("JAS/VTA (L)\nGUIDELINES\nAPPLICATION FOR MOTORCYCLES\nTYPE APPROVAL\nJULY 2016")[0] == \
+        "Guidelines: Application for Motorcycles Type Approval"

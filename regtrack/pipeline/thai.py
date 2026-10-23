@@ -302,7 +302,9 @@ def nice_case(s: str) -> str:
         elif i and w.lower() in SMALL_WORDS:
             out.append(w.lower())
         else:
-            out.append("-".join(p[:1].upper() + p[1:].lower() for p in w.split("-")))
+            # capitalise the first letter even after an opening bracket or quote: "(component" -> "(Component"
+            out.append("-".join(re.sub(r"^(\W*)(\w)", lambda m: m.group(1) + m.group(2).upper(), p.lower())
+                                for p in w.split("-")))
     return " ".join(out)
 
 
