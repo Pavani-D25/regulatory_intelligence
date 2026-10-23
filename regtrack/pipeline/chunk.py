@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import psycopg
 
 from regtrack import country, llm
+from regtrack.config import get_settings
 from regtrack.db import vec_literal
 from regtrack.models.enums import DocClass
 from regtrack.pipeline import repo as R
@@ -196,8 +197,11 @@ def embed_pending(conn: psycopg.Connection, batch: int = 64, limit: int | None =
     """Embed chunks without a vector (non-boilerplate first). Raises nothing when the LLM is down."""
     done = 0
     while True:
+        # EMBED_SCOPE=priority: only current, in-scope chunks (what the portal searches) - over a metered tunnel
+        # the 120k-chunk history backlog would use up its bandwidth (ngrok free plan, ERR_NGROK_725)
+        scope = " AND in_scope AND is_current" if get_settings().embed_scope == "priority" else ""
         rows = conn.execute(f"SELECT id, content, heading FROM document_chunks c WHERE embedding IS NULL "
-                            f"AND language IN ('en','th') AND {country.region_sql('c')} "
+                            f"AND language IN ('en','th') AND {country.region_sql('c')}{scope} "
                             # what the portal searches first: current, in-scope text, then the rest
                             "ORDER BY (in_scope AND is_current) IS NOT TRUE, is_boilerplate, id LIMIT %s",
                             (batch,)).fetchall()

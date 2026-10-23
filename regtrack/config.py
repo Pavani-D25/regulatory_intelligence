@@ -49,6 +49,7 @@ class Settings:
     import_dir: Path = ROOT / "data" / "import"  # documents people saved by hand: <import_dir>/<TH|MY>/... (read-only)
     tesseract_cmd: Path | None = None       # tesseract.exe outside PATH (README: conda-forge env D:\tesseract)
     tessdata_prefix: Path | None = None     # its language data folder (tha, eng .traineddata)
+    embed_scope: str = "all"                # all | priority (only current, in-scope chunks: metered tunnels)
 
     @property
     def psycopg_dsn(self) -> str:
@@ -91,4 +92,5 @@ def get_settings() -> Settings:
         import_dir=Path(_clean(os.getenv("IMPORT_DIR")) or ROOT / "data" / "import"),
         tesseract_cmd=Path(_clean(os.getenv("TESSERACT_CMD"))) if _clean(os.getenv("TESSERACT_CMD")) else None,
         tessdata_prefix=Path(_clean(os.getenv("TESSDATA_PREFIX"))) if _clean(os.getenv("TESSDATA_PREFIX")) else None,
+        embed_scope=(_clean(os.getenv("EMBED_SCOPE")) or "all").lower(),
     )
