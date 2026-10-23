@@ -199,11 +199,15 @@ def embed_pending(conn: psycopg.Connection, batch: int = 64, limit: int | None =
     while True:
         # EMBED_SCOPE=priority: only current, in-scope chunks (what the portal searches) - over a metered tunnel
         # the 120k-chunk history backlog would use up its bandwidth (ngrok free plan, ERR_NGROK_725)
-        scope = " AND in_scope AND is_current" if get_settings().embed_scope == "priority" else ""
+        # in scope and in force: is_current is set only inside a version family, so a notification or a Malaysian law
+        # (no family) counts unless superseded / withdrawn
+        scope = (" AND in_scope AND (is_current OR legal_status NOT IN ('superseded','withdrawn'))"
+                 if get_settings().embed_scope == "priority" else "")
         rows = conn.execute(f"SELECT id, content, heading FROM document_chunks c WHERE embedding IS NULL "
                             f"AND language IN ('en','th') AND {country.region_sql('c')}{scope} "
                             # what the portal searches first: current, in-scope text, then the rest
-                            "ORDER BY (in_scope AND is_current) IS NOT TRUE, is_boilerplate, id LIMIT %s",
+                            "ORDER BY (in_scope AND (is_current OR legal_status NOT IN ('superseded','withdrawn'))) IS NOT TRUE, "
+                            "is_boilerplate, id LIMIT %s",
                             (batch,)).fetchall()
         if not rows:
             break
