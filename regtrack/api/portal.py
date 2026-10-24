@@ -703,7 +703,18 @@ def _answer(conn, q: str, cc: str) -> tuple[dict, list[dict]]:
         class Answer(BaseModel):
             answer: str
 
-        ctx = "\n\n".join(f"[{i + 1}] {h['canonical_id']} clause {h['clause_no']}: {h['content'][:1200]}" for i, h in enumerate(hits))
+        def facts(h: dict) -> str:
+            """What the database knows about the source beyond the clause: its title and the dates it was published
+            and became mandatory (a Thai TIS clause never says from when the standard is enforced)."""
+            parts = [h.get("official_title") or h.get("subject")]
+            if h.get("doc_date"):
+                parts.append(f"published {h['doc_date']}")
+            if h.get("effective_date"):
+                parts.append(f"in force / mandatory from {h['effective_date']}")
+            return " | ".join(str(p) for p in parts if p)
+
+        ctx = "\n\n".join(f"[{i + 1}] {h['canonical_id']} ({facts(h)}) clause {h['clause_no']}: {h['content'][:1200]}"
+                          for i, h in enumerate(hits))
         try:
             a = llm.structured(Answer, f"Answer questions about {vocab['name']} vehicle regulations using only the numbered sources. "
                                        "Cite sources as [n]. Say so if the sources do not answer the question.",

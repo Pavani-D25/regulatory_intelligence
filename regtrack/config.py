@@ -50,6 +50,7 @@ class Settings:
     tesseract_cmd: Path | None = None       # tesseract.exe outside PATH (README: conda-forge env D:\tesseract)
     tessdata_prefix: Path | None = None     # its language data folder (tha, eng .traineddata)
     embed_scope: str = "all"                # all | priority (only current, in-scope chunks: metered tunnels)
+    llm_reasoning_effort: str = "none"      # sent with every chat call; "" = leave to the server (thinking models)
 
     @property
     def psycopg_dsn(self) -> str:
@@ -93,4 +94,6 @@ def get_settings() -> Settings:
         tesseract_cmd=Path(_clean(os.getenv("TESSERACT_CMD"))) if _clean(os.getenv("TESSERACT_CMD")) else None,
         tessdata_prefix=Path(_clean(os.getenv("TESSDATA_PREFIX"))) if _clean(os.getenv("TESSDATA_PREFIX")) else None,
         embed_scope=(_clean(os.getenv("EMBED_SCOPE")) or "all").lower(),
+        llm_reasoning_effort=(_clean(os.getenv("LLM_REASONING_EFFORT")) if os.getenv("LLM_REASONING_EFFORT") is not None
+                              else "none"),
     )

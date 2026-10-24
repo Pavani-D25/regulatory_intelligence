@@ -34,7 +34,7 @@ def search(conn: psycopg.Connection, q: str, category: str | None = None, in_sco
     w = " AND ".join(where)
     cols = ("c.id, c.regulation_id, g.external_code AS canonical_id, g.local_class AS doc_class, c.clause_no, c.heading, "
             "c.page_from, c.page_to, left(c.content, 600) AS content, g.title AS official_title, g.summary AS subject, "
-            "g.published_date AS doc_date")
+            "g.published_date AS doc_date, g.effective_date")
     try:
         vec = llm.embed([q])[0]
         # the HNSW index returns its ~40 nearest chunks of ALL countries before the WHERE filter: a small country

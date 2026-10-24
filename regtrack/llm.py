@@ -55,8 +55,11 @@ def chat_model(timeout: float = 600.0):
     from langchain_openai import ChatOpenAI
 
     s = get_settings()
+    # LLM_REASONING_EFFORT=none (default): a "thinking" model (Qwen3 in LM Studio) otherwise puts its structured answer
+    # in reasoning_content or never finishes it (a tunnel then times out, Cloudflare 524), whatever LM Studio's toggle
+    extra = {"reasoning_effort": s.llm_reasoning_effort} if s.llm_reasoning_effort else {}
     return ChatOpenAI(base_url=s.llm_base_url, model=s.llm_model, api_key=s.llm_api_key, temperature=0,
-                      timeout=timeout, max_retries=1, default_headers=HEADERS)
+                      timeout=timeout, max_retries=1, default_headers=HEADERS, **extra)
 
 
 def structured(model: type[M], system: str, user: str, timeout: float = 600.0) -> M:
