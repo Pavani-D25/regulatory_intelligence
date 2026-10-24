@@ -46,6 +46,7 @@ DRAFTS = ("NOTIFICATION_DRAFT", "AIS_DRAFT")
 REFERENCE_CLASSES = ("REPORT", "OTHER", "AIS_FORM_TABLE", "FORM_TEMPLATE", "BIS_CATALOGUE", "APPROVED_LIST")
 AMENDMENT_RULES = re.compile(r"\((?:[\w-]+\s+)?Amendment\)\s+(?:Rules|Regulations?)", re.I)
 THAI_TEXT = re.compile("[ก-๛]")  # Thai script
+THAI_RUN = re.compile("[ก-๛][ก-๛\\s\\d:;,.()\\-–]*[ก-๛\\d]")  # a Thai title inside a sentence
 
 
 def _short(label: str) -> str:
@@ -383,6 +384,9 @@ def change_monitor(days: int = 365, cc: CountryParam = None) -> dict:
         e["impact"] = r["impact"] if r else "Low"
         e["in_scope"] = r is not None
         e["name"] = r["name"] if r else e["canonical_id"]
+        if e["summary"] and THAI_TEXT.search(e["summary"]) and r and not THAI_TEXT.search(r["name"] or ""):
+            # written when the Thai standard arrived (Thai title); shown with its English title, the event row unchanged
+            e["summary"] = THAI_RUN.sub(r["name"], e["summary"], count=1)
         e["ai_summary_pending"] = (e["details"] or {}).get("summary_by") == "template"
     events = [e for e in events if e["in_scope"]]
     now = datetime.now().astimezone()
@@ -429,7 +433,8 @@ TRACKED = ("(cr.owner_team_id IS NOT NULL OR cr.status <> 'open' OR cr.due_date 
            "OR cr.evidence_links <> '[]'::jsonb)")
 COMP_STATUS = {"open": "Open", "in_progress": "In Progress", "compliant": "Compliant", "not_applicable": "Not Applicable"}
 COMP_SQL = """
-SELECT m.mandate_key, m.legal_basis, m.subject, m.standard_refs, m.vehicle_categories, m.implementation_date,
+SELECT m.mandate_key, m.legal_basis, m.subject, d.official_title AS source_title, m.standard_refs, m.vehicle_categories,
+       m.implementation_date,
        m.model_scope, d.canonical_id, d.domains, t.name AS owner, cr.evidence_links->0->>'label' AS evidence,
        initcap(replace(cr.status, '_', ' ')) AS status,
        coalesce(cr.due_date, m.implementation_date) AS due_date, cr.note,
@@ -455,6 +460,10 @@ def compliance(category: str | None = None, cc: CountryParam = None) -> dict:
         r["domain"] = vocab["domain_label"].get((r["domains"] or [None])[0], "General") if r["domains"] else "General"
         r["requirement"] = f"{r['legal_basis']}"
         r["categories"] = [c for c in vocab["scope"] if c in (r["vehicle_categories"] or [])]
+        if r["subject"] and THAI_TEXT.search(r["subject"]) and r.get("source_title") and not THAI_TEXT.search(r["source_title"]):
+            # a Thai standard's obligation was recorded with the Thai title (versions are never edited): show the
+            # standard's English title, the Thai one stays in the record
+            r["subject"] = r["source_title"]
     n = len(rows) or 1
     count = {s: sum(1 for r in rows if r["status"] == s) for s in ("Compliant", "In Progress", "Open", "Not Applicable")}
     applicable = n - count["Not Applicable"] or 1
@@ -674,12 +683,15 @@ def reports(cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
         vocab = load_vocab(conn, cc)
-        recent = _rows(conn, REPORT_LOG_SQL + " ORDER BY r.generated_at DESC LIMIT 20")
-        month = conn.execute("SELECT count(*) AS n FROM reports WHERE generated_at > date_trunc('month', now())").fetchone()["n"]
+        # the selected country's reports only (each report records its scope_region_id)
+        recent = _rows(conn, REPORT_LOG_SQL + " WHERE rg.code = %s ORDER BY r.generated_at DESC LIMIT 20", (cc,))
+        month = conn.execute("SELECT count(*) AS n FROM reports r JOIN regions rg ON rg.id = r.scope_region_id "
+                             "WHERE rg.code = %s AND r.generated_at > date_trunc('month', now())", (cc,)).fetchone()["n"]
         awaiting = conn.execute(f"""SELECT count(*) AS n FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
                                    WHERE e.review_status<>'confirmed' AND d.doc_class <> 'OFF_TOPIC'
                                      AND d.vehicle_categories && %s""", (vocab["scope"],)).fetchone()["n"]
-        last = conn.execute("SELECT max(generated_at) AS t FROM reports").fetchone()["t"]
+        last = conn.execute("SELECT max(r.generated_at) AS t FROM reports r JOIN regions rg ON rg.id = r.scope_region_id "
+                            "WHERE rg.code = %s", (cc,)).fetchone()["t"]
     return {"kpis": {"generated_month": month, "last_generated": last, "awaiting_review": awaiting, "templates": len(REPORTS)},
             "scope": ", ".join(vocab["categories"]),
             "templates": [{"kind": k, "name": v} for k, v in REPORTS.items()], "recent": recent}
