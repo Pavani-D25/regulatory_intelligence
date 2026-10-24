@@ -149,3 +149,22 @@ def test_tis_family_orders_editions_by_year(conn):
     assert rows["TIS-9999-2568"]["is_current"] and rows["TIS-9999-2568"]["legal_status"] == "final"
     assert not rows["TIS-9999-2551"]["is_current"] and rows["TIS-9999-2551"]["legal_status"] == "superseded"
     assert (rows["TIS-9999-2551"]["version_seq"], rows["TIS-9999-2568"]["version_seq"]) == (1, 2)
+
+
+def test_impact_thai_malaysian_technical_documents(conn):
+    """0022 / 0023: TIS standards and Malaysian emission regulations are technical; one that became mandatory in the
+    last 12 months is high; India's rule is unchanged."""
+    th, my = _region(conn, "TH"), _region(conn, "MY")
+    ids = {}
+    for cid, cls, rid, eff in (("TIS-9001-2563", "TIS_STANDARD", th, "2015-01-01"),
+                               ("TIS-9002-2563", "TIS_STANDARD", th, None),
+                               ("PUA-901-1996", "MY_SUBSIDIARY_LEGISLATION", my, "1996-11-01"),
+                               ("MY-JPJ-TEST-FORM", "MY_FORM", my, None)):
+        ids[cid] = conn.execute("INSERT INTO regulations (region_id, external_code, local_class, legal_status, effective_date, "
+                                "published_date) VALUES (%s,%s,%s,'final',%s, DATE '2000-01-01') RETURNING id",
+                                (rid, cid, cls, eff)).fetchone()["id"]
+    conn.execute("UPDATE regulations SET effective_date = current_date - 30 WHERE id=%s", (ids["TIS-9002-2563"],))
+    conn.execute("SELECT refresh_regulation_fields('TH'), refresh_regulation_fields('MY')")
+    level = {cid: conn.execute("SELECT impact_level FROM regulations WHERE id=%s", (i,)).fetchone()["impact_level"]
+             for cid, i in ids.items()}
+    assert level == {"TIS-9001-2563": "medium", "TIS-9002-2563": "high", "PUA-901-1996": "medium", "MY-JPJ-TEST-FORM": "low"}

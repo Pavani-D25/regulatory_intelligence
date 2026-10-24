@@ -122,7 +122,10 @@ WHERE d.doc_class <> 'OFF_TOPIC' AND d.vehicle_categories && %s {where}
 
 def classify_row(r: dict, vocab: dict, today: date | None = None) -> dict:
     today = today or date.today()
-    technical = r["nature"] == "technical" or (r["doc_class"] or "").startswith(("AIS_", "TAP_"))
+    # mirrors refresh_regulation_fields (0022): India's AIS / TAP, Thailand's TIS standards, Malaysia's emission
+    # regulations (the CTA list's obligations are known only to the stored rule)
+    technical = (r["nature"] == "technical" or (r["doc_class"] or "").startswith(("AIS_", "TAP_"))
+                 or r["doc_class"] in ("TIS_STANDARD", "MY_SUBSIDIARY_LEGISLATION"))
     recent = bool(r["doc_date"] and r["doc_date"] >= today - timedelta(days=365))
     upcoming = r["next_obligation"] is not None
     if r.get("review_impact"):
