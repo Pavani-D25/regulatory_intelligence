@@ -92,7 +92,7 @@ export default function Regulations() {
             <input type="checkbox" checked={f.history} onChange={(e) => set("history", e.target.checked ? "1" : "")} /> Show superseded documents ({k?.superseded ?? 0})</label>
           <label className="sub" style={{ display: "flex", gap: 6, alignItems: "center", margin: 0 }} title="Reports, AIS-007 form tables, lists and unclassified documents">
             <input type="checkbox" checked={f.reference} onChange={(e) => set("reference", e.target.checked ? "1" : "")} /> Show reference documents ({k?.reference ?? 0})</label>
-          {f.month && <span className="sub" style={{ margin: 0 }}>Month {f.month} · <button className="btn ghost" style={{ padding: 0 }} onClick={() => set("month", "")}>remove</button></span>}
+          {f.month && <span className="sub" style={{ margin: 0 }}>{f.month.length === 4 ? "Year" : "Month"} {f.month} · <button className="btn ghost" style={{ padding: 0 }} onClick={() => set("month", "")}>remove</button></span>}
         </div>
       </Card>
       {pending > 0 && <div className="banner">✦ <span>AI summaries and impact review are pending for <b>{pending}</b> of {data.rows.length} regulations. They fill in automatically once LM Studio is connected; until then impact is rule-based.</span></div>}

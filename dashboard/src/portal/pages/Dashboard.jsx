@@ -31,14 +31,19 @@ export default function Dashboard() {
         <Kpi label="Action Required" value={k.action_required} small="High impact with a date still to come" corner="✓" tone="green" />
       </div>
       <div className="grid2 wide">
-        <Card title="Regulatory Change Trend" sub="New regulations published per month · last 12 months" right={meta?.last_sync && <Badge v={`synced ${ago(meta.last_sync)}`} tone={meta.scheduler?.alive ? "green" : "amber"} />}>
+        <Card title="Regulatory Change Trend" sub={s.trend_sub || "New regulations published per month · last 12 months"} right={meta?.last_sync && <Badge v={`synced ${ago(meta.last_sync)}`} tone={meta.scheduler?.alive ? "green" : "amber"} />}>
           <div className="chartbars">
-            {s.trend.map((m) => (
-              <button key={m.ym} className="vbar" style={{ height: `${Math.max(3, (m.n / peak) * 100)}%` }}
-                title={`${m.label}: ${m.n}`} onClick={() => nav(`/regulations?month=${m.ym}`)}>
-                <b>{m.n}</b><label>{m.label}</label>
-              </button>
-            ))}
+            {s.trend.map((m, i) => {
+              // many bars (a per-year history): label every step-th one so the labels do not overlap; hover shows all
+              const step = Math.ceil(s.trend.length / 14);
+              const labelled = i % step === 0 || i === s.trend.length - 1;
+              return (
+                <button key={m.ym} className="vbar" style={{ height: `${Math.max(3, (m.n / peak) * 100)}%` }}
+                  title={`${m.label}: ${m.n}`} onClick={() => nav(`/regulations?month=${m.ym}`)}>
+                  <b>{m.n || (step > 1 ? "" : m.n)}</b><label>{labelled ? m.label : ""}</label>
+                </button>
+              );
+            })}
           </div>
         </Card>
         <Card title="Severity Distribution" sub="In-scope regulations by impact (rule-based until AI review)">

@@ -242,6 +242,19 @@ def summary(cc: CountryParam = None) -> dict:
                       AND date_trunc('month', d.doc_date)=m) AS n
                    FROM generate_series(date_trunc('month', current_date) - interval '11 months',
                                         date_trunc('month', current_date), interval '1 month') m ORDER BY m""", (vocab["scope"],))
+        trend_sub = "New regulations published per month · last 12 months"
+        if not any(m["n"] for m in months):
+            # nothing published in the last 12 months (Thailand's TIS editions, Malaysia's 1996-2003 regulations): per
+            # year over the years this country's in-scope regulations actually span, so the chart shows their history
+            months = _rows(conn, f"""WITH d AS (SELECT d.doc_date FROM {S.docs(cc)} d WHERE d.doc_class<>'OFF_TOPIC'
+                                                AND d.vehicle_categories && %s AND d.doc_date IS NOT NULL)
+                                     SELECT to_char(y, 'YYYY') AS label, to_char(y, 'YYYY') AS ym,
+                                            (SELECT count(*) FROM d WHERE date_trunc('year', d.doc_date) = y) AS n
+                                     FROM generate_series((SELECT date_trunc('year', min(doc_date)) FROM d),
+                                                          date_trunc('year', current_date), interval '1 year') y
+                                     ORDER BY y""", (vocab["scope"],))
+            if months:
+                trend_sub = f"Regulations published per year · {months[0]['label']}–{months[-1]['label']} (none in the last 12 months)"
         changes = _rows(conn, f"""SELECT count(*) AS n, count(*) FILTER (WHERE e.review_status<>'confirmed') AS open
                                  FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
                                  WHERE e.detected_at > now() - interval '30 days' AND d.doc_class <> 'OFF_TOPIC'
@@ -271,7 +284,7 @@ def summary(cc: CountryParam = None) -> dict:
         "kpis": {"tracked": len(regs), "new_this_quarter": sum(1 for r in regs if r["doc_date"] and r["doc_date"] >= today - timedelta(days=90)),
                  "changes_30d": changes["n"], "changes_open": changes["open"], "high": sev["High"],
                  "action_required": sum(1 for r in regs if r["status"] == "Action Required")},
-        "trend": months, "severity": sev, "changed_30d": len(changed), "by_category": by_cat, "top_domains": top_dom,
+        "trend": months, "trend_sub": trend_sub, "severity": sev, "changed_30d": len(changed), "by_category": by_cat, "top_domains": top_dom,
         "latest": [_reg_out(r) for r in latest], "deadlines": deadlines, "recent_deadlines": recent_deadlines,
         "sources": sources["n"], "last_sync": sources["last"],
     }
