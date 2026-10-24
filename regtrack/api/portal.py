@@ -230,31 +230,63 @@ def detected_change(conn, doc_id: int) -> str:
 
 
 # ====================================================================== dashboard
+TREND_COUNT = """(SELECT count(*) FROM {docs} d WHERE d.doc_class<>'OFF_TOPIC' AND d.vehicle_categories && %s
+                   AND date_trunc('{unit}', d.doc_date) = p)"""
+
+
+def trend_series(conn, cc: str, scope: list[str], view: str = "auto", y_from: int | None = None,
+                 y_to: int | None = None) -> dict:
+    """In-scope regulations published per month or per year. Every bound comes from the data or the request:
+    'auto' = the last 12 months, or, when nothing was published in them, per year over the years the country's
+    regulations span; 'month' / 'year' over [y_from, y_to] (defaults: last 12 months / all years)."""
+    docs = S.docs(cc)
+    span = conn.execute(f"""SELECT extract(year FROM min(d.doc_date))::int AS lo FROM {docs} d WHERE d.doc_class<>'OFF_TOPIC'
+                            AND d.vehicle_categories && %s AND d.doc_date IS NOT NULL""", (scope,)).fetchone()
+    today = date.today()
+    lo, hi = (span["lo"] or today.year), today.year
+    y_from = min(max(y_from, lo), hi) if y_from else None
+    y_to = min(max(y_to, lo), hi) if y_to else None
+    if y_from and y_to and y_from > y_to:
+        y_from, y_to = y_to, y_from
+
+    def series(unit: str, first: date, last: date) -> list[dict]:
+        fmt_label, fmt_key = ("Mon YY", "YYYY-MM") if unit == "month" else ("YYYY", "YYYY")
+        return _rows(conn, f"""SELECT to_char(p, '{fmt_label}') AS label, to_char(p, '{fmt_key}') AS ym,
+                                     {TREND_COUNT.format(docs=docs, unit=unit)} AS n
+                              FROM generate_series(date_trunc('{unit}', %s::date), date_trunc('{unit}', %s::date),
+                                                   interval '1 {unit}') p ORDER BY p""", (scope, first, last))
+
+    this_month = today.replace(day=1)
+    m11 = this_month.year * 12 + this_month.month - 1 - 11  # the first of the 12 months ending with this one
+    last12 = date(m11 // 12, m11 % 12 + 1, 1)
+    if view == "month":
+        first = date(y_from, 1, 1) if y_from else last12
+        last = min(date(y_to, 12, 1), this_month) if y_to else this_month
+        rows, used = series("month", first, last), "month"
+    elif view == "year":
+        rows, used = series("year", date(y_from or lo, 1, 1), date(y_to or hi, 1, 1)), "year"
+    else:
+        rows, used = series("month", last12, this_month), "month"
+        if not any(r["n"] for r in rows) and span["lo"]:
+            rows, used = series("year", date(lo, 1, 1), date(hi, 1, 1)), "year"
+    rng = f"{rows[0]['label']}–{rows[-1]['label']}" if rows else ""
+    sub = (f"Regulations published per {used} · {rng}"
+           + (" (none in the last 12 months)" if view == "auto" and used == "year" else ""))
+    return {"trend": rows, "trend_sub": sub, "trend_view": used, "trend_years": {"min": lo, "max": hi}}
+
+
 @router.get("/summary")
-def summary(cc: CountryParam = None) -> dict:
+def summary(cc: CountryParam = None, trend_view: str = "auto", trend_from: int | None = None,
+            trend_to: int | None = None) -> dict:
+    if trend_view not in ("auto", "month", "year"):
+        raise HTTPException(400, "trend_view is auto, month or year")
     today = date.today()
     cc = resolve_country(cc)
     with connect() as conn:
         vocab = load_vocab(conn, cc)
         regs = regulations(conn, cc=cc)
-        months = _rows(conn, f"""SELECT to_char(m, 'Mon') AS label, to_char(m, 'YYYY-MM') AS ym,
-                   (SELECT count(*) FROM {S.docs(cc)} d WHERE d.doc_class<>'OFF_TOPIC' AND d.vehicle_categories && %s
-                      AND date_trunc('month', d.doc_date)=m) AS n
-                   FROM generate_series(date_trunc('month', current_date) - interval '11 months',
-                                        date_trunc('month', current_date), interval '1 month') m ORDER BY m""", (vocab["scope"],))
-        trend_sub = "New regulations published per month · last 12 months"
-        if not any(m["n"] for m in months):
-            # nothing published in the last 12 months (Thailand's TIS editions, Malaysia's 1996-2003 regulations): per
-            # year over the years this country's in-scope regulations actually span, so the chart shows their history
-            months = _rows(conn, f"""WITH d AS (SELECT d.doc_date FROM {S.docs(cc)} d WHERE d.doc_class<>'OFF_TOPIC'
-                                                AND d.vehicle_categories && %s AND d.doc_date IS NOT NULL)
-                                     SELECT to_char(y, 'YYYY') AS label, to_char(y, 'YYYY') AS ym,
-                                            (SELECT count(*) FROM d WHERE date_trunc('year', d.doc_date) = y) AS n
-                                     FROM generate_series((SELECT date_trunc('year', min(doc_date)) FROM d),
-                                                          date_trunc('year', current_date), interval '1 year') y
-                                     ORDER BY y""", (vocab["scope"],))
-            if months:
-                trend_sub = f"Regulations published per year · {months[0]['label']}–{months[-1]['label']} (none in the last 12 months)"
+        tr = trend_series(conn, cc, vocab["scope"], trend_view, trend_from, trend_to)
+        months = tr.pop("trend")
         changes = _rows(conn, f"""SELECT count(*) AS n, count(*) FILTER (WHERE e.review_status<>'confirmed') AS open
                                  FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
                                  WHERE e.detected_at > now() - interval '30 days' AND d.doc_class <> 'OFF_TOPIC'
@@ -284,7 +316,7 @@ def summary(cc: CountryParam = None) -> dict:
         "kpis": {"tracked": len(regs), "new_this_quarter": sum(1 for r in regs if r["doc_date"] and r["doc_date"] >= today - timedelta(days=90)),
                  "changes_30d": changes["n"], "changes_open": changes["open"], "high": sev["High"],
                  "action_required": sum(1 for r in regs if r["status"] == "Action Required")},
-        "trend": months, "trend_sub": trend_sub, "severity": sev, "changed_30d": len(changed), "by_category": by_cat, "top_domains": top_dom,
+        "trend": months, **tr, "severity": sev, "changed_30d": len(changed), "by_category": by_cat, "top_domains": top_dom,
         "latest": [_reg_out(r) for r in latest], "deadlines": deadlines, "recent_deadlines": recent_deadlines,
         "sources": sources["n"], "last_sync": sources["last"],
     }

@@ -263,3 +263,17 @@ def test_workspace_teams_watches_schedules(client, tmp_path, monkeypatch):
             conn.execute("DELETE FROM users WHERE team_id=%s", (tid,))
             conn.execute("DELETE FROM teams WHERE id=%s", (tid,))
             conn.commit()
+
+
+def test_trend_range_options(client):
+    """Dashboard trend: auto / monthly / yearly over years taken from the data; bounds clamped, order fixed."""
+    auto = client.get("/portal/summary").json()
+    assert auto["trend_view"] in ("month", "year") and auto["trend_years"]["min"] <= auto["trend_years"]["max"]
+    lo, hi = auto["trend_years"]["min"], auto["trend_years"]["max"]
+    monthly = client.get("/portal/summary", params={"trend_view": "month"}).json()
+    assert monthly["trend_view"] == "month" and len(monthly["trend"]) == 12
+    yearly = client.get("/portal/summary", params={"trend_view": "year", "trend_from": hi, "trend_to": lo}).json()
+    assert [t["label"] for t in yearly["trend"]][0] == str(lo) and len(yearly["trend"]) == hi - lo + 1  # swapped back
+    clamped = client.get("/portal/summary", params={"trend_view": "year", "trend_from": 1000, "trend_to": 9999}).json()
+    assert clamped["trend"][0]["label"] == str(lo) and clamped["trend"][-1]["label"] == str(hi)
+    assert client.get("/portal/summary", params={"trend_view": "weekly"}).status_code == 400

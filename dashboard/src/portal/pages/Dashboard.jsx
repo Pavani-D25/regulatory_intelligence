@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
@@ -5,11 +6,16 @@ import { usePortal } from "../PortalLayout";
 import { ago, Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId } from "../ui";
 
 export default function Dashboard() {
-  const { version, countryName } = usePortal();
-  const { data: s, error, loading } = useLoad(() => portal.summary(), [version]);
+  const { version, countryName, country } = usePortal();
+  // trend chart range: view (auto / month / year) and years; the year choices come from the data (trend_years)
+  const [range, setRange] = useState({ view: "auto", from: "", to: "" });
+  useEffect(() => setRange({ view: "auto", from: "", to: "" }), [country]);
+  const { data: s, error, loading } = useLoad(
+    () => portal.summary({ trend_view: range.view, trend_from: range.from || undefined, trend_to: range.to || undefined }),
+    [version, range.view, range.from, range.to]);
   const { openReg, meta } = usePortal();
   const nav = useNavigate();
-  if (loading) return <Loading />;
+  if (loading && !s) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const k = s.kpis;
   const peak = Math.max(1, ...s.trend.map((m) => m.n));
@@ -32,6 +38,27 @@ export default function Dashboard() {
       </div>
       <div className="grid2 wide">
         <Card title="Regulatory Change Trend" sub={s.trend_sub || "New regulations published per month · last 12 months"} right={meta?.last_sync && <Badge v={`synced ${ago(meta.last_sync)}`} tone={meta.scheduler?.alive ? "green" : "amber"} />}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+            <select className="select" aria-label="Trend view" value={range.view}
+              onChange={(e) => setRange({ view: e.target.value, from: "", to: "" })}>
+              <option value="auto">Auto</option><option value="month">Monthly</option><option value="year">Yearly</option>
+            </select>
+            {range.view !== "auto" && s.trend_years && (() => {
+              const years = [];
+              for (let y = s.trend_years.max; y >= s.trend_years.min; y--) years.push(y);
+              return (<>
+                <select className="select" aria-label="From year" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })}>
+                  <option value="">{range.view === "month" ? "From (last 12 months)" : `From ${s.trend_years.min}`}</option>
+                  {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <select className="select" aria-label="To year" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })}>
+                  <option value="">{`To ${s.trend_years.max}`}</option>
+                  {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </>);
+            })()}
+            {loading && <span className="sub">updating…</span>}
+          </div>
           <div className="chartbars">
             {s.trend.map((m, i) => {
               // many bars (a per-year history): label every step-th one so the labels do not overlap; hover shows all

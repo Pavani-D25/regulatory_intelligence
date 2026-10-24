@@ -64,7 +64,7 @@ async function send(method, path, body) {
 
 export const portal = {
   meta: () => get("/portal/meta"),
-  summary: () => get("/portal/summary"),
+  summary: (p) => get("/portal/summary", p),
   regulations: (p) => get("/portal/regulations", p),
   detail: (id) => get(`/portal/regulations/${enc(id)}/detail`),
   review: (id, body) => send("PUT", `/portal/regulations/${enc(id)}/review`, body),
