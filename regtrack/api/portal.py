@@ -230,8 +230,11 @@ def detected_change(conn, doc_id: int) -> str:
 
 
 # ====================================================================== dashboard
+YEAR_ONLY = "AND d.doc_date_precision IS DISTINCT FROM 'year'"
+# per month only what is dated to the month: a Thai TIS edition is dated by its year (stored as 1 January,
+# precision 'year') and would otherwise all land in January
 TREND_COUNT = """(SELECT count(*) FROM {docs} d WHERE d.doc_class<>'OFF_TOPIC' AND d.vehicle_categories && %s
-                   AND date_trunc('{unit}', d.doc_date) = p)"""
+                   AND date_trunc('{unit}', d.doc_date) = p {precision})"""
 
 
 def trend_series(conn, cc: str, scope: list[str], view: str = "auto", y_from: int | None = None,
@@ -252,7 +255,7 @@ def trend_series(conn, cc: str, scope: list[str], view: str = "auto", y_from: in
     def series(unit: str, first: date, last: date) -> list[dict]:
         fmt_label, fmt_key = ("Mon YY", "YYYY-MM") if unit == "month" else ("YYYY", "YYYY")
         return _rows(conn, f"""SELECT to_char(p, '{fmt_label}') AS label, to_char(p, '{fmt_key}') AS ym,
-                                     {TREND_COUNT.format(docs=docs, unit=unit)} AS n
+                                     {TREND_COUNT.format(docs=docs, unit=unit, precision=YEAR_ONLY if unit == "month" else "")} AS n
                               FROM generate_series(date_trunc('{unit}', %s::date), date_trunc('{unit}', %s::date),
                                                    interval '1 {unit}') p ORDER BY p""", (scope, first, last))
 
@@ -270,9 +273,18 @@ def trend_series(conn, cc: str, scope: list[str], view: str = "auto", y_from: in
         if not any(r["n"] for r in rows) and span["lo"]:
             rows, used = series("year", date(lo, 1, 1), date(hi, 1, 1)), "year"
     rng = f"{rows[0]['label']}–{rows[-1]['label']}" if rows else ""
+    note = None
+    if used == "month" and rows:
+        first_m, last_m = rows[0]["ym"] + "-01", rows[-1]["ym"] + "-01"
+        undated = conn.execute(f"""SELECT count(*) AS n FROM {docs} d WHERE d.doc_class<>'OFF_TOPIC'
+                                   AND d.vehicle_categories && %s AND d.doc_date_precision = 'year'
+                                   AND d.doc_date >= date_trunc('year', %s::date) AND d.doc_date < %s::date + interval '1 month'""",
+                               (scope, first_m, last_m)).fetchone()["n"]
+        if undated:
+            note = f"{undated} regulation(s) in this range are dated by year only (not shown per month) - use Yearly"
     sub = (f"Regulations published per {used} · {rng}"
            + (" (none in the last 12 months)" if view == "auto" and used == "year" else ""))
-    return {"trend": rows, "trend_sub": sub, "trend_view": used, "trend_years": {"min": lo, "max": hi}}
+    return {"trend": rows, "trend_sub": sub, "trend_view": used, "trend_years": {"min": lo, "max": hi}, "trend_note": note}
 
 
 @router.get("/summary")

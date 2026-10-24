@@ -59,19 +59,26 @@ export default function Dashboard() {
             })()}
             {loading && <span className="sub">updating…</span>}
           </div>
-          <div className="chartbars">
-            {s.trend.map((m, i) => {
-              // many bars (a per-year history): label every step-th one so the labels do not overlap; hover shows all
-              const step = Math.ceil(s.trend.length / 14);
-              const labelled = i % step === 0 || i === s.trend.length - 1;
-              return (
-                <button key={m.ym} className="vbar" style={{ height: `${Math.max(3, (m.n / peak) * 100)}%` }}
-                  title={`${m.label}: ${m.n}`} onClick={() => nav(`/regulations?month=${m.ym}`)}>
-                  <b>{m.n || (step > 1 ? "" : m.n)}</b><label>{labelled ? m.label : ""}</label>
-                </button>
-              );
-            })}
-          </div>
+          {(() => {
+            // bar width and gap follow the bar count, so 12 months or 70 years always fit the card; with many bars
+            // only every step-th bar is labelled and counts show on hover (title)
+            const count = s.trend.length;
+            const step = Math.ceil(count / 14);
+            const gap = count > 40 ? 1 : count > 20 ? 3 : 8;
+            return (
+              <div className="chartbars" style={{ gap, overflow: "hidden" }}>
+                {s.trend.map((m, i) => (
+                  <button key={m.ym} className="vbar" title={`${m.label}: ${m.n}`} onClick={() => nav(`/regulations?month=${m.ym}`)}
+                    style={{ height: `${Math.max(3, (m.n / peak) * 100)}%`, minWidth: 0,
+                             borderRadius: count > 20 ? "3px 3px 0 0" : undefined }}>
+                    {step === 1 && <b>{m.n}</b>}
+                    <label style={{ whiteSpace: "nowrap" }}>{i % step === 0 || i === count - 1 ? m.label : ""}</label>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+          {s.trend_note && <p className="note" style={{ marginTop: 8 }}>{s.trend_note}</p>}
         </Card>
         <Card title="Severity Distribution" sub="In-scope regulations by impact (rule-based until AI review)">
           <Donut total={s.kpis.tracked} label="regulations" parts={[
