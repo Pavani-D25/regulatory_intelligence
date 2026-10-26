@@ -1,22 +1,25 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Badge, Card, ErrorBox, Kpi, Loading, MetricRows } from "../ui";
+import { Badge, Card, ErrorBox, Kpi, Loading, MetricRows, SegmentPicker } from "../ui";
 
 export default function Impact() {
-  const { version } = usePortal();
-  const { data, error, loading } = useLoad(() => portal.impact(), [version]);
-  const { openReg } = usePortal();
+  const { version, country, meta, openReg } = usePortal();
+  // vehicle segment path, e.g. "2W/PV" (regtrack/segments.py); "" = every in-scope category
+  const [segment, setSegment] = useState("");
+  const { data, error, loading } = useLoad(() => portal.impact(segment), [version, segment]);
   const nav = useNavigate();
   const [cell, setCell] = useState(null);
   const [detail, setDetail] = useState(null);
-  if (loading) return <Loading />;
+  useEffect(() => setSegment(""), [country]);
+  useEffect(() => { setCell(null); setDetail(null); }, [segment, country]);
+  if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const pick = async (code, cat) => {
     setCell({ code, cat }); setDetail(null);
-    setDetail(await portal.impactCell(cat, code));
+    setDetail(await portal.impactCell(cat, code, segment));
   };
   const k = data.kpis;
   return (
@@ -25,6 +28,14 @@ export default function Impact() {
         <div><h1>Impact View</h1><p>Where regulation hits hardest: vehicle category × topic, weighted by impact.</p></div>
         <div className="actions"><button className="btn primary" onClick={() => nav("/compliance")}>Open Compliance Matrix</button></div>
       </div>
+      <Card>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 13 }}>Vehicle segment</strong>
+          <SegmentPicker tree={meta?.segments} value={segment} onChange={setSegment} />
+          {segment && <button className="btn ghost" onClick={() => setSegment("")}>Clear</button>}
+          {loading && <span className="sub">updating…</span>}
+        </div>
+      </Card>
       <div className="kpis">
         <Kpi label="Critical Areas" value={k.critical} small="Topics scoring 4–5 for some category" corner="!" tone="red" />
         <Kpi label={k.top1.name} value={k.top1.n} small="Most regulated topic" corner="1" tone="amber" />
@@ -33,7 +44,7 @@ export default function Impact() {
       </div>
       <div className="grid2 wide">
         <Card title="Category × Domain Impact Heatmap" sub="Score 1–5 from regulation count (high impact counts double) · click a cell">
-          <div className="heat">
+          <div className="heat" style={{ "--cols": data.categories.length || 1 }}>
             <div />{data.categories.map((c, i) => <div key={c} className="hhead">{data.category_labels[i]}</div>)}
             {data.cells.map((row) => (
               <FragmentRow key={row.code} row={row} cats={data.categories} onPick={pick} sel={cell} />
@@ -54,7 +65,7 @@ export default function Impact() {
               </div>
             ))}
             {detail && detail.count > 6 && (
-              <button className="btn ghost" onClick={() => nav(`/regulations?category=${cell.cat}&q=${encodeURIComponent(detail.domain)}`)}>View all {detail.count} →</button>
+              <button className="btn ghost" onClick={() => nav(`/regulations?category=${cell.cat}&q=${encodeURIComponent(detail.domain)}${segment ? `&segment=${encodeURIComponent(segment)}` : ""}`)}>View all {detail.count} →</button>
             )}
           </div>
         </Card>

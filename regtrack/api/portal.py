@@ -588,15 +588,21 @@ def set_compliance(mandate_key: str, body: dict = Body(...)) -> dict:
 
 # ====================================================================== impact view
 @router.get("/impact")
-def impact(cc: CountryParam = None) -> dict:
+def impact(segment: str | None = None, cc: CountryParam = None) -> dict:
+    """Category x topic heatmap; segment (regtrack/segments.py) narrows the regulations, columns and standards.
+    The workflow counts are the country's pipeline and stay unfiltered."""
     cc = resolve_country(cc)
     region = country.region_sql("x", cc)
     with connect() as conn:
         vocab = load_vocab(conn, cc)
-        regs = regulations(conn, cc=cc)
+        scope, usage = segment_filter(cc, segment) or (vocab["scope"], "")
+        cats = [c for c in vocab["categories"] if c in scope]
+        regs = regulations(conn, cc=cc, segment=segment)
+        n_regs = len(regulations(conn, cc=cc)) if segment else len(regs)
         stds = _rows(conn, f"""SELECT s AS name, count(*) AS n FROM {S.mandates(cc)} m, unnest(m.standard_refs) s
                               WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
-                              GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 5""", (vocab["scope"],))
+                              {usage.replace("d.usage", "m.usage")}
+                              GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 5""", (scope,))
         owners = conn.execute(f"SELECT count(DISTINCT owner_team_id) AS n FROM compliance_requirements x "
                               f"WHERE owner_team_id IS NOT NULL AND {region}").fetchone()["n"]
         wf = conn.execute(f"""SELECT
@@ -616,20 +622,20 @@ def impact(cc: CountryParam = None) -> dict:
             dom[d] = dom.get(d, 0) + (2 if r["impact"] == "High" else 1)
     top = [d for d, _ in sorted(dom.items(), key=lambda kv: -kv[1])[:5]]
     counts = {d: {c: sum((2 if r["impact"] == "High" else 1) for r in regs if d in (r["domains"] or [])
-                         and (c in r["categories"] or "ALL" in (r["vehicle_categories"] or []))) for c in vocab["categories"]} for d in top}
+                         and (c in r["categories"] or "ALL" in (r["vehicle_categories"] or []))) for c in cats} for d in top}
     peak = max([v for row in counts.values() for v in row.values()] or [1]) or 1
     score = {d: {c: max(1, min(5, 1 + round(4 * v / peak))) if v else 1 for c, v in row.items()} for d, row in counts.items()}
-    cells = [{"domain": vocab["domain_label"].get(d, d), "code": d, "scores": [score[d][c] for c in vocab["categories"]],
-              "counts": [counts[d][c] for c in vocab["categories"]]} for d in top]
+    cells = [{"domain": vocab["domain_label"].get(d, d), "code": d, "scores": [score[d][c] for c in cats],
+              "counts": [counts[d][c] for c in cats]} for d in top]
     critical = sum(1 for d in top if max(score[d].values()) >= 4)
     workflow = [
         {"step": "Detect", "text": "New or changed documents found by source monitoring (last 30 days)", "n": wf["detected"], "of": None},
         {"step": "Classify", "text": "Files with identity, category and topic read from content", "n": wf["classified"], "of": wf["files"]},
-        {"step": "Assess", "text": "In-scope regulations with a review decision by the team", "n": wf["assessed"], "of": len(regs)},
+        {"step": "Assess", "text": "In-scope regulations with a review decision by the team", "n": wf["assessed"], "of": n_regs},
         {"step": "Map", "text": "Obligations in force with an owner in the Compliance Matrix", "n": wf["mapped"], "of": wf["obligations"]},
         {"step": "Close", "text": "Detected changes marked as reviewed", "n": wf["closed"], "of": wf["changes"]},
     ]
-    return {"categories": vocab["categories"], "category_labels": [vocab["cat_label"].get(c, c) for c in vocab["categories"]], "cells": cells,
+    return {"categories": cats, "category_labels": [vocab["cat_label"].get(c, c) for c in cats], "cells": cells,
             "top_standards": stds, "workflow": workflow,
             "kpis": {"critical": critical,
                      "top1": {"name": vocab["domain_label"].get(top[0], top[0]) if top else "—", "n": sum(1 for r in regs if top and top[0] in (r["domains"] or []))},
@@ -638,11 +644,17 @@ def impact(cc: CountryParam = None) -> dict:
 
 
 @router.get("/impact/cell")
-def impact_cell(category: str, domain: str, cc: CountryParam = None) -> dict:
+def impact_cell(category: str, domain: str, segment: str | None = None, cc: CountryParam = None) -> dict:
+    """The regulations behind one heatmap cell, within the segment if one is selected (same count as the cell)."""
     cc = resolve_country(cc)
     with connect() as conn:
         vocab = load_vocab(conn, cc)
-        regs = [r for r in regulations(conn, category, cc=cc) if domain in (r["domains"] or [])]
+        if segment:
+            regs = [r for r in regulations(conn, cc=cc, segment=segment)
+                    if category in r["categories"] or "ALL" in (r["vehicle_categories"] or [])]
+        else:
+            regs = regulations(conn, category, cc=cc)
+        regs = [r for r in regs if domain in (r["domains"] or [])]
     regs.sort(key=lambda r: ({"High": 0, "Medium": 1, "Low": 2}[r["impact"]], -(r["effective"] or date(1900, 1, 1)).toordinal()))
     return {"category": category, "domain": vocab["domain_label"].get(domain, domain), "count": len(regs),
             "rows": [_reg_out(r) for r in regs[:6]]}
