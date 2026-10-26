@@ -248,10 +248,19 @@ def test_workspace_teams_watches_schedules(client, tmp_path, monkeypatch):
                                                              "team_ids": [tid]}).json()["id"]
         assert client.post("/portal/report-schedules", json={"kind": "compliance_gap", "frequency": "hourly",
                                                              "team_ids": [tid]}).status_code == 400
+        # a schedule for one vehicle segment: its report covers only that segment
+        seg_id = client.post("/portal/report-schedules", json={"kind": "executive", "frequency": "weekly",
+                                                                "team_ids": [tid], "segment": "4W/CV"}).json()["id"]
+        assert client.post("/portal/report-schedules", json={"kind": "executive", "frequency": "weekly",
+                                                             "team_ids": [tid], "segment": "3W"}).status_code == 400
         files = W.run_due_schedules(datetime.now().astimezone() + timedelta(days=8))
-        assert len(files) == 1 and (tmp_path / files[0]).read_text(encoding="utf-8").startswith("<!doctype html>")
-        s = next(x for x in client.get("/portal/report-schedules").json()["schedules"] if x["id"] == sid)
+        assert len(files) == 2 and all((tmp_path / f).read_text(encoding="utf-8").startswith("<!doctype html>") for f in files)
+        seg_file = next(f for f in files if "_4W-CV_" in f)
+        assert "segment 4W-CV (N1)" in (tmp_path / seg_file).read_text(encoding="utf-8")
+        rows = {x["id"]: x for x in client.get("/portal/report-schedules").json()["schedules"]}
+        s = rows[sid]
         assert s["teams"] == ["pytest workspace"] and s["last_run_at"] and s["kind"] == "compliance_gap"
+        assert (s["scope"], rows[seg_id]["scope"], rows[seg_id]["segment"]) == ("All categories", "4W-CV", "4W/CV")
         assert W.run_due_schedules(datetime.now().astimezone() + timedelta(days=8)) == []  # not due again yet
         assert client.patch(f"/portal/report-schedules/{sid}", json={"is_active": False}).status_code == 200
         assert client.get("/portal/ask/conversations").status_code == 200

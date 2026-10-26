@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Body, HTTPException
 
-from regtrack import country
+from regtrack import country, segments
 from regtrack.config import ROOT
 from regtrack.db import Jsonb, connect
 
@@ -162,6 +162,7 @@ def conversations(limit: int = 30) -> dict:
 
 # ====================================================================== report schedules
 SCHEDULE_SQL = """SELECT s.id, rt.name AS template, s.frequency, s.next_run_at, s.is_active, s.recipients, rg.code AS country,
+                         s.parameters->>'segment' AS segment,
                          (SELECT max(r.generated_at) FROM reports r WHERE r.parameters->>'schedule_id' = s.id::text) AS last_run_at
                   FROM report_schedules s JOIN report_templates rt ON rt.id=s.template_id
                   JOIN regions rg ON rg.id=s.scope_region_id"""
@@ -183,6 +184,7 @@ def report_schedules() -> dict:
     for r in rows:
         r["kind"] = _kind_of(r["template"])
         r["teams"] = [names.get(t, "?") for t in (r.pop("recipients") or {}).get("teams", [])]
+        r["scope"] = segments.label(r["segment"]) if r["segment"] else "All categories"
     return {"schedules": rows, "frequencies": list(FREQUENCIES), "templates": [{"kind": k, "name": v} for k, v in REPORTS.items()]}
 
 
@@ -194,12 +196,18 @@ def add_report_schedule(body: dict = Body(...)) -> dict:
     teams = [int(t) for t in body.get("team_ids") or []]
     if kind not in REPORTS or freq not in FREQUENCIES or not teams:
         raise HTTPException(400, "a report, a frequency and at least one team are required")
+    segment = (body.get("segment") or "").strip("/") or None
+    try:
+        segments.resolve(country.code(), segment)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     with connect() as conn:
         sid = conn.execute(
-            """INSERT INTO report_schedules (template_id, scope_region_id, frequency, recipients, next_run_at)
+            """INSERT INTO report_schedules (template_id, scope_region_id, frequency, recipients, next_run_at, parameters)
                VALUES ((SELECT id FROM report_templates WHERE name=%s), (SELECT id FROM regions WHERE code=%s), %s, %s,
-                       now() + %s) RETURNING id""",
-            (REPORTS[kind], country.code(), freq, Jsonb({"teams": teams}), FREQUENCIES[freq])).fetchone()["id"]
+                       now() + %s, %s) RETURNING id""",
+            (REPORTS[kind], country.code(), freq, Jsonb({"teams": teams}), FREQUENCIES[freq],
+             Jsonb({"segment": segment} if segment else {}))).fetchone()["id"]
         conn.commit()
     return {"id": sid}
 
@@ -221,8 +229,9 @@ def delete_report_schedule(schedule_id: int) -> dict:
 
 
 def run_due_schedules(now: datetime | None = None) -> list[str]:
-    """Generate every active schedule that is due (called by the scheduler): the HTML report is saved under
-    data/reports, logged in reports with its file_path, and the schedule moves to its next date."""
+    """Generate every active schedule that is due (called by the scheduler): the HTML report, for the schedule's vehicle
+    segment if it has one, is saved under data/reports, logged in reports with its file_path, and the schedule moves
+    to its next date. A schedule whose segment no longer resolves is skipped and still moved on, never failing the run."""
     from regtrack.api.portal import generate_report
 
     now = now or datetime.now().astimezone()
@@ -233,20 +242,28 @@ def run_due_schedules(now: datetime | None = None) -> list[str]:
     for s in due:
         kind, cc = _kind_of(s["template"]), s["country"]
         owner = team_names.get(((s["recipients"] or {}).get("teams") or [None])[0]) or "Regulatory Affairs Team"
-        resp = generate_report(kind, "html", owner=owner, cc=cc)
-        REPORT_DIR.mkdir(parents=True, exist_ok=True)
-        path = REPORT_DIR / f"{now:%Y-%m-%d_%H%M}_{kind}_schedule{s['id']}.html"
-        path.write_bytes(resp.body)
+        try:
+            resp = generate_report(kind, "html", owner=owner, segment=s["segment"], cc=cc)
+        except HTTPException:
+            resp = None
+        path = None
+        if resp is not None:
+            REPORT_DIR.mkdir(parents=True, exist_ok=True)
+            seg = f"_{s['segment'].replace('/', '-')}" if s["segment"] else ""
+            path = REPORT_DIR / f"{now:%Y-%m-%d_%H%M}_{kind}{seg}_schedule{s['id']}.html"
+            path.write_bytes(resp.body)
         with connect() as conn:
             # the report generate_report just logged: attach the file and the schedule
-            conn.execute("""UPDATE reports SET file_path=%s, parameters = parameters || jsonb_build_object('schedule_id', %s)
-                            WHERE id=(SELECT max(id) FROM reports WHERE template_id=(SELECT id FROM report_templates WHERE name=%s))""",
-                         (str(path), s["id"], s["template"]))
+            if path:
+                conn.execute("""UPDATE reports SET file_path=%s, parameters = parameters || jsonb_build_object('schedule_id', %s)
+                                WHERE id=(SELECT max(id) FROM reports WHERE template_id=(SELECT id FROM report_templates WHERE name=%s))""",
+                             (str(path), s["id"], s["template"]))
             step = FREQUENCIES[s["frequency"]]
             nxt = s["next_run_at"]
             while nxt <= now:
                 nxt += step
             conn.execute("UPDATE report_schedules SET next_run_at=%s WHERE id=%s", (nxt, s["id"]))
             conn.commit()
-        done.append(path.name)
+        if path:
+            done.append(path.name)
     return done

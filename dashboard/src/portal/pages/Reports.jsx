@@ -40,7 +40,7 @@ export default function Reports() {
           <strong style={{ fontSize: 13 }}>Vehicle segment</strong>
           <SegmentPicker tree={meta?.segments} value={segment} onChange={setSegment} />
           {segment && <button className="btn ghost" onClick={() => setSegment("")}>Clear</button>}
-          <span className="sub">Generate and CSV cover this segment; scheduled reports cover every category.</span>
+          <span className="sub">Generate, CSV and New Schedule use this segment.</span>
         </div>
       </Card>
       <div className="kpis">
@@ -63,31 +63,33 @@ export default function Reports() {
         ))}
       </div>
       <Card title="Scheduled Reports" sub="Generated automatically and kept as files; listed below when they run"
-        right={<button className="btn secondary" onClick={() => setPlan({ kind: "executive", frequency: "weekly", team: meta?.teams?.[0]?.id || "" })}>New Schedule</button>}>
+        right={<button className="btn secondary" onClick={() => setPlan({ kind: "executive", frequency: "weekly", team: meta?.teams?.[0]?.id || "", segment })}>New Schedule</button>}>
         {plan && (
-          <div className="formrow" style={{ gridTemplateColumns: "1fr 1fr 1fr auto", alignItems: "end" }}>
+          <div className="formrow" style={{ gridTemplateColumns: "1fr 1fr 1fr", alignItems: "end" }}>
             <label className="formlabel">Report<select className="select" value={plan.kind} onChange={(e) => setPlan({ ...plan, kind: e.target.value })}>
               {(sch?.templates || []).map((t) => <option key={t.kind} value={t.kind}>{t.name}</option>)}</select></label>
             <label className="formlabel">Every<select className="select" value={plan.frequency} onChange={(e) => setPlan({ ...plan, frequency: e.target.value })}>
               {(sch?.frequencies || []).map((f) => <option key={f}>{f}</option>)}</select></label>
             <label className="formlabel">For team<select className="select" value={plan.team} onChange={(e) => setPlan({ ...plan, team: Number(e.target.value) || "" })}>
               <option value="">Choose…</option>{(meta?.teams || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
+            <div className="formlabel" style={{ gridColumn: "1 / -1" }}>Vehicle segment
+              <SegmentPicker tree={meta?.segments} value={plan.segment} onChange={(v) => setPlan({ ...plan, segment: v })} /></div>
             <div className="actions" style={{ margin: "10px 0" }}>
               <button className="btn primary" disabled={!plan.team}
-                onClick={() => act(() => portal.addSchedule({ kind: plan.kind, frequency: plan.frequency, team_ids: [plan.team] }), "Schedule created").then((ok) => ok && setPlan(null))}>Create</button>
+                onClick={() => act(() => portal.addSchedule({ kind: plan.kind, frequency: plan.frequency, team_ids: [plan.team], segment: plan.segment }), "Schedule created").then((ok) => ok && setPlan(null))}>Create</button>
               <button className="btn secondary" onClick={() => setPlan(null)}>Cancel</button>
             </div>
           </div>
         )}
         <div className="tablewrap"><table>
-          <thead><tr><th>Report</th><th>Every</th><th>For</th><th>Next run</th><th>Last run</th><th>Status</th><th /></tr></thead>
+          <thead><tr><th>Report</th><th>Covers</th><th>Every</th><th>For</th><th>Next run</th><th>Last run</th><th>Status</th><th /></tr></thead>
           <tbody>{(sch?.schedules || []).map((s) => (
-            <tr key={s.id}><td><strong>{s.template}</strong></td><td>{s.frequency}</td><td>{s.teams.join(", ")}</td>
+            <tr key={s.id}><td><strong>{s.template}</strong></td><td>{s.scope}</td><td>{s.frequency}</td><td>{s.teams.join(", ")}</td>
               <td>{fmt(s.next_run_at)}</td><td>{s.last_run_at ? fmt(s.last_run_at) : "—"}</td>
               <td><button className="btn ghost" style={{ padding: 0 }} onClick={() => act(() => portal.toggleSchedule(s.id, !s.is_active), s.is_active ? "Schedule paused" : "Schedule resumed")}>
                 <Badge v={s.is_active ? "Active" : "Paused"} tone={s.is_active ? "green" : "amber"} /></button></td>
               <td><button className="btn ghost" onClick={() => act(() => portal.deleteSchedule(s.id), "Schedule removed")}>×</button></td></tr>))}
-            {sch && !sch.schedules.length && <tr><td colSpan={7} className="empty">No scheduled reports.</td></tr>}
+            {sch && !sch.schedules.length && <tr><td colSpan={8} className="empty">No scheduled reports.</td></tr>}
           </tbody>
         </table></div>
       </Card>

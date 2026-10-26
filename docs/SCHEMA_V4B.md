@@ -465,7 +465,7 @@ As in v4: `rule_id`, `regulation_id` nullable, `triggered_at`, `message`, `is_re
 |---|---|
 | `report_templates` | as in v4 |
 | `reports` | + `approved_by_user_id` FK (v4 fix) |
-| `report_schedules` | as in v4 (recipients in JSON for now, v4 note 5) |
+| `report_schedules` | as in v4 (recipients in JSON for now, v4 note 5); + `parameters` jsonb (0024): `{"segment": …}`, a vehicle segment the report covers, `{}` = all |
 | `assistant_conversations` | as in v4 |
 | `assistant_messages` | as in v4 |
 | `assistant_message_citations` | + `id` PK, + `score`, + CHECK one target is set (v4 fix); `document_chunk_id` points to `document_chunks` |
