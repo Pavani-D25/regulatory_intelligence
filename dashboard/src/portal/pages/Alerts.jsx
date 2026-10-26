@@ -2,7 +2,7 @@ import { useState } from "react";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Card, ErrorBox, Kpi, Loading } from "../ui";
+import { Card, ErrorBox, Kpi, Loading, SegmentPicker } from "../ui";
 
 const COND = {
   high_impact: "Change on a high-impact regulation", new_document: "New document published", draft_published: "Draft published",
@@ -31,7 +31,7 @@ export default function Alerts() {
     <section className="view">
       <div className="pagehead">
         <div><h1>Alerts</h1><p>Rules that watch the regulation stream and raise notifications in the portal.</p></div>
-        <div className="actions"><button className="btn primary" onClick={() => setForm({ name: "", scope: "All categories", condition: "new_document", param: "" })}>New Alert</button></div>
+        <div className="actions"><button className="btn primary" onClick={() => setForm({ name: "", segment: "", condition: "new_document", param: "" })}>New Alert</button></div>
       </div>
       <div className="kpis">
         <Kpi label="Active Alerts" value={k.active} small="Rules switched on" corner="◉" />
@@ -43,8 +43,8 @@ export default function Alerts() {
         <Card title="New Alert Rule">
           <div className="formrow">
             <label className="formlabel">Name<input className="input" value={form.name} placeholder="e.g. M1 lighting changes" onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-            <label className="formlabel">Vehicle category<select className="select" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })}>
-              <option>All categories</option>{(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}</select></label>
+            <div className="formlabel">Vehicle segment
+              <SegmentPicker tree={meta?.segments} value={form.segment} onChange={(v) => setForm({ ...form, segment: v })} /></div>
             <label className="formlabel">Condition<select className="select" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value, param: e.target.value === "due_within" ? "60" : "" })}>
               {data.conditions.map((c) => <option key={c} value={c}>{COND[c]}</option>)}</select></label>
             {form.condition === "due_within" && <label className="formlabel">Days<input className="input" type="number" min="1" value={form.param} onChange={(e) => setForm({ ...form, param: e.target.value })} /></label>}

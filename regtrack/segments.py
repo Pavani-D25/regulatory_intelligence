@@ -64,6 +64,12 @@ def resolve(cc: str | None, path: str | None) -> tuple[list[str], str | None] | 
     return sorted(codes(node, len(keys)) if len(keys) <= 3 else {keys[2].upper()}), usage
 
 
+def label(path: str | None) -> str:
+    """"4W/PV/M1/transport" -> "4W-PV · M1 · transport" (the dashboard's segmentLabel)."""
+    keys = [k for k in (path or "").strip("/").split("/") if k]
+    return " · ".join(["-".join(keys[:2]), *keys[2:]]) if keys else ""
+
+
 def usage_sql(alias: str, usage: str | None) -> str:
     """SQL condition (with a leading AND) keeping rows whose usage fits; '' when no usage is selected."""
     if not usage:

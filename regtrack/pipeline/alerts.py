@@ -8,15 +8,16 @@ Conditions (alert_rules.condition->>'type'), the same as the portal's Alerts pag
   due_within (param = days, default 60)
         an open rule version whose implementation date falls within the coming days;
         closed when the version is replaced or the date has passed
-Scope: the rule's vehicle category (or ALL), else every in-scope category; only regulations the portal lists (not
-off-topic, superseded, withdrawn or reference material).
+Scope: the rule's vehicle segment (condition->>'segment', regtrack/segments.py: its codes or ALL, and its usage), else
+its vehicle category (or ALL), else every in-scope category; only regulations the portal lists (not off-topic,
+superseded, withdrawn or reference material). A rule whose segment does not exist in the country matches nothing.
 """
 
 from __future__ import annotations
 
 import psycopg
 
-from regtrack import country
+from regtrack import country, segments
 from regtrack.models.enums import in_scope_categories
 
 WINDOW_DAYS = 30
@@ -26,16 +27,20 @@ CHANGE_TYPE = {"new_document": "new_document", "draft_published": "draft_publish
 REFERENCE_CLASSES = ("REPORT", "OTHER", "AIS_FORM_TABLE", "FORM_TEMPLATE", "BIS_CATALOGUE", "APPROVED_LIST")
 
 
-def _scope_ids(conn: psycopg.Connection, rule: dict, region_id: int, cc: str) -> list[int]:
+def _scope(conn: psycopg.Connection, rule: dict, region_id: int, cc: str) -> tuple[list[int], str | None]:
+    """The vehicle-category ids a rule watches and its usage (None = any). ValueError for an unknown segment."""
     scope = in_scope_categories(cc)
-    if rule["scope_vehicle_category_id"]:
+    seg = segments.resolve(cc, (rule["condition"] or {}).get("segment"))
+    if seg:
+        codes = [c for c in seg[0] + ["ALL"] if c in scope]
+    elif rule["scope_vehicle_category_id"]:
         codes = [r["code"] for r in conn.execute("SELECT code FROM vehicle_categories WHERE id=%s",
                                                  (rule["scope_vehicle_category_id"],))] + ["ALL"]
         codes = [c for c in codes if c in scope]
     else:
         codes = sorted(scope)
     return [r["id"] for r in conn.execute("SELECT id FROM vehicle_categories WHERE region_id=%s AND code = ANY(%s)",
-                                          (region_id, codes))]
+                                          (region_id, codes))], seg[1] if seg else None
 
 
 def _insert(conn, rule_id: int, regulation_id: int | None, message: str, change_id: int | None = None,
@@ -60,16 +65,21 @@ def evaluate_rules(conn: psycopg.Connection) -> dict:
     out = {}
     for rule in rules:
         cond = (rule["condition"] or {}).get("type")
-        scope = _scope_ids(conn, rule, region_id, cc)
+        try:
+            scope, usage = _scope(conn, rule, region_id, cc)
+        except ValueError:
+            out[rule["id"]] = 0
+            continue
         n = 0
         if cond == "due_within":
             days = int((rule["condition"] or {}).get("param") or 60)
             for v in conn.execute(
-                    """SELECT v.id, v.source_regulation_id, v.implementation_date, v.is_draft, v.subject,
+                    f"""SELECT v.id, v.source_regulation_id, v.implementation_date, v.is_draft, v.subject,
                               c.requirement_code FROM requirement_versions v
                        JOIN compliance_requirements c ON c.id=v.requirement_id
                        WHERE c.region_id=%(rid)s AND v.valid_to IS NULL AND v.vehicle_category_ids && %(scope)s::int[]
-                         AND v.implementation_date BETWEEN current_date AND current_date + %(days)s""",
+                         AND v.implementation_date BETWEEN current_date AND current_date + %(days)s
+                         {segments.usage_sql("v", usage)}""",
                     {"rid": region_id, "scope": scope, "days": days}).fetchall():
                 msg = (f"{'Proposed' if v['is_draft'] else 'Implementation'} date {v['implementation_date']} within "
                        f"{days} days: {v['requirement_code']}: {v['subject'] or ''}")
@@ -82,7 +92,7 @@ def evaluate_rules(conn: psycopg.Connection) -> dict:
                     f"""SELECT e.id, e.regulation_id, e.detected_at, coalesce(e.summary, g.external_code) AS text
                         FROM regulation_changes e JOIN regulations g ON g.id=e.regulation_id
                         WHERE e.region_id=%(rid)s AND e.detected_at > now() - make_interval(days => %(win)s)
-                          AND {listed} AND {match}
+                          AND {listed} AND {match} {segments.usage_sql("g", usage)}
                           AND EXISTS (SELECT 1 FROM regulation_vehicle_categories l WHERE l.regulation_id=g.id
                                       AND l.vehicle_category_id = ANY(%(scope)s::int[]))""",
                     {"rid": region_id, "win": WINDOW_DAYS, "ref": list(REFERENCE_CLASSES), "scope": scope,

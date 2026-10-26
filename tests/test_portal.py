@@ -277,3 +277,25 @@ def test_trend_range_options(client):
     clamped = client.get("/portal/summary", params={"trend_view": "year", "trend_from": 1000, "trend_to": 9999}).json()
     assert clamped["trend"][0]["label"] == str(lo) and clamped["trend"][-1]["label"] == str(hi)
     assert client.get("/portal/summary", params={"trend_view": "weekly"}).status_code == 400
+
+
+def test_alert_rule_by_segment(client):
+    """A segment-scoped rule stores the path in its condition, is listed by its label, and its matches are a subset of
+    the same rule without a segment (narrower codes and usage)."""
+    from regtrack.db import connect
+
+    body = {"condition": "due_within", "param": "3650", "country": "IN"}
+    ids = []
+    try:
+        ids.append(client.post("/portal/alerts", json={**body, "name": "pytest all"}).json()["id"])
+        ids.append(client.post("/portal/alerts", json={**body, "name": "pytest taxi", "segment": "4W/PV/M1/transport"}).json()["id"])
+        rules = {r["id"]: r for r in client.get("/portal/alerts", params={"country": "IN"}).json()["rules"]}
+        assert rules[ids[1]]["scope"] == "4W-PV · M1 · transport" and rules[ids[1]]["segment"] == "4W/PV/M1/transport"
+        assert rules[ids[1]]["matches"] <= rules[ids[0]]["matches"]
+        assert client.post("/portal/alerts", json={**body, "name": "pytest bad", "segment": "3W"}).status_code == 400
+        with connect() as conn:
+            cond = conn.execute("SELECT condition FROM alert_rules WHERE id=%s", (ids[1],)).fetchone()["condition"]
+        assert cond == {"type": "due_within", "param": "3650", "segment": "4W/PV/M1/transport"}
+    finally:
+        for i in ids:
+            client.delete(f"/portal/alerts/{i}")

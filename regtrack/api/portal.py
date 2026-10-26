@@ -882,7 +882,8 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
 # closes it when the change is reviewed or the date has passed. The page shows the open ones.
 RULE_SQL = """SELECT r.id, r.name,
                      coalesce(vc.code, 'All categories') AS scope, r.condition->>'type' AS condition,
-                     coalesce(r.condition->>'param', lower(dm.code)) AS param, r.is_enabled AS enabled, r.created_at,
+                     coalesce(r.condition->>'param', lower(dm.code)) AS param, r.condition->>'segment' AS segment,
+                     r.is_enabled AS enabled, r.created_at,
                      (SELECT count(*) FROM alert_events a WHERE a.rule_id=r.id AND NOT a.is_resolved) AS matches
               FROM alert_rules r LEFT JOIN vehicle_categories vc ON vc.id=r.scope_vehicle_category_id
               LEFT JOIN domains dm ON dm.id=r.scope_domain_id
@@ -923,6 +924,8 @@ def alerts(cc: CountryParam = None) -> dict:
         rules = _rows(conn, RULE_SQL, (cc,))
         for r in rules:
             r["matches"] = r["matches"] if r["enabled"] else 0
+            if r["segment"]:
+                r["scope"] = segments.label(r["segment"])
         notes = _notifications(conn, cc)
         due60 = conn.execute(f"""SELECT count(*) AS n FROM {S.mandates(cc)} m WHERE valid_to IS NULL AND vehicle_categories && %s
                                 AND implementation_date BETWEEN current_date AND current_date + 60""", (vocab["scope"],)).fetchone()["n"]
@@ -952,6 +955,11 @@ def add_alert(body: dict = Body(...)) -> dict:
     cond = body.get("condition") or "new_document"
     param = body.get("param")
     cc = resolve_country(body.get("country"))
+    segment = (body.get("segment") or "").strip("/") or None
+    scope = body.get("scope")
+    if segment:  # the segment's codes (and usage) scope the rule; a one-code segment also fills the category column
+        codes = segment_filter(cc, segment)[0][:-1]
+        scope = codes[0] if len(codes) == 1 else None
     with connect() as conn:
         r = conn.execute(
             """INSERT INTO alert_rules (name, scope_region_id, scope_domain_id, scope_vehicle_category_id, condition,
@@ -961,8 +969,9 @@ def add_alert(body: dict = Body(...)) -> dict:
                        (SELECT id FROM vehicle_categories WHERE region_id=(SELECT id FROM regions WHERE code=%s) AND code=%s),
                        %s, (SELECT id FROM teams WHERE code='REG_AFFAIRS'))
                RETURNING id""",
-            (body.get("name") or "New regulatory watch", cc, cond, param, cc, body.get("scope"),
-             Jsonb({"type": cond, **({"param": str(param)} if param and cond != "domain" else {})}))).fetchone()
+            (body.get("name") or "New regulatory watch", cc, cond, param, cc, scope,
+             Jsonb({"type": cond, **({"param": str(param)} if param and cond != "domain" else {}),
+                    **({"segment": segment} if segment else {})}))).fetchone()
         _refresh_alerts(conn)
         conn.commit()
     return {"id": r["id"]}
