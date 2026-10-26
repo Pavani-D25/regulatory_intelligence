@@ -299,3 +299,25 @@ def test_alert_rule_by_segment(client):
     finally:
         for i in ids:
             client.delete(f"/portal/alerts/{i}")
+
+
+def test_reports_by_segment(client):
+    """A report for a segment covers only it: fewer rows than the whole country, its label in the page, the log and
+    the file name; an unknown segment is refused."""
+    from regtrack.db import connect
+
+    q = {"country": "IN", "owner": "pytest-seg"}
+    try:
+        whole = client.get("/portal/reports/compliance_gap", params={**q, "fmt": "csv"}).text.count("\n")
+        cv = client.get("/portal/reports/compliance_gap", params={**q, "fmt": "csv", "segment": "4W/CV"})
+        assert "4W-CV" in cv.headers["content-disposition"] and cv.text.count("\n") < whole
+        page = client.get("/portal/reports/executive", params={**q, "segment": "2W/PV"}).text
+        assert "segment 2W-PV (L1/L2)" in page
+        assert client.get("/portal/reports/change_impact", params={**q, "segment": "3W"}).status_code == 400
+        recent = client.get("/portal/reports", params={"country": "IN", "segment": "4W/CV"}).json()
+        assert recent["scope"] == "4W-CV" and recent["recent"][0]["scope"] == "India · 2W-PV"
+    finally:
+        with connect() as conn:
+            conn.execute("DELETE FROM reports WHERE owner_team_id=(SELECT id FROM teams WHERE name='pytest-seg')")
+            conn.execute("DELETE FROM teams WHERE name='pytest-seg'")
+            conn.commit()

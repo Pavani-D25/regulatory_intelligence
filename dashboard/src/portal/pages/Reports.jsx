@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { portal, reportUrl } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { ago, Badge, Card, ErrorBox, fmt, fmtTime, Kpi, Loading } from "../ui";
+import { ago, Badge, Card, ErrorBox, fmt, fmtTime, Kpi, Loading, SegmentPicker } from "../ui";
 
 const CARDS = {
   executive: ["▤", "Management summary: tracked regulations, changes, high-impact items, category and topic breakdown, upcoming dates."],
@@ -12,14 +12,17 @@ const CARDS = {
 
 export default function Reports() {
   const [tick, setTick] = useState(0);
-  const { version, toast, meta, countryName } = usePortal();
-  const { data, error, loading } = useLoad(() => portal.reports(), [tick, version]);
+  const { version, toast, meta, countryName, country } = usePortal();
+  // vehicle segment the generated reports cover, e.g. "2W/PV" (regtrack/segments.py); "" = every in-scope category
+  const [segment, setSegment] = useState("");
+  useEffect(() => setSegment(""), [country]);
+  const { data, error, loading } = useLoad(() => portal.reports(segment), [tick, version, segment]);
   const { data: sch } = useLoad(() => portal.schedules(), [tick, version]);
   const [plan, setPlan] = useState(null);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const gen = (kind, fmt) => {
-    window.open(reportUrl(kind, fmt), "_blank");
+    window.open(reportUrl(kind, fmt, segment), "_blank");
     toast("Report generated");
     setTimeout(() => setTick((t) => t + 1), 1200);
   };
@@ -32,6 +35,14 @@ export default function Reports() {
       <div className="pagehead">
         <div><h1>Reports</h1><p>Generate regulatory reports from live data · {countryName} · {data.scope}.</p></div>
       </div>
+      <Card>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 13 }}>Vehicle segment</strong>
+          <SegmentPicker tree={meta?.segments} value={segment} onChange={setSegment} />
+          {segment && <button className="btn ghost" onClick={() => setSegment("")}>Clear</button>}
+          <span className="sub">Generate and CSV cover this segment; scheduled reports cover every category.</span>
+        </div>
+      </Card>
       <div className="kpis">
         <Kpi label="Generated This Month" value={k.generated_month} small="All report types" corner="▤" />
         <Kpi label="Last Report" value={k.last_generated ? ago(k.last_generated) : "—"} small={k.last_generated ? fmtTime(k.last_generated) : "No report generated yet"} corner="⏱" tone="amber" />

@@ -445,7 +445,7 @@ def set_review(canonical_id: str, body: dict = Body(...)) -> dict:
 
 # ====================================================================== change monitor
 @router.get("/changes")
-def change_monitor(days: int = 365, cc: CountryParam = None) -> dict:
+def change_monitor(days: int = 365, cc: CountryParam = None, segment: str | None = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
         sla = int(_setting(conn, "review_sla_days", "2"))
@@ -454,7 +454,7 @@ def change_monitor(days: int = 365, cc: CountryParam = None) -> dict:
                    FROM {S.changes(cc)} e LEFT JOIN regulations d ON d.id=e.document_id
                    WHERE e.detected_at > now() - make_interval(days => %s)
                    ORDER BY e.detected_at DESC, e.id DESC""", (days,))
-        regs = {r["id"]: r for r in regulations(conn, history=True, cc=cc)}
+        regs = {r["id"]: r for r in regulations(conn, history=True, cc=cc, segment=segment)}
     for e in events:
         r = regs.get(e["doc_id"])
         e["impact"] = r["impact"] if r else "Low"
@@ -781,21 +781,22 @@ REPORT_LOG_SQL = """SELECT r.id, rt.name AS kind, r.parameters->>'scope' AS scop
 
 
 @router.get("/reports")
-def reports(cc: CountryParam = None) -> dict:
+def reports(segment: str | None = None, cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
     with connect() as conn:
         vocab = load_vocab(conn, cc)
+        scope, usage = segment_filter(cc, segment) or (vocab["scope"], "")
         # the selected country's reports only (each report records its scope_region_id)
         recent = _rows(conn, REPORT_LOG_SQL + " WHERE rg.code = %s ORDER BY r.generated_at DESC LIMIT 20", (cc,))
         month = conn.execute("SELECT count(*) AS n FROM reports r JOIN regions rg ON rg.id = r.scope_region_id "
                              "WHERE rg.code = %s AND r.generated_at > date_trunc('month', now())", (cc,)).fetchone()["n"]
         awaiting = conn.execute(f"""SELECT count(*) AS n FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
                                    WHERE e.review_status<>'confirmed' AND d.doc_class <> 'OFF_TOPIC'
-                                     AND d.vehicle_categories && %s""", (vocab["scope"],)).fetchone()["n"]
+                                     AND d.vehicle_categories && %s {usage}""", (scope,)).fetchone()["n"]
         last = conn.execute("SELECT max(r.generated_at) AS t FROM reports r JOIN regions rg ON rg.id = r.scope_region_id "
                             "WHERE rg.code = %s", (cc,)).fetchone()["t"]
     return {"kpis": {"generated_month": month, "last_generated": last, "awaiting_review": awaiting, "templates": len(REPORTS)},
-            "scope": ", ".join(vocab["categories"]),
+            "scope": segments.label(segment) if segment else ", ".join(vocab["categories"]),
             "templates": [{"kind": k, "name": v} for k, v in REPORTS.items()], "recent": recent}
 
 
@@ -814,19 +815,25 @@ def _html(title: str, intro: str, sections: list[tuple[str, list[str], list[list
 
 
 @router.get("/reports/{kind}")
-def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affairs", cc: CountryParam = None) -> Response:
+def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affairs", segment: str | None = None,
+                    cc: CountryParam = None) -> Response:
+    """One report as HTML or CSV, logged in reports; segment (regtrack/segments.py) narrows every section."""
     if kind not in REPORTS:
         raise HTTPException(404, "unknown report")
     cc = resolve_country(cc)
+    segment = (segment or "").strip("/") or None
     with connect() as conn:
         vocab = load_vocab(conn, cc)
+        seg_codes = (segment_filter(cc, segment) or (vocab["scope"], ""))[0]
+    cats = [c for c in vocab["categories"] if c in seg_codes]
+    scope_text = f"segment {segments.label(segment)} ({'/'.join(cats)})" if segment else f"vehicle categories {', '.join(cats)}"
     title = REPORTS[kind]
     stamp = datetime.now().strftime("%d %b %Y %H:%M")
     if kind == "executive":
-        s = summary(cc)
-        ch = change_monitor(30, cc)
+        s = summary(cc=cc, segment=segment)
+        ch = change_monitor(30, cc, segment=segment)
         sections = [
-            ("Key figures", ["Measure", "Value"], [[f"Regulations tracked ({vocab['name']}, {'/'.join(vocab['categories'])})", s["kpis"]["tracked"]],
+            ("Key figures", ["Measure", "Value"], [[f"Regulations tracked ({vocab['name']}, {segments.label(segment) or '/'.join(cats)})", s["kpis"]["tracked"]],
                                                    ["Changes in last 30 days", s["kpis"]["changes_30d"]],
                                                    ["High impact (rule-based)", s["kpis"]["high"]],
                                                    ["Action required", s["kpis"]["action_required"]]]),
@@ -841,7 +848,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
         ]
         head, rows = sections[3][1], sections[3][2]
     elif kind == "compliance_gap":
-        c = compliance(None, cc=cc)
+        c = compliance(None, segment=segment, cc=cc)
         gaps = [r for r in c["rows"] if r["status"] in ("Open", "In Progress")]
         sections = [("Readiness", ["Measure", "Value"], [["Requirements", c["kpis"]["requirements"]], ["Compliant %", c["kpis"]["compliant_pct"]],
                                                          ["In progress %", c["kpis"]["in_progress_pct"]], ["Open %", c["kpis"]["open_pct"]],
@@ -851,7 +858,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
                        r["evidence"], r["status"], r["due_date"]] for r in gaps])]
         head, rows = sections[1][1], sections[1][2]
     else:
-        ch = change_monitor(365, cc)
+        ch = change_monitor(365, cc, segment=segment)
         sections = [("Changes by type", ["Type", "Count"], [[t, n] for t, n in ch["by_type"]]),
                     ("Change events", ["Detected", "Type", "Document", "Impact", "Reviewed", "Summary"],
                      [[e["detected_at"].strftime("%d %b %Y"), e["event_type"], e["canonical_id"], e["impact"],
@@ -862,9 +869,10 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
                         VALUES ((SELECT id FROM report_templates WHERE name=%s), (SELECT id FROM regions WHERE code=%s),
                                 %s, %s)""",
                      (title, cc, team_id(conn, owner) or team_id(conn, _setting(conn, "default_owner", "Regulatory Affairs Team")),
-                      Jsonb({"scope": f"{vocab['name']} · " + "/".join(vocab["categories"]), "rows": len(rows)})))
+                      Jsonb({"scope": f"{vocab['name']} · " + (segments.label(segment) or "/".join(cats)), "rows": len(rows),
+                             **({"segment": segment} if segment else {})})))
         conn.commit()
-    fname = f"{title.replace(' ', '_')}_{date.today().isoformat()}"
+    fname = f"{title.replace(' ', '_')}{'_' + segment.replace('/', '-') if segment else ''}_{date.today().isoformat()}"
     if fmt == "csv":
         buf = io.StringIO()
         w = csv.writer(buf)
@@ -872,7 +880,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
         w.writerows(rows)
         return Response(buf.getvalue(), media_type="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'})
-    body = _html(title, f"RegTrack · {vocab['name']}, vehicle categories {', '.join(vocab['categories'])} · generated {stamp}. "
+    body = _html(title, f"RegTrack · {vocab['name']}, {scope_text} · generated {stamp}. "
                         f"Impact is rule-based until the AI pass runs.", sections)
     return Response(body, media_type="text/html", headers={"Content-Disposition": f'attachment; filename="{fname}.html"'})
 

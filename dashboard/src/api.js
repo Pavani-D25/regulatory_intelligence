@@ -89,7 +89,7 @@ export const portal = {
   toggleSchedule: (id, is_active) => send("PATCH", `/portal/report-schedules/${id}`, { is_active }),
   deleteSchedule: (id) => send("DELETE", `/portal/report-schedules/${id}`),
   askContext: () => get("/portal/ask/context"),
-  reports: () => get("/portal/reports"),
+  reports: (segment) => get("/portal/reports", { segment }),
   alerts: () => get("/portal/alerts"),
   addAlert: (body) => send("POST", "/portal/alerts", body),
   toggleAlert: (id, enabled) => send("PATCH", `/portal/alerts/${id}`, { enabled }),
@@ -99,4 +99,4 @@ export const portal = {
   sync: (source) => send("POST", "/portal/admin/sync", { source }),
   requirements: () => get("/portal/requirements"),
 };
-export const reportUrl = (kind, fmt = "html") => `${API}/portal/reports/${kind}${qs({ fmt })}`;
+export const reportUrl = (kind, fmt = "html", segment = "") => `${API}/portal/reports/${kind}${qs({ fmt, segment })}`;
