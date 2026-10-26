@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { AiNote, Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring } from "../ui";
+import { AiNote, Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring, SegmentPicker } from "../ui";
 
 const TYPE_LABEL = {
   new_document: "New document", draft_published: "Draft published", draft_finalised: "Draft finalised",
@@ -16,8 +16,12 @@ export default function ChangeMonitor() {
   const [tick, setTick] = useState(0);
   const [type, setType] = useState("");
   const [limit, setLimit] = useState(60);
-  const { openReg, toast, version } = usePortal();
-  const { data, error, loading } = useLoad(() => portal.changes(days), [days, tick, version]);
+  // vehicle segment path, e.g. "2W/PV" (regtrack/segments.py); "" = every in-scope category
+  const [segment, setSegment] = useState("");
+  const { openReg, toast, version, country, meta } = usePortal();
+  useEffect(() => setSegment(""), [country]);
+  useEffect(() => { setType(""); setLimit(60); }, [segment]);
+  const { data, error, loading } = useLoad(() => portal.changes(days, segment), [days, segment, tick, version]);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const k = data.kpis;
@@ -43,6 +47,14 @@ export default function ChangeMonitor() {
           <button className="btn primary" disabled={!openIds.length} onClick={() => mark(openIds)}>Mark Visible as Reviewed{openIds.length ? ` (${openIds.length})` : ""}</button>
         </div>
       </div>
+      <Card>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 13 }}>Vehicle segment</strong>
+          <SegmentPicker tree={meta?.segments} value={segment} onChange={setSegment} />
+          {segment && <button className="btn ghost" onClick={() => setSegment("")}>Clear</button>}
+          {loading && <span className="sub">updating…</span>}
+        </div>
+      </Card>
       <div className="kpis">
         <Kpi label="Changes Detected" value={k.detected} small="In the selected period" corner="Δ" />
         <Kpi label="Unreviewed" value={k.unreviewed} small="Waiting for review" corner="?" tone="amber" />

@@ -446,6 +446,8 @@ def set_review(canonical_id: str, body: dict = Body(...)) -> dict:
 # ====================================================================== change monitor
 @router.get("/changes")
 def change_monitor(days: int = 365, cc: CountryParam = None, segment: str | None = None) -> dict:
+    """Detected changes on in-scope regulations in the last `days`; segment (regtrack/segments.py) keeps only the
+    changes on its regulations."""
     cc = resolve_country(cc)
     with connect() as conn:
         sla = int(_setting(conn, "review_sla_days", "2"))

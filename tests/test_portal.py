@@ -330,3 +330,14 @@ def test_reports_by_segment(client):
             conn.execute("DELETE FROM reports WHERE owner_team_id=(SELECT id FROM teams WHERE name='pytest-seg')")
             conn.execute("DELETE FROM teams WHERE name='pytest-seg'")
             conn.commit()
+
+
+def test_change_monitor_by_segment(client):
+    """A segment keeps only the changes on its regulations: a subset of the unfiltered list; unknown -> 400."""
+    q = {"country": "IN", "days": 3650}
+    whole = client.get("/portal/changes", params=q).json()
+    ids = {e["id"] for e in whole["events"]}
+    for seg in ("2W", "4W/PV/M1/private", "4W/CV"):
+        part = client.get("/portal/changes", params={**q, "segment": seg}).json()
+        assert {e["id"] for e in part["events"]} <= ids and part["kpis"]["detected"] <= whole["kpis"]["detected"]
+    assert client.get("/portal/changes", params={**q, "segment": "3W"}).status_code == 400
