@@ -41,3 +41,16 @@ def test_vehicle_and_unknown_file(client):
     r = client.get("/vehicles/applicable", params={"category": "L2", "engine_cc": 110, "powertrain": "petrol", "on": "2026-01-01"})
     assert r.status_code == 200 and r.json()["in_scope_category"]
     assert client.get("/files/" + "0" * 64).status_code == 404
+
+
+def test_vehicle_by_segment(client):
+    """A segment path replaces category + usage: the codes it covers, its usage, every mandate naming one of them."""
+    q = {"country": "IN", "on": "2026-01-01"}
+    two = client.get("/vehicles/applicable", params={**q, "segment": "2W"}).json()
+    l2 = client.get("/vehicles/applicable", params={**q, "category": "L2"}).json()
+    assert {m["id"] for m in l2["mandates"]} <= {m["id"] for m in two["mandates"]}
+    taxi = client.get("/vehicles/applicable", params={**q, "segment": "4W/PV/M1/transport"}).json()
+    assert taxi["query"]["usage"] == "transport"
+    assert all(not m["usage"] or {"transport", "all"} & set(m["usage"]) for m in taxi["mandates"])
+    assert client.get("/vehicles/applicable", params={**q, "segment": "3W"}).status_code == 400
+    assert client.get("/vehicles/applicable", params=q).status_code == 400

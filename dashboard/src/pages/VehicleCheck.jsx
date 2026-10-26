@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api, familyPath, sharePackUrl } from "../api";
 import { AiPending, Badge, Button, Card, Chips, DocLink, Empty, ErrorBox, Loading, Table, Td, fmtDate } from "../components/ui";
 import { usePortal } from "../portal/PortalLayout";
+import { SegmentPicker, segmentLabel } from "../portal/ui";
 import useLoad from "../useLoad";
 
 const POWERTRAINS = ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"];
@@ -57,7 +58,9 @@ function MandateTable({ rows, upcoming = false }) {
 
 export default function VehicleCheck() {
   const [params, setParams] = useSearchParams();
+  // the vehicle: a segment path ("4W/PV/M1/transport", regtrack/segments.py); ?category= / ?usage= links still work
   const sel = {
+    segment: params.get("segment") || "",
     category: params.get("category") || "",
     engine_cc: params.get("engine_cc") || "",
     powertrain: params.get("powertrain") || "",
@@ -68,9 +71,11 @@ export default function VehicleCheck() {
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const { meta, version } = usePortal();
 
+  const chosen = sel.segment || sel.category;
+  const q = { segment: sel.segment, category: sel.segment ? "" : sel.category, engine_cc: sel.engine_cc,
+              powertrain: sel.powertrain, usage: sel.segment ? "" : sel.usage, on: sel.on };
   const { data, error, loading } = useLoad(async () => {
-    if (!sel.category) return null;
-    const q = { category: sel.category, engine_cc: sel.engine_cc, powertrain: sel.powertrain, usage: sel.usage, on: sel.on };
+    if (!chosen) return null;
     const [now, all] = await Promise.all([api.applicable(q), api.applicable({ ...q, include_future: true })]);
     const nowIds = new Set(now.mandates.map((m) => m.id));
     return { now: now.mandates, upcoming: all.mandates.filter((m) => !nowIds.has(m.id)) };
@@ -78,8 +83,8 @@ export default function VehicleCheck() {
 
   const submit = (e) => {
     e.preventDefault();
-    const next = Object.fromEntries(Object.entries(form).filter(([, v]) => v));
-    setParams(next);
+    const { category, usage, ...rest } = form;  // the segment replaces the old category / usage choices
+    setParams(Object.fromEntries(Object.entries(form.segment ? rest : { ...rest, category, usage }).filter(([, v]) => v)));
   };
 
   return (
@@ -92,11 +97,9 @@ export default function VehicleCheck() {
       <Card>
         <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <label htmlFor="cat">Category</label>
-            <select id="cat" value={form.category} onChange={set("category")} required className="w-60">
-              <option value="">Choose…</option>
-              {(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
-            </select>
+            <label>Vehicle segment</label>
+            <SegmentPicker tree={meta?.segments} value={form.segment}
+              onChange={(v) => setForm({ ...form, segment: v, category: "", usage: "" })} />
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="cc">Engine cc</label>
@@ -110,21 +113,12 @@ export default function VehicleCheck() {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor="us">Usage</label>
-            <select id="us" value={form.usage} onChange={set("usage")} className="w-32">
-              <option value="">Any</option>
-              <option value="private">private</option>
-              <option value="transport">transport</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
             <label htmlFor="on">On date</label>
             <input id="on" type="date" value={form.on} onChange={set("on")} />
           </div>
-          <Button type="submit">Check</Button>
-          {sel.category && (
-            <Button as="a" variant="secondary" className="ml-auto"
-              href={sharePackUrl({ category: sel.category, engine_cc: sel.engine_cc, powertrain: sel.powertrain, usage: sel.usage, on: sel.on })}>
+          <Button type="submit" disabled={!form.segment && !form.category}>Check</Button>
+          {chosen && (
+            <Button as="a" variant="secondary" className="ml-auto" href={sharePackUrl(q)}>
               ⤓ Download share pack
             </Button>
           )}
@@ -136,11 +130,11 @@ export default function VehicleCheck() {
       </Card>
 
       <ErrorBox error={error} />
-      {loading && sel.category && <Loading />}
-      {!sel.category && <Empty>Choose a category and press Check.</Empty>}
+      {loading && chosen && <Loading />}
+      {!chosen && <Empty>Choose a vehicle segment (2W / 4W, then PV / CV, type and use as needed) and press Check.</Empty>}
       {data && (
         <>
-          <Card title={`In force on ${fmtDate(sel.on)} · ${data.now.length}`}>
+          <Card title={`${sel.segment ? segmentLabel(sel.segment) : sel.category}${sel.usage && !sel.segment ? ` · ${sel.usage}` : ""} · in force on ${fmtDate(sel.on)} · ${data.now.length}`}>
             <MandateTable rows={data.now} />
           </Card>
           <Card title={`Coming later · ${data.upcoming.length}`}>

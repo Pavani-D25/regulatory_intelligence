@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
-from regtrack import country
+from regtrack import country, segments
 from regtrack.api import sql as S
 from regtrack.api.params import CountryParam, resolve_country
 from regtrack.db import connect
@@ -56,15 +56,32 @@ COND_SQL = """
   AND (m.conditions->'{k}'->>'gt'  IS NULL OR %s::numeric IS NULL OR (m.conditions->'{k}'->>'gt')::numeric  <  %s::numeric)"""
 
 
+def vehicle_codes(cc: str | None, category: str | None, segment: str | None, usage: str | None) -> tuple[list[str], str | None]:
+    """Category codes (+ ALL) and usage of a vehicle selection: a vehicle-segment path (regtrack/segments.py; its usage,
+    if it sets one, over `usage`) or one category code. 400 when neither is given or the segment is unknown."""
+    if segment:
+        try:
+            seg = segments.resolve(cc, segment)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        if seg:
+            return seg[0] + ["ALL"], seg[1] or usage
+    if not category:
+        raise HTTPException(400, "give a category or a segment")
+    return [category.upper(), "ALL"], usage
+
+
 @app.get("/vehicles/applicable")
-def vehicles_applicable(category: str = Query(..., examples=["L2"]), engine_cc: float | None = None,
+def vehicles_applicable(category: str | None = Query(None, examples=["L2"]), engine_cc: float | None = None,
                         power_kw: float | None = None, gvw_kg: float | None = None, seats: float | None = None,
                         powertrain: str | None = None, usage: str | None = None, on: date | None = None,
-                        include_drafts: bool = False, include_future: bool = False, cc: CountryParam = None) -> dict:
-    """Mandates for a vehicle on a date, with the standards behind each and their current versions."""
+                        include_drafts: bool = False, include_future: bool = False,
+                        segment: str | None = Query(None, examples=["4W/PV/M1/transport"]), cc: CountryParam = None) -> dict:
+    """Mandates for a vehicle on a date, with the standards behind each and their current versions. The vehicle is a
+    category code or a segment path."""
     cc = resolve_country(cc)
     on = on or date.today()
-    cats = [category.upper(), "ALL"]
+    cats, usage = vehicle_codes(cc, category, segment, usage)
     args: list = [cats]
     sql = ["SELECT m.*, d.external_code AS source_canonical_id, d.title AS source_title "
            f"FROM {S.mandates(cc)} m JOIN regulations d ON d.id=m.source_doc_id WHERE m.vehicle_categories && %s"]
@@ -99,8 +116,10 @@ def vehicles_applicable(category: str = Query(..., examples=["L2"]), engine_cc: 
                                     (fam,)).fetchall() if fam else []
                 m["standards"].append({"ref": ref, "current_version": dict(cur) if cur else None,
                                        "amendments": [dict(a) for a in amds]})
-    return {"query": {"category": category, "engine_cc": engine_cc, "powertrain": powertrain, "on": on},
-            "in_scope_category": category.upper() in in_scope_categories(cc), "count": len(mandates), "mandates": mandates}
+    return {"query": {"category": category, "segment": segment, "engine_cc": engine_cc, "powertrain": powertrain,
+                      "usage": usage, "on": on},
+            "in_scope_category": bool(set(cats) - {"ALL"} & in_scope_categories(cc)), "count": len(mandates),
+            "mandates": mandates}
 
 
 # ---------------------------------------------------------------- documents
@@ -226,14 +245,17 @@ def search(q: str, category: str | None = None, in_scope: bool | None = None, is
 
 
 # ---------------------------------------------------------------- vendor share pack
-def share_pack_documents(conn, category: str, on: date, technical_only: bool = True, engine_cc: float | None = None,
-                         powertrain: str | None = None, usage: str | None = None, cc: str | None = None) -> list[dict]:
-    """Documents behind the vehicle's mandates (in force on `on` or upcoming) + current AIS standards for the category."""
+def share_pack_documents(conn, category: str | None, on: date, technical_only: bool = True, engine_cc: float | None = None,
+                         powertrain: str | None = None, usage: str | None = None, cc: str | None = None,
+                         segment: str | None = None) -> list[dict]:
+    """Documents behind the vehicle's mandates (in force on `on` or upcoming) + current AIS standards for the category
+    (or the segment's categories)."""
     cc = country.code(cc)
     sel = vehicles_applicable(category=category, engine_cc=engine_cc, power_kw=None, gvw_kg=None, seats=None,
-                              powertrain=powertrain, usage=usage, on=on, include_drafts=False, include_future=True, cc=cc)
+                              powertrain=powertrain, usage=usage, on=on, include_drafts=False, include_future=True,
+                              segment=segment, cc=cc)
     ids = {m["source_doc_id"] for m in sel["mandates"]} | {i for m in sel["mandates"] for i in (m["standard_doc_ids"] or [])}
-    cats = [category.upper(), "ALL"]
+    cats, _ = vehicle_codes(cc, category, segment, usage)
     return [dict(r) for r in conn.execute(
         f"""SELECT {', '.join('d.' + c.strip() for c in DOC_COLS_BASE.split(','))}
             FROM {S.docs(cc)} d
@@ -244,16 +266,17 @@ def share_pack_documents(conn, category: str, on: date, technical_only: bool = T
 
 
 @app.get("/share-pack")
-def share_pack(category: str, on: date | None = None, engine_cc: float | None = None, powertrain: str | None = None,
-               usage: str | None = None, technical_only: bool = True, cc: CountryParam = None) -> StreamingResponse:
-    """Zip of best-copy originals + manifest.csv for a vehicle selection (category [+ cc, powertrain, usage])."""
+def share_pack(category: str | None = None, on: date | None = None, engine_cc: float | None = None,
+               powertrain: str | None = None, usage: str | None = None, technical_only: bool = True,
+               segment: str | None = None, cc: CountryParam = None) -> StreamingResponse:
+    """Zip of best-copy originals + manifest.csv for a vehicle selection (category or segment [+ cc, powertrain, usage])."""
     cc = resolve_country(cc)
     on = on or date.today()
     buf = io.BytesIO()
     with connect() as conn:
-        docs = share_pack_documents(conn, category, on, technical_only, engine_cc, powertrain, usage, cc=cc)
+        docs = share_pack_documents(conn, category, on, technical_only, engine_cc, powertrain, usage, cc=cc, segment=segment)
         if not docs:
-            raise HTTPException(404, f"no documents for category {category}")
+            raise HTTPException(404, f"no documents for {f'segment {segment}' if segment else f'category {category}'}")
         manifest = io.StringIO()
         w = csv.writer(manifest)
         w.writerow(["canonical_id", "doc_class", "title", "doc_date", "status", "family_key", "version_seq", "is_current",
@@ -280,8 +303,9 @@ def share_pack(category: str, on: date | None = None, engine_cc: float | None = 
                                 f"{f['page_from']}-{f['page_to']}", f["role"], f["urls"]])
             z.writestr("manifest.csv", manifest.getvalue())
     buf.seek(0)
-    parts = [category.upper()] + ([f"{int(engine_cc)}cc"] if engine_cc else []) + ([powertrain] if powertrain else []) \
-        + ([usage] if usage else [])
+    who = segment.strip("/").replace("/", "-").upper() if segment else (category or "").upper()
+    parts = [who] + ([f"{int(engine_cc)}cc"] if engine_cc else []) + ([powertrain] if powertrain else []) \
+        + ([usage] if usage and not segment else [])
     fname = f"regtrack_share_pack_{'_'.join(parts)}_{on.isoformat()}.zip"
     return StreamingResponse(buf, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
