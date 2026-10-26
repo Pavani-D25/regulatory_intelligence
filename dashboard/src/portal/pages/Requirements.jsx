@@ -1,15 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Badge, Card, ErrorBox, Kpi, Loading } from "../ui";
+import { Badge, Card, ErrorBox, Kpi, Loading, SegmentPicker, segmentLabel } from "../ui";
 
 const COVERAGE_TONE = { Covered: "green", Partial: "amber", Gap: "red" };
 const ROLE_TONE = { primary: "green", supporting: "blue", candidate: "amber" };
 
 export default function Requirements() {
-  const { openReg, version, countryName } = usePortal();
-  const { data, error, loading } = useLoad(() => portal.requirements(), [version]);
+  const { openReg, version, countryName, country, meta } = usePortal();
+  // vehicle segment path, e.g. "4W/CV" (regtrack/segments.py): rows and coverage follow the linked regulations
+  const [segment, setSegment] = useState("");
+  useEffect(() => setSegment(""), [country]);
+  const { data, error, loading } = useLoad(() => portal.requirements(segment), [version, segment]);
   const [filter, setFilter] = useState("");
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -27,7 +30,20 @@ export default function Requirements() {
           </select>
         </div>
       </div>
-      {!data.rows.length ? (
+      {(data.rows.length > 0 || segment) && <Card>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 13 }}>Vehicle segment</strong>
+          <SegmentPicker tree={meta?.segments} value={segment} onChange={setSegment} />
+          {segment && <button className="btn ghost" onClick={() => setSegment("")}>Clear</button>}
+          {loading && <span className="sub">updating…</span>}
+        </div>
+        {segment && <p className="note" style={{ marginTop: 8 }}>
+          Requirements name their vehicles in free text, so the segment applies to their linked documents: coverage counts
+          only documents for {segmentLabel(segment)} (or all vehicles).
+          {data.kpis.other_vehicles > 0 && ` ${data.kpis.other_vehicles} requirement(s) whose documents are all for other vehicles are hidden;`} requirements
+          with no document yet stay listed as gaps.</p>}
+      </Card>}
+      {!data.rows.length && !segment ? (
         <Card title="No register loaded"><p className="empty">No client requirement register is loaded for {countryName}.</p></Card>
       ) : (
         <>
@@ -58,6 +74,7 @@ export default function Requirements() {
                       <div key={g.canonical_id} style={{ marginBottom: 4 }}>
                         <Badge v={g.role} tone={ROLE_TONE[g.role]} />{" "}
                         <strong style={{ cursor: "pointer" }} onClick={() => openReg(g.canonical_id)}>{g.canonical_id}</strong>
+                        {g.categories?.length > 0 && <span className="sub"> · {g.categories.join(", ")}</span>}
                         <div className="sub" title={g.subject}>{(g.subject || "").slice(0, 70)}</div>
                       </div>
                     )) : <span className="sub">No source document collected for this area yet</span>}

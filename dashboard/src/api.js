@@ -97,6 +97,6 @@ export const portal = {
   admin: () => get("/portal/admin"),
   saveSettings: (body) => send("PUT", "/portal/settings", body),
   sync: (source) => send("POST", "/portal/admin/sync", { source }),
-  requirements: () => get("/portal/requirements"),
+  requirements: (segment) => get("/portal/requirements", { segment }),
 };
 export const reportUrl = (kind, fmt = "html", segment = "") => `${API}/portal/reports/${kind}${qs({ fmt, segment })}`;

@@ -1139,7 +1139,10 @@ REQ_SQL = """SELECT x.id, x.code, x.topic, x.requirement_text, x.applies_to, x.a
                     x.client_status, x.caution
              FROM client_requirements x WHERE x.region_id = (SELECT id FROM regions WHERE code = %s) ORDER BY x.code"""
 REQ_LINK_SQL = """SELECT l.requirement_id, l.role, g.external_code AS canonical_id, coalesce(g.summary, g.title) AS subject,
-                         g.local_class AS doc_class, g.in_scope,
+                         g.local_class AS doc_class, g.in_scope, g.usage,
+                         coalesce((SELECT array_agg(vc.code) FROM regulation_vehicle_categories rv
+                                   JOIN vehicle_categories vc ON vc.id = rv.vehicle_category_id
+                                   WHERE rv.regulation_id = g.id), '{}') AS codes,
                          (SELECT count(*) FROM requirement_versions v WHERE v.valid_to IS NULL
                             AND (v.source_regulation_id = g.id OR g.id = ANY(v.standard_regulation_ids))) AS mandates
                   FROM client_requirement_regulations l JOIN regulations g ON g.id = l.regulation_id
@@ -1149,20 +1152,49 @@ REQ_LINK_SQL = """SELECT l.requirement_id, l.role, g.external_code AS canonical_
 
 
 @router.get("/requirements")
-def requirements(cc: CountryParam = None) -> dict:
-    """The client's regulatory register, each row with the stored regulations that cover it (rules-matched)."""
+def requirements(segment: str | None = None, cc: CountryParam = None) -> dict:
+    """The client's regulatory register, each row with the stored regulations that cover it (rules-matched).
+
+    A requirement names its vehicles only in free text (applies_to), so a segment (regtrack/segments.py) works
+    through the linked regulations: each row keeps the ones for the segment (or ALL, or naming no category yet) and
+    its coverage is recomputed from them; a requirement whose linked regulations are all for other vehicles is left
+    out (counted in other_vehicles); one with no linked regulation stays, as a gap."""
     cc = resolve_country(cc)
+    try:
+        seg = segments.resolve(cc, segment)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     with connect() as conn:
         rows = _rows(conn, REQ_SQL, (cc,))
         links = _rows(conn, REQ_LINK_SQL, (cc,))
+
+    def fits(link: dict) -> bool:
+        codes, usage = set(link["codes"] or []), set(link["usage"] or [])
+        return (not codes or bool(codes & {*seg[0], "ALL"})) and (not seg[1] or not usage or bool(usage & {seg[1], "all"}))
+
     by_req: dict[int, list[dict]] = {}
     for link in links:
         by_req.setdefault(link.pop("requirement_id"), []).append(link)
+    other = 0
+    kept = []
     for r in rows:
-        r["regulations"] = by_req.get(r.pop("id"), [])
+        regs = by_req.get(r.pop("id"), [])
+        if seg and regs:
+            regs = [x for x in regs if fits(x)]
+            if not regs:
+                other += 1
+                continue
+        for x in regs:
+            x.pop("usage")
+            x["categories"] = sorted(x.pop("codes") or [])
+        r["regulations"] = regs
+        kept.append(r)
+    rows = kept
+    for r in rows:
         roles = {x["role"] for x in r["regulations"]}
         r["coverage"] = "Covered" if "primary" in roles else "Partial" if roles else "Gap"
         r["mandates"] = sum(x["mandates"] for x in r["regulations"])
     count = {s: sum(1 for r in rows if r["coverage"] == s) for s in ("Covered", "Partial", "Gap")}
     return {"kpis": {"requirements": len(rows), **{k.lower(): v for k, v in count.items()},
-                     "covered_pct": round(100 * count["Covered"] / (len(rows) or 1))}, "rows": rows}
+                     "covered_pct": round(100 * count["Covered"] / (len(rows) or 1)), "other_vehicles": other},
+            "rows": rows}

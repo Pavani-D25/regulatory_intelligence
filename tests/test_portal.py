@@ -341,3 +341,19 @@ def test_change_monitor_by_segment(client):
         part = client.get("/portal/changes", params={**q, "segment": seg}).json()
         assert {e["id"] for e in part["events"]} <= ids and part["kpis"]["detected"] <= whole["kpis"]["detected"]
     assert client.get("/portal/changes", params={**q, "segment": "3W"}).status_code == 400
+
+
+def test_requirements_register_by_segment(client):
+    """Segment on the client register (Thailand): rows whose documents are all for other vehicles are left out and
+    counted, every kept document is for the segment (or ALL / no category), gaps stay; unknown segment -> 400."""
+    whole = client.get("/portal/requirements", params={"country": "TH"}).json()
+    if not whole["rows"]:
+        pytest.skip("no Thai register loaded")
+    two = client.get("/portal/requirements", params={"country": "TH", "segment": "2W"}).json()
+    k = two["kpis"]
+    assert k["requirements"] + k["other_vehicles"] == whole["kpis"]["requirements"]
+    assert k["gap"] >= whole["kpis"]["gap"]
+    for r in two["rows"]:
+        for g in r["regulations"]:
+            assert not g["categories"] or {"L1", "L3", "ALL"} & set(g["categories"])
+    assert client.get("/portal/requirements", params={"country": "TH", "segment": "3W"}).status_code == 400
