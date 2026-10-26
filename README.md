@@ -246,6 +246,21 @@ npm run dev            # open http://localhost:5173
 Production-style: `npm run build` then `npm run preview` (http://localhost:4173). The API address comes from
 `VITE_API_URL` (`dashboard/.env`, default `http://127.0.0.1:8000`; see `dashboard/.env.example`).
 
+### Share the dashboard
+
+Other devices cannot reach this laptop's `127.0.0.1:8000`, so a shared dashboard calls the API through the `/api`
+proxy in `dashboard/vite.config.js` and one tunnel carries both. In PowerShell (Git Bash turns `/api` into a Windows
+path, and the built page then fails with "is the API running?"):
+
+```powershell
+python -m regtrack.cli api                                  # API on 127.0.0.1:8000
+cd dashboard; $env:VITE_API_URL = "/api"; npm run build; npx vite preview --port 4173
+ngrok http 4173                                             # first time: ngrok config add-authtoken <token>
+```
+
+Serve the build, not `npm run dev`: the dev server's many module requests fail over the tunnel. The portal has no
+login, so anyone with the link can edit compliance records, alerts and settings.
+
 The dashboard follows the approved design (*Regulatory Intelligence Portal v2*): dark sidebar, KPI cards, cards and
 drawer. Scope is India only, vehicle categories L1 / L2 / M1 / N1 (plus rules for all vehicles). In the design,
 "Region" is the vehicle category, "Authority" is the issuer and "Domain" is the topic.

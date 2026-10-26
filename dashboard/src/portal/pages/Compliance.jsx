@@ -2,20 +2,21 @@ import { useEffect, useState } from "react";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring } from "../ui";
+import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring, SegmentPicker } from "../ui";
 
 const STATUSES = ["Open", "In Progress", "Compliant", "Not Applicable"];
 
 export default function Compliance() {
   const [category, setCategory] = useState("");
+  const [segment, setSegment] = useState("");  // vehicle segment path, e.g. "4W/CV" (regtrack/segments.py)
   const [tick, setTick] = useState(0);
   const { openReg, toast, meta, version, country } = usePortal();
-  const { data, error, loading } = useLoad(() => portal.compliance(category), [category, tick, version]);
+  const { data, error, loading } = useLoad(() => portal.compliance(category, segment), [category, segment, tick, version]);
   const [edits, setEdits] = useState({});
   const [saving, setSaving] = useState(false);
   useEffect(() => setEdits({}), [data]);
   // a category selected under the previous country may not exist in this one
-  useEffect(() => setCategory(""), [country]);
+  useEffect(() => { setCategory(""); setSegment(""); }, [country]);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const k = data.kpis;
@@ -46,6 +47,15 @@ export default function Compliance() {
           <button className="btn primary" disabled={!dirty.length || saving} onClick={save}>{saving ? "Saving…" : `Save Matrix${dirty.length ? ` (${dirty.length})` : ""}`}</button>
         </div>
       </div>
+      <Card>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 13 }}>Vehicle segment</strong>
+          <SegmentPicker tree={meta?.segments} value={segment} onChange={setSegment} />
+          {segment && <button className="btn ghost" onClick={() => setSegment("")}>Clear</button>}
+          {loading && <span className="sub">updating…</span>}
+          {dirty.length > 0 && <span className="sub">changing the segment discards unsaved edits</span>}
+        </div>
+      </Card>
       <div className="kpis">
         <Kpi label="Compliant" value={`${k.compliant_pct}%`} small={`of ${k.requirements} applicable requirements`} corner="✓" tone="green" />
         <Kpi label="In Progress" value={`${k.in_progress_pct}%`} small="Evidence being prepared" corner="…" tone="amber" />

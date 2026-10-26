@@ -519,18 +519,21 @@ FROM {mandates} m JOIN {docs} d ON d.id=m.source_doc_id
 JOIN compliance_requirements cr ON cr.requirement_code=m.mandate_key
      AND cr.region_id=(SELECT id FROM regions WHERE code=m.country)
 LEFT JOIN teams t ON t.id=cr.owner_team_id
-WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s
+WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s {usage}
 ORDER BY coalesce(cr.due_date, m.implementation_date) DESC NULLS LAST, m.mandate_key
 """
 
 
 @router.get("/compliance")
-def compliance(category: str | None = None, cc: CountryParam = None) -> dict:
+def compliance(category: str | None = None, segment: str | None = None, cc: CountryParam = None) -> dict:
+    """Obligations in force with their compliance record; segment (regtrack/segments.py) narrows over category."""
     cc = resolve_country(cc)
     with connect() as conn:
         vocab = load_vocab(conn, cc)
         cats = [category, "ALL"] if category in vocab["categories"] else vocab["scope"]
-        rows = _rows(conn, COMP_SQL.format(tracked=TRACKED, mandates=S.mandates(cc), docs=S.docs(cc)), (cats,))
+        cats, usage = segment_filter(cc, segment) or (cats, "")
+        rows = _rows(conn, COMP_SQL.format(tracked=TRACKED, mandates=S.mandates(cc), docs=S.docs(cc),
+                                           usage=usage.replace("d.usage", "m.usage")), (cats,))
         default_owner = _setting(conn, "default_owner", "Regulatory Affairs Team")
     for r in rows:
         r["domain"] = vocab["domain_label"].get((r["domains"] or [None])[0], "General") if r["domains"] else "General"
@@ -826,7 +829,7 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
         ]
         head, rows = sections[3][1], sections[3][2]
     elif kind == "compliance_gap":
-        c = compliance(None, cc)
+        c = compliance(None, cc=cc)
         gaps = [r for r in c["rows"] if r["status"] in ("Open", "In Progress")]
         sections = [("Readiness", ["Measure", "Value"], [["Requirements", c["kpis"]["requirements"]], ["Compliant %", c["kpis"]["compliant_pct"]],
                                                          ["In progress %", c["kpis"]["in_progress_pct"]], ["Open %", c["kpis"]["open_pct"]],
