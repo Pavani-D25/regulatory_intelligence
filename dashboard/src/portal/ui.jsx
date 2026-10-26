@@ -111,3 +111,35 @@ export function ErrorBox({ error }) {
   return <div className="errorbox">{String(error.message || error)} — is the API running? (python -m regtrack.cli api)</div>;
 }
 export function AiNote({ children = "✦ AI fields pending" }) { return <span className="aitag">{children}</span>; }
+
+// Vehicle-segment picker: class (2W/4W) → category (PV/CV) → type (L1, M1, N1...) → subtype (private, transport...).
+// `tree` is meta.segments (regtrack/segments.py); value / onChange use the path "4W/PV/M1/transport" ("" = all).
+const SEGMENT_LEVELS = ["All vehicles", "PV and CV", "All types", "All uses"];
+export function SegmentPicker({ tree, value, onChange }) {
+  const keys = (value || "").split("/").filter(Boolean);
+  const levels = [];
+  let nodes = tree || [];
+  for (let i = 0; i < 4 && nodes.length; i++) {
+    levels.push(nodes);
+    const node = nodes.find((n) => n.key === keys[i]);
+    if (!node) break;
+    nodes = node.children || [];
+  }
+  const pick = (i, k) => onChange([...keys.slice(0, i), k].filter(Boolean).join("/"));
+  return (
+    <div className="segpick">
+      {levels.map((opts, i) => (
+        <select key={i} className="select" aria-label={["Vehicle class", "Vehicle category", "Vehicle type", "Use"][i]}
+          value={keys[i] || ""} onChange={(e) => pick(i, e.target.value)}>
+          <option value="">{SEGMENT_LEVELS[i]}</option>
+          {opts.map((n) => <option key={n.key} value={n.key}>{n.label}</option>)}
+        </select>
+      ))}
+    </div>
+  );
+}
+// "4W/PV/M1/transport" -> "4W-PV · M1 · transport" for headings
+export const segmentLabel = (path) => {
+  const k = (path || "").split("/").filter(Boolean);
+  return k.length ? [k.slice(0, 2).join("-"), ...k.slice(2)].join(" · ") : "";
+};

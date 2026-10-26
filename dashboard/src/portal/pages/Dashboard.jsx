@@ -3,16 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { ago, Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId } from "../ui";
+import { ago, Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId, SegmentPicker, segmentLabel } from "../ui";
 
 export default function Dashboard() {
   const { version, countryName, country } = usePortal();
   // trend chart range: view (auto / month / year) and years; the year choices come from the data (trend_years)
   const [range, setRange] = useState({ view: "auto", from: "", to: "" });
-  useEffect(() => setRange({ view: "auto", from: "", to: "" }), [country]);
+  // vehicle segment (2W/4W → PV/CV → type → use), a path like "4W/PV/M1/transport"; "" = every in-scope category
+  const [segment, setSegment] = useState("");
+  useEffect(() => { setRange({ view: "auto", from: "", to: "" }); setSegment(""); }, [country]);
   const { data: s, error, loading } = useLoad(
-    () => portal.summary({ trend_view: range.view, trend_from: range.from || undefined, trend_to: range.to || undefined }),
-    [version, range.view, range.from, range.to]);
+    () => portal.summary({ trend_view: range.view, trend_from: range.from || undefined, trend_to: range.to || undefined, segment }),
+    [version, range.view, range.from, range.to, segment]);
   const { openReg, meta } = usePortal();
   const nav = useNavigate();
   if (loading && !s) return <Loading />;
@@ -20,16 +22,27 @@ export default function Dashboard() {
   const k = s.kpis;
   const peak = Math.max(1, ...s.trend.map((m) => m.n));
   const deadlines = s.deadlines.length ? s.deadlines : s.recent_deadlines;
+  const seg = segment ? `segment=${encodeURIComponent(segment)}` : "";  // carried into the library on click-through
+  const lib = (q = "") => nav(`/regulations${[q, seg].filter(Boolean).length ? "?" + [q, seg].filter(Boolean).join("&") : ""}`);
   return (
     <section className="view">
       <div className="pagehead">
         <div><h1>Regulatory Overview</h1>
-          <p>Live view of {countryName} vehicle regulations from {meta ? `${meta.sources_total} monitored sources` : "the monitored sources"} for {(meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
+          <p>Live view of {countryName} vehicle regulations from {meta ? `${meta.sources_total} monitored sources` : "the monitored sources"} for {segment ? segmentLabel(segment) : (meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
         <div className="actions">
           <button className="btn secondary" onClick={() => nav("/reports")}>Generate Report</button>
           <button className="btn primary" onClick={() => nav("/changes")}>Review Changes</button>
         </div>
       </div>
+      <Card>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <strong style={{ fontSize: 13 }}>Vehicle segment</strong>
+          <SegmentPicker tree={meta?.segments} value={segment} onChange={setSegment} />
+          {segment && <button className="btn ghost" onClick={() => setSegment("")}>Clear</button>}
+          {loading && segment && <span className="sub">updating…</span>}
+        </div>
+        {segment && <p className="note" style={{ marginTop: 8 }}>Includes rules for all vehicles; a use (private / transport) keeps rules that name no use.</p>}
+      </Card>
       <div className="kpis">
         <Kpi label="Regulations Tracked" value={k.tracked} small={`${k.new_this_quarter} published in the last 90 days`} corner="R" />
         <Kpi label="Changes Detected" value={k.changes_30d} small={`${k.changes_open} not yet reviewed · last 30 days`} corner="Δ" tone="amber" />
@@ -68,7 +81,7 @@ export default function Dashboard() {
             return (
               <div className="chartbars" style={{ gap, overflow: "hidden" }}>
                 {s.trend.map((m, i) => (
-                  <button key={m.ym} className="vbar" title={`${m.label}: ${m.n}`} onClick={() => nav(`/regulations?month=${m.ym}`)}
+                  <button key={m.ym} className="vbar" title={`${m.label}: ${m.n}`} onClick={() => lib(`month=${m.ym}`)}
                     style={{ height: `${Math.max(3, (m.n / peak) * 100)}%`, minWidth: 0,
                              borderRadius: count > 20 ? "3px 3px 0 0" : undefined }}>
                     {step === 1 && <b>{m.n}</b>}
@@ -90,14 +103,14 @@ export default function Dashboard() {
       </div>
       <div className="grid2">
         <Card title="Vehicle Categories" sub="Regulations applying to each category (incl. all-vehicle rules)">
-          <MetricRows rows={s.by_category} onClick={(r) => nav(`/regulations?category=${r.code}`)} />
+          <MetricRows rows={s.by_category} onClick={(r) => lib(`category=${r.code}`)} />
         </Card>
         <Card title="Top Impact Areas" sub="Most regulated topics">
-          <MetricRows rows={s.top_domains} onClick={(r) => nav(`/regulations?q=${encodeURIComponent(r.name)}`)} />
+          <MetricRows rows={s.top_domains} onClick={(r) => lib(`q=${encodeURIComponent(r.name)}`)} />
         </Card>
       </div>
       <div className="grid2 wide">
-        <Card title="Latest Regulatory Changes" sub="Click a row to open the regulation detail" right={<button className="btn ghost" onClick={() => nav("/regulations")}>View all</button>}>
+        <Card title="Latest Regulatory Changes" sub="Click a row to open the regulation detail" right={<button className="btn ghost" onClick={() => lib()}>View all</button>}>
           <div className="tablewrap"><table>
             <thead><tr><th>Regulation</th><th>Category</th><th>Domain</th><th>Effective</th><th>Impact</th><th>Status</th></tr></thead>
             <tbody>{s.latest.map((r) => (

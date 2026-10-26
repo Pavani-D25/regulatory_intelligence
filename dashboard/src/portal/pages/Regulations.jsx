@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId } from "../ui";
+import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId, SegmentPicker } from "../ui";
 
 const PAGE = 50;
 const IMPACT_RANK = { High: 0, Medium: 1, Low: 2 };
@@ -34,13 +34,13 @@ export default function Regulations() {
   const [sp, setSp] = useSearchParams();
   const f = {
     q: sp.get("q") || "", category: sp.get("category") || "", impact: sp.get("impact") || "", status: sp.get("status") || "",
-    month: sp.get("month") || "", history: sp.get("history") === "1", reference: sp.get("reference") === "1",
+    month: sp.get("month") || "", segment: sp.get("segment") || "", history: sp.get("history") === "1", reference: sp.get("reference") === "1",
   };
   const set = (k, v) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); setSp(n, { replace: true }); };
   const { openReg, meta, version, country, countryName } = usePortal();
   const { data, error, loading } = useLoad(
-    () => portal.regulations({ q: f.q, category: f.category, impact: f.impact, status: f.status, history: f.history, reference: f.reference }),
-    [f.q, f.category, f.impact, f.status, f.history, f.reference, version]);
+    () => portal.regulations({ q: f.q, category: f.category, impact: f.impact, status: f.status, history: f.history, reference: f.reference, segment: f.segment }),
+    [f.q, f.category, f.impact, f.status, f.history, f.reference, f.segment, version]);
   const [sort, setSort] = useState({ key: "effective", dir: -1 });
   const [page, setPage] = useState(0);
   const cats = [["", "All categories"], ...(meta?.categories || []).map((c) => [c.code, c.label])];
@@ -86,6 +86,10 @@ export default function Regulations() {
           <select className="select" value={f.status} onChange={(e) => set("status", e.target.value)}>
             <option value="">All status</option><option>Action Required</option><option>Under Review</option><option>Impact Analysis</option><option>Tracked</option></select>
           <button className="btn secondary" onClick={() => setSp({}, { replace: true })}>Clear</button>
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+          <span className="sub" style={{ margin: 0 }}>Vehicle segment</span>
+          <SegmentPicker tree={meta?.segments} value={f.segment} onChange={(v) => set("segment", v)} />
         </div>
         <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <label className="sub" style={{ display: "flex", gap: 6, alignItems: "center", margin: 0 }}>
