@@ -728,7 +728,7 @@ def _answer(conn, q: str, cc: str) -> tuple[dict, list[dict]]:
 
     vocab = load_vocab(conn, cc)
     cat = next((c for c in vocab["categories"] if c.lower() in q.lower().split() or c in q), None)
-    hits = chunk_search(conn, q, cat, None, None, None, 8, cc=cc)["results"]
+    hits = chunk_search(conn, q, cat, None, None, None, 8, cc=cc, hybrid=True)["results"]
     sources = [{"canonical_id": h["canonical_id"], "clause": h["clause_no"], "pages": f"{h['page_from']}-{h['page_to']}",
                 "title": h["official_title"] or h["subject"], "snippet": " ".join((h["content"] or "").split())[:300]} for h in hits]
     ok, _ = llm.reachable()
@@ -746,7 +746,7 @@ def _answer(conn, q: str, cc: str) -> tuple[dict, list[dict]]:
                 parts.append(f"in force / mandatory from {h['effective_date']}")
             return " | ".join(str(p) for p in parts if p)
 
-        ctx = "\n\n".join(f"[{i + 1}] {h['canonical_id']} ({facts(h)}) clause {h['clause_no']}: {h['content'][:1200]}"
+        ctx = "\n\n".join(f"[{i + 1}] {h['canonical_id']} ({facts(h)}) clause {h['clause_no']}: {h['content'][:2000]}"
                           for i, h in enumerate(hits))
         try:
             a = llm.structured(Answer, f"Answer questions about {vocab['name']} vehicle regulations using only the numbered sources. "

@@ -433,3 +433,13 @@ def test_my_legal_identity_and_viewer_pdfs():
     fb3d = base64.b64encode(json.dumps({"posts": {"1": {"type": "pdf", "data": {"guid": "https://x/a.pdf"}}}}).encode())
     html = f"FB3D_CLIENT_DATA.push('{fb3d.decode()}'); window.option_df_7 = {{\"source\":\"https://y/b.pdf\"}};"
     assert viewer_pdfs(html) == ["https://x/a.pdf", "https://y/b.pdf"]
+
+
+def test_search_fusion_prefers_both_rankings_and_rules_in_force():
+    """Ask's hybrid ranking: a chunk found by meaning and by its words comes first; a draft counts half."""
+    from regtrack.pipeline.search import fuse
+
+    vec = [{"id": 1, "doc_class": "AIS_DRAFT"}, {"id": 2, "doc_class": "AIS_STANDARD"}, {"id": 3, "doc_class": "REPORT"}]
+    kw = [{"id": 3, "doc_class": "REPORT"}, {"id": 4, "doc_class": "NOTIFICATION_FINAL"}]
+    order = [r["id"] for r in fuse(vec, kw, 4)]
+    assert order[0] == 3 and order.index(2) < order.index(1)
