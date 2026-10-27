@@ -734,14 +734,19 @@ def double_check(doc: dict, eng: str, data: dict) -> dict:
 
 
 def enrich_pending(conn: psycopg.Connection, limit: int = 200) -> int:
-    """Run the Qwen pass for documents parsed while the LLM was down (llm_pending)."""
+    """Run the Qwen pass for documents parsed while the LLM was down (llm_pending).
+
+    What the portal shows comes first (current, in-scope), documents whose last attempt failed go last, and each
+    document is committed on its own, so an interrupted run keeps what it has done."""
     if not llm.reachable()[0]:
         return 0
     rows = conn.execute(
         """SELECT p.regulation_id, p.document_id AS file_id, p.page_from, p.page_to FROM regulations g
            JOIN document_parts p ON p.regulation_id=g.id AND p.is_best_copy
-           WHERE (g.extraction->>'llm_pending')::boolean AND """ + country.region_sql("g") + " LIMIT %s",
+           WHERE (g.extraction->>'llm_pending')::boolean AND """ + country.region_sql("g") + """
+           ORDER BY g.in_scope DESC, g.is_current DESC, g.extraction ? 'llm_error', g.updated_at LIMIT %s""",
         (limit,)).fetchall()
+    conn.commit()
     n = 0
     for row in rows:
         doc = R.get_document(conn, row["regulation_id"])
@@ -749,6 +754,15 @@ def enrich_pending(conn: psycopg.Connection, limit: int = 200) -> int:
         df = {"page_from": row["page_from"], "page_to": row["page_to"], "is_best_copy": True}
         d = dict(doc)
         d["extraction"] = {**(doc["extraction"] or {}), "model": None}
-        extract_document(conn, d, df, f, load_pages(f["sha256"]), [], use_llm=True)
+        try:
+            extract_document(conn, d, df, f, load_pages(f["sha256"]), [], use_llm=True)
+            conn.commit()
+        except Exception:  # noqa: BLE001  one bad document must not undo the others
+            conn.rollback()
+            log.exception("Qwen pass failed for regulation %s", row["regulation_id"])
+            continue
         n += 1
+        if (d2 := R.get_document(conn, row["regulation_id"])) and (d2["extraction"] or {}).get("llm_pending") \
+                and not llm.reachable()[0]:
+            break  # the LLM went away mid-run: leave the rest for the next run
     return n

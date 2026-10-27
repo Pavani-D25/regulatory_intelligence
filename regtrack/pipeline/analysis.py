@@ -126,7 +126,12 @@ def identify(ctx: FileCtx) -> FileAnalysis:
     allt = full_text(ctx.pages)
     hindi = allt if not eng.strip() else None
     n_ident = notification_identity(eng, hindi) if eng.strip() or hindi else None
-    a_ident = ais_identity(eng[:6000]) if eng.strip() else None
+    # a sparse AIS cover ("Draft D0 AIS - 232 / AUTOMOTIVE INDUSTRY STANDARD") has too few words to count as English,
+    # but it is where the code is printed; running headers of later pages can carry a stale number (AIS-230)
+    p1 = ctx.pages[0] if ctx.pages else None
+    cover = f"\n<<<PAGE 1>>>\n{p1.text}" if p1 and p1.page == 1 and p1.text.strip() and not p1.is_english \
+        and p1.lang not in ("hi", "hi_legacy") else ""
+    a_ident = ais_identity((cover + eng)[:6000]) if eng.strip() else None
     cls = classify(ctx, n_ident, a_ident)
     ident: Identity | None = None
     dc = cls.doc_class
