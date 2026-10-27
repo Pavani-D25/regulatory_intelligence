@@ -50,7 +50,7 @@ class Settings:
     tesseract_cmd: Path | None = None       # tesseract.exe outside PATH (README: conda-forge env D:\tesseract)
     tessdata_prefix: Path | None = None     # its language data folder (tha, eng .traineddata)
     embed_scope: str = "all"                # all | priority (only current, in-scope chunks: metered tunnels)
-    llm_workers: int = 3                    # documents sent to the LLM at once in the catch-up pass (LM Studio parallel slots)
+    llm_workers: int = 1                    # documents sent to the LLM at once in the catch-up pass: >1 only with LM Studio parallel slots (queued requests time out)
     llm_reasoning_effort: str = "none"      # sent with every chat call; "" = leave to the server (thinking models)
 
     @property
@@ -95,7 +95,7 @@ def get_settings() -> Settings:
         tesseract_cmd=Path(_clean(os.getenv("TESSERACT_CMD"))) if _clean(os.getenv("TESSERACT_CMD")) else None,
         tessdata_prefix=Path(_clean(os.getenv("TESSDATA_PREFIX"))) if _clean(os.getenv("TESSDATA_PREFIX")) else None,
         embed_scope=(_clean(os.getenv("EMBED_SCOPE")) or "all").lower(),
-        llm_workers=max(1, int(_clean(os.getenv("LLM_WORKERS")) or 3)),
+        llm_workers=max(1, int(_clean(os.getenv("LLM_WORKERS")) or 1)),
         llm_reasoning_effort=(_clean(os.getenv("LLM_REASONING_EFFORT")) if os.getenv("LLM_REASONING_EFFORT") is not None
                               else "none"),
     )
