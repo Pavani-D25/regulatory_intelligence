@@ -733,11 +733,16 @@ def double_check(doc: dict, eng: str, data: dict) -> dict:
             "status": (r.status or "").lower().startswith(doc["status"][:5]) if r.status else None}
 
 
-def enrich_pending(conn: psycopg.Connection, limit: int = 200) -> int:
+def enrich_pending(conn: psycopg.Connection, limit: int = 200, workers: int | None = None) -> int:
     """Run the Qwen pass for documents parsed while the LLM was down (llm_pending).
 
     What the portal shows comes first (current, in-scope), documents whose last attempt failed go last, and each
-    document is committed on its own, so an interrupted run keeps what it has done."""
+    document is committed on its own, so an interrupted run keeps what it has done. LLM_WORKERS documents go to the
+    LLM at once (LM Studio answers them in parallel), each on its own connection."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from regtrack.db import connect
+
     if not llm.reachable()[0]:
         return 0
     rows = conn.execute(
@@ -747,22 +752,29 @@ def enrich_pending(conn: psycopg.Connection, limit: int = 200) -> int:
            ORDER BY g.in_scope DESC, g.is_current DESC, g.extraction ? 'llm_error', g.updated_at LIMIT %s""",
         (limit,)).fetchall()
     conn.commit()
-    n = 0
-    for row in rows:
-        doc = R.get_document(conn, row["regulation_id"])
-        f = R.get_file(conn, row["file_id"])
-        df = {"page_from": row["page_from"], "page_to": row["page_to"], "is_best_copy": True}
-        d = dict(doc)
-        d["extraction"] = {**(doc["extraction"] or {}), "model": None}
-        try:
-            extract_document(conn, d, df, f, load_pages(f["sha256"]), [], use_llm=True)
-            conn.commit()
-        except Exception:  # noqa: BLE001  one bad document must not undo the others
-            conn.rollback()
-            log.exception("Qwen pass failed for regulation %s", row["regulation_id"])
-            continue
-        n += 1
-        if (d2 := R.get_document(conn, row["regulation_id"])) and (d2["extraction"] or {}).get("llm_pending") \
-                and not llm.reachable()[0]:
-            break  # the LLM went away mid-run: leave the rest for the next run
-    return n
+    stop = False
+
+    def one(row: dict) -> bool:
+        nonlocal stop
+        if stop:
+            return False
+        with connect() as c:
+            try:
+                doc = R.get_document(c, row["regulation_id"])
+                f = R.get_file(c, row["file_id"])
+                df = {"page_from": row["page_from"], "page_to": row["page_to"], "is_best_copy": True}
+                d = dict(doc)
+                d["extraction"] = {**(doc["extraction"] or {}), "model": None}
+                extract_document(c, d, df, f, load_pages(f["sha256"]), [], use_llm=True)
+                c.commit()
+            except Exception:  # noqa: BLE001  one bad document must not undo the others
+                c.rollback()
+                log.exception("Qwen pass failed for regulation %s", row["regulation_id"])
+                return False
+            pending = (R.get_document(c, row["regulation_id"])["extraction"] or {}).get("llm_pending")
+        if pending and not llm.reachable()[0]:
+            stop = True  # the LLM went away mid-run: leave the rest for the next run
+        return True
+
+    with ThreadPoolExecutor(max(1, workers or get_settings().llm_workers)) as ex:
+        return sum(ex.map(one, rows))
