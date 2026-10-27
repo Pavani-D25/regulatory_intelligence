@@ -94,8 +94,12 @@ def _serials(s: str) -> list[str]:
     return re.findall(r"\d{1,3}", s)
 
 
+# "For all motor vehicles covered under Sr. No 32(i)" points back at the item's own categories: not every vehicle
+BACK_REF = re.compile(r"all\s+(?:motor\s+)?vehicles\s+(?:covered|referred|mentioned|specified|listed)\b", re.I)
+
+
 def categories_from(subject: str) -> list[str]:
-    s = subject or ""
+    s = BACK_REF.sub(" ", subject or "")
     cats = P.expand_letters(list(P.find_categories(s)))
     if re.search(r"all\s+(?:motor\s+)?vehicles|fitted\s+in\s+all\s+motor", s, re.I):
         cats = ["ALL"] + [c for c in cats if c != "ALL"]
@@ -229,8 +233,15 @@ def parse_table_amendments(op: str) -> tuple[list[Item], list[DateSub], list[Omi
 
 
 # ---------------------------------------------------------------------- CMVR rule obligations
-OBLIG = re.compile(r"(?:manufactured|sold|registered|fitted)\s+on\s+(?:or|and)\s+after\s+(?:the\s+)?(\d{1,2}(?:st|nd|rd|th)?\s*(?:day\s+of\s+)?[A-Z][a-z]+,?\s+\d{4})"
-                   r"|on\s+and\s+from\s+(?:the\s+)?(\d{1,2}(?:st|nd|rd|th)?\s*(?:day\s+of\s+)?[A-Z][a-z]+,?\s+\d{4})", re.I)
+_DATE = r"(\d{1,2}(?:st|nd|rd|th)?\s*(?:day\s+of\s+)?[A-Z][a-z]+,?\s+\d{4})"
+OBLIG = re.compile(r"(?:manufactured|sold|registered|fitted)\s+on\s+(?:or|and)\s+after\s+(?:the\s+)?" + _DATE
+                   + r"|on\s+and\s+from\s+(?:the\s+)?" + _DATE
+                   # a proviso's own dates: "... on and after the 1st April, 2018 for new vehicle models"
+                   + r"|on\s+and\s+after\s+(?:the\s+)?" + _DATE + r"(?=\s+for\s+(?:new|existing)\s+(?:vehicle\s+)?models?)", re.I)
+# clause boundaries: a sentence end (not the point of "0.1"), a lettered clause "(a) New ...", a proviso
+CLAUSE = re.compile(r"(?<!\d)\.(?=\s)|(?<![\w(])\(\s*[a-z]\s*\)\s+(?=[A-Z“\"])|\b(?i:provided\s+(?:further\s+)?that)\b")
+COND_ORDER = ("engine_cc", "power_kw", "gvw_kg", "seats", "speed_kmh")
+INVERSE = {"lte": "gt", "lt": "gte", "gte": "lt", "gt": "lte"}
 
 
 @dataclass
@@ -242,17 +253,54 @@ class RuleObligation:
     implementation_date: date
     model_scope: str | None
     conditions: dict
+    variant: str = ""  # set when one document states the same rule + standard for different vehicles
 
     @property
-    def key(self) -> str:
+    def base_key(self) -> str:
         tag = self.standards[0] if self.standards else hashlib.sha1(self.subject.encode()).hexdigest()[:8]
         return f"{self.rule} :: {tag}"
 
+    @property
+    def key(self) -> str:
+        return self.base_key + (f" :: {self.variant}" if self.variant else "")
+
+
+def _clause(op: str, s: int, e: int) -> tuple[int, int]:
+    """The clause around op[s:e]: from the boundary before it to the one after it."""
+    start, end = 0, len(op)
+    for b in CLAUSE.finditer(op):
+        if b.end() <= s:
+            start = b.end() if op[b.start()] == "." else b.start()
+        elif b.start() >= e:
+            end = b.end() if op[b.start()] == "." else b.start()
+            break
+    return start, end
+
+
+def _scope(text: str) -> str:
+    return "new_models" if re.search(r"new\s+(?:vehicle\s+)?models?", text, re.I) else \
+        "existing_models" if re.search(r"existing\s+(?:vehicle\s+)?models?", text, re.I) else \
+        "registered_vehicles" if re.search(r"registered", text, re.I) else "all"
+
+
+def _inverse(cond: dict) -> dict:
+    """'All other ... which do not fall in the criteria above': the opposite of the first limit of that clause (engine
+    size first). The criteria are joined by 'and', so their opposite is an 'or'; one limit is what the API can filter."""
+    for k in COND_ORDER:
+        if cond.get(k):
+            return {k: {INVERSE[op]: v for op, v in cond[k].items() if op in INVERSE}}
+    return {}
+
+
+def _cond_tag(cond: dict) -> str:
+    return ",".join(f"{k}{op}{v:g}" for k in sorted(cond) for op, v in sorted(cond[k].items()))
+
 
 def parse_rule_obligations(op: str) -> list[RuleObligation]:
-    out = []
+    out: list[RuleObligation] = []
+    main: RuleObligation | None = None
     for m in OBLIG.finditer(op):
-        d = P.parse_date(m.group(1) or m.group(2))
+        d = P.parse_date(m.group(1) or m.group(2) or m.group(3))
         if not d:
             continue
         start = max(0, op.rfind(".", 0, m.start() - 300) + 1)
@@ -267,10 +315,35 @@ def parse_rule_obligations(op: str) -> list[RuleObligation]:
             continue
         r = rules[-1]
         rule = f"CMVR Rule {r.group(1)}" + (f"({r.group(2)})" if r.group(2) else "")
-        scope = "new_models" if re.search(r"new\s+models?", sent, re.I) else \
+        # the sentence window above gives the standard and the categories; the clause around the date (a), (b),
+        # 'Provided that ...' gives what differs between clauses: the size/power limits and new / existing models
+        cs, ce = _clause(op, m.start(), m.end())
+        clause = clean(op[cs:ce])
+        exception = bool(re.match(r"(?i)provided", clause) and re.search(r"(?i)not\s+fall|all\s+other", clause))
+        if m.group(3) and not exception:
+            continue  # "on and after <date> for new models" is read only in an 'all other vehicles' proviso
+        cats, cond = categories_from(sent), P.find_conditions(clause) or P.find_conditions(sent)
+        scope = _scope(op[m.end():m.end() + 40]) if m.group(3) else \
+            _scope(clause) if _scope(clause) in ("new_models", "existing_models") else \
+            "new_models" if re.search(r"new\s+models?", sent, re.I) else \
             "existing_models" if re.search(r"existing\s+models?", sent, re.I) else \
             "registered_vehicles" if re.search(r"registered", sent, re.I) else "all"
-        out.append(RuleObligation(rule, sent[:300], stds[:6], categories_from(sent), d, scope, P.find_conditions(sent)))
+        if exception and main:  # main: the clause this proviso is the exception to
+            cond = P.find_conditions(clause) or _inverse(main.conditions)
+            cats = categories_from(clause) or main.categories
+        subject = clause if exception or P.find_conditions(clause) else sent
+        ob = RuleObligation(rule, subject[:300], stds[:6], cats, d, scope, cond)
+        out.append(ob)
+        if not exception:
+            main = ob
+    # the same rule + standard for different vehicles in one document (new / existing models, <= / > 125 cc) are
+    # separate mandates, not versions of each other
+    shapes: dict[str, set] = {}
+    for o in out:
+        shapes.setdefault(o.base_key, set()).add((o.model_scope, _cond_tag(o.conditions)))
+    for o in out:
+        if len(shapes[o.base_key]) > 1:
+            o.variant = "/".join(x for x in (o.model_scope if o.model_scope != "all" else "", _cond_tag(o.conditions)) if x)
     seen, uniq = set(), []
     for o in out:
         if (o.key, o.implementation_date) not in seen:
@@ -467,3 +540,85 @@ def finalise_drafts(conn: psycopg.Connection, final_doc: int, draft_doc: int, no
         close(conn, r["id"], max(notified, r["valid_from"] or notified), rep["id"] if rep else None)
         n += 1
     return n
+
+
+# ---------------------------------------------------------------------- corrections after a parser fix
+# A version that was read wrongly is not edited: it is closed at its own start (valid_to = valid_from, so it never
+# applied on any date) and superseded by the corrected version. Only open versions are corrected.
+COPY = ("legal_basis", "subject", "standard_refs", "standard_doc_ids", "vehicle_categories", "conditions", "model_scope",
+        "usage", "powertrains", "date_of_notification", "effective_date", "implementation_date", "implementation_rule",
+        "source_doc_id", "is_draft", "valid_from")
+
+
+def _vocab(conn: psycopg.Connection) -> set[str]:
+    return {r["code"] for r in conn.execute("SELECT code FROM vehicle_categories v WHERE " + country.region_sql("v"))}
+
+
+def _replace(conn: psycopg.Connection, old: dict, **fix) -> int:
+    new_id = insert_mandate(conn, {**{k: old[k] for k in COPY}, **fix, "mandate_key": fix.pop("mandate_key", None)
+                                   or old["mandate_key"]})
+    close(conn, old["id"], _start(old), new_id)
+    return new_id
+
+
+def _start(v: dict) -> date:
+    return v["valid_from"] or v["date_of_notification"] or date.today()
+
+
+def correct_table_categories(conn: psycopg.Connection, apply: bool) -> list[dict]:
+    """S.O. 1365 table rows whose categories the subject no longer gives (e.g. 'all motor vehicles covered under
+    Sr. No 32(i)' read as every vehicle). Rows recorded from a date change of an unknown row keep theirs."""
+    vocab, out = _vocab(conn), []
+    for r in conn.execute(version_sql() + " AND v.valid_to IS NULL AND v.legal_basis LIKE %s "
+                          "AND coalesce(v.implementation_rule, '') NOT LIKE 'substituted for%%' ORDER BY v.id",
+                          ("%Table Sr.%",)).fetchall():
+        want = sorted(set(categories_from(r["subject"] or "")) & vocab)
+        if want and want != sorted(r["vehicle_categories"]):
+            out.append({"id": r["id"], "key": r["mandate_key"], "old": sorted(r["vehicle_categories"]), "new": want})
+            if apply:
+                out[-1]["new_id"] = _replace(conn, dict(r), vehicle_categories=want)
+    return out
+
+
+def correct_rule_obligations(conn: psycopg.Connection, doc: dict, op: str, apply: bool) -> list[dict]:
+    """A notification's CMVR rule obligations as the parser reads them now, against its open versions."""
+    if not doc["doc_date"]:
+        return []
+    items, dsubs, _ = parse_table_amendments(op)
+    if items or dsubs:
+        return []
+    vocab, out = _vocab(conn), []
+    obs = parse_rule_obligations(op)
+    mine = {r["mandate_key"]: dict(r) for r in conn.execute(
+        version_sql() + " AND v.source_regulation_id=%s AND v.valid_to IS NULL AND v.legal_basis LIKE 'CMVR Rule%%'",
+        (doc["id"],)).fetchall()}
+    new_ids: dict[str, int] = {}
+    for ob in obs:
+        want = {"vehicle_categories": sorted(set(ob.categories) & vocab), "conditions": ob.conditions,
+                "model_scope": ob.model_scope}
+        old = mine.get(ob.key)
+        if old:
+            have = {"vehicle_categories": sorted(old["vehicle_categories"]), "conditions": old["conditions"] or {},
+                    "model_scope": old["model_scope"]}
+            if have != want or old["implementation_date"] != ob.implementation_date:
+                out.append({"doc": doc["canonical_id"], "key": ob.key, "change": "corrected", "old": have, "new": want})
+                if apply:
+                    new_ids[ob.base_key] = _replace(conn, old, subject=ob.subject, **want,
+                                                    implementation_date=ob.implementation_date)
+        elif not already_recorded(conn, ob.key, doc["id"]):
+            out.append({"doc": doc["canonical_id"], "key": ob.key, "change": "added", "new": want,
+                        "date": str(ob.implementation_date)})
+            if apply:
+                v = {"date_of_notification": doc["doc_date"], "effective_date": doc["doc_date"], "source_doc_id": doc["id"],
+                     "usage": doc.get("usage") or [], "powertrains": doc.get("powertrains") or [],
+                     "legal_basis": ob.rule, "subject": ob.subject, "standard_refs": ob.standards,
+                     "standard_doc_ids": resolve_standard_ids(conn, ob.standards), "implementation_date": ob.implementation_date,
+                     "implementation_rule": None, **want, "vehicle_categories": ob.categories}
+                new_ids.setdefault(ob.base_key, supersede(conn, ob.key, v, doc["doc_date"], doc["status"] == "draft")[0])
+    keys = {ob.key for ob in obs}
+    for key, old in mine.items():
+        if key not in keys:
+            out.append({"doc": doc["canonical_id"], "key": key, "change": "retracted"})
+            if apply:
+                close(conn, old["id"], _start(old), new_ids.get(" :: ".join(key.split(" :: ")[:2])))
+    return out

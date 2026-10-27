@@ -166,6 +166,28 @@ def test_rule_obligation_parser():
     assert "L2" in obs[0].categories and obs[0].rule.startswith("CMVR Rule 96")
 
 
+def test_rule_obligation_clauses_and_all_other_proviso():
+    """G.S.R. 310(E) 2016: L2 <= 125 cc (ABS or CBS) for new / existing models, and the 'all other two wheeled
+    vehicles' proviso (ABS) - four mandates with their limits, none superseding another."""
+    op = ("2. In the Central Motor Vehicle Rules, 1989, in rule 96, after sub-rule (4), the following sub-rule shall be "
+          "inserted, namely:- “(4 A). Notwithstanding anything contained in clause (i) of sub-rule (4),— "
+          "(a) New vehicle models of category L2 with; (i) engine capacity ≤ 125 cc; (ii) maximum continuous rated or "
+          "net power ≤ 11kw; and (iii) power/weight ratio ≤ 0.1 kw/kg, manufactured on and after the 1st April, "
+          "2018 shall be fitted with anti-lock braking system or combined braking system conforming to IS: 14664: 2010; "
+          "(b) Existing vehicle models of category L2 with : (i) engine capacity ≤ 125 cc; (ii) maximum continuous "
+          "rated or net power ≤ 11kw; and (iii) power/weight ratio ≤ 0.1 kw/kg, manufactured on and after the 1st "
+          "April, 2019 shall be fitted with anti-lock braking system or combined braking system conforming to IS: 14664: "
+          "2010: Provided that all other category of two wheeled vehicles which does not fall in the criteria as mentioned "
+          "above in clause (a) and (b) shall be fitted with anti-lock braking system conforming to IS: 14664: 2010 on and "
+          "after the 1st April, 2018 for new vehicle models and on and after the 1st April, 2019 for existing vehicle "
+          "models.”.")
+    got = {(o.implementation_date.year, o.model_scope, M._cond_tag(o.conditions)) for o in M.parse_rule_obligations(op)}
+    assert got == {(2018, "new_models", "engine_cclte125,power_kwlte11"), (2019, "existing_models", "engine_cclte125,power_kwlte11"),
+                   (2018, "new_models", "engine_ccgt125"), (2019, "existing_models", "engine_ccgt125")}
+    obs = M.parse_rule_obligations(op)
+    assert len({o.key for o in obs}) == 4 and all(o.categories == ["L2"] for o in obs)
+
+
 # ---------------------------------------------------------------- chunks / categories
 def test_clause_chunks_and_boilerplate():
     text = ("1. SCOPE\n" + "This standard applies to vehicles of category L. " * 6 + "\n2. DEFINITIONS\n"
@@ -177,6 +199,10 @@ def test_clause_chunks_and_boilerplate():
 
 def test_categories_from_text():
     assert categories_of("applicable to vehicles of category M1 and N1 and to all motor vehicles") == ["M1", "N1", "ALL"]
+    # a table item pointing back at its own row is not 'every vehicle' (S.O. 6108(E) 2018, Sr. 32(i))
+    assert M.categories_from("lighting devices for L5 category of vehicles (three wheeled vehicles) and their trailers "
+                             "For all motor vehicles covered under Sr. No 32(i): 1st October, 2019") == ["L5", "O"]
+    assert M.categories_from("Wheel rims fitted in all motor vehicles") == ["ALL"]
 
 
 @pytest.mark.parametrize("name", sorted(p.name for p in FX.glob("*.pdf")))

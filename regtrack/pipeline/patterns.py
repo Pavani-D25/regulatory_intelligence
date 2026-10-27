@@ -355,13 +355,13 @@ def find_usage(text: str) -> list[str]:
 # ---------------------------------------------------------------- numeric conditions
 WORDNUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
            "ten": 10, "twelve": 12, "thirteen": 13, "fifteen": 15, "twenty": 20, "twenty-two": 22, "thirty": 30}
-_OP = r"(not more than|not exceeding|up to|upto|less than or equal to|less than|below|exceeding|more than|above|over|greater than|at least|<=|>=|<|>)"
+_OP = r"(not more than|not exceeding|up to|upto|less than or equal to|less than|below|exceeding|more than|above|over|greater than|at least|<=|>=|≤|≥|<|>)"
 OPMAP = {"not more than": "lte", "not exceeding": "lte", "up to": "lte", "upto": "lte", "less than or equal to": "lte",
          "<=": "lte", "less than": "lt", "below": "lt", "<": "lt", "exceeding": "gt", "more than": "gt", "above": "gt",
-         "over": "gt", "greater than": "gt", ">": "gt", "at least": "gte", ">=": "gte"}
+         "over": "gt", "greater than": "gt", ">": "gt", "at least": "gte", ">=": "gte", "≤": "lte", "≥": "gte"}
 COND_RE = {
     "engine_cc": re.compile(_OP + r"\s*(\d{2,4})\s*(?:cc|cubic\s+centimet)", re.I),
-    "power_kw": re.compile(_OP + r"\s*(\d+(?:\.\d+)?)\s*kW\b", re.I),
+    "power_kw": re.compile(_OP + r"\s*(\d+(?:\.\d+)?)\s*kW\b(?!\s*/)", re.I),  # not a power/weight ratio (kw/kg)
     "gvw_kg": re.compile(r"(?:GVW|gross vehicle weight)[^.;]{0,40}?" + _OP + r"\s*(\d[\d,]*(?:\.\d+)?)\s*(kg|kilograms?|tonnes?|t)\b", re.I),
     "seats": re.compile(_OP + r"\s*(\w+(?:-\w+)?)\s+(?:seats|passengers|persons)", re.I),
     "speed_kmh": re.compile(_OP + r"\s*(\d{2,3})\s*km\s*/?\s*h", re.I),

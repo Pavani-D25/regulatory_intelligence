@@ -7,6 +7,7 @@
   run [--stage S] [--limit N]   run pipeline stages on pending files (resumable)
   crawl [SOURCE]        run the current country's live crawlers once (India: MORTH_API, ARAI_AIS, EGAZETTE, INDIACODE)
   schedule              start the 6-hour scheduler (blocking)
+  rederive-mandates [--doc ID] [--apply]   after a mandate-parser fix: correct open mandate versions (dry run first)
   report                write reports/VALIDATION_REPORT.md
   api                   start the read-only FastAPI server
   db start|stop|status  the local PostgreSQL server (PG_BIN / PG_DATA in .env; not used with Docker)
@@ -100,6 +101,22 @@ def cmd_run(args) -> int:
     from regtrack.pipeline.runner import run_pipeline
 
     print(run_pipeline(stages=args.stage, limit=args.limit, workers=args.workers))
+    return 0
+
+
+def cmd_rederive_mandates(args) -> int:
+    from regtrack.db import connect
+    from regtrack.pipeline.link import rederive_mandates
+
+    with connect() as conn:
+        out = rederive_mandates(conn, apply=args.apply, docs=args.doc or None)
+        if args.apply:
+            conn.commit()
+        else:
+            conn.rollback()
+    for o in out:
+        print(o)
+    print(f"{len(out)} change(s)" + ("" if args.apply else " (dry run: --apply to write)"))
     return 0
 
 
@@ -213,6 +230,10 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--limit", type=int)
     sp.add_argument("--workers", type=int, default=2)
     sp.set_defaults(fn=cmd_run)
+    sp = sub.add_parser("rederive-mandates")
+    sp.add_argument("--doc", action="append", help="limit the rule-obligation pass to this notification (repeatable)")
+    sp.add_argument("--apply", action="store_true")
+    sp.set_defaults(fn=cmd_rederive_mandates)
     sp = sub.add_parser("crawl")
     sp.add_argument("sources", nargs="*")
     sp.add_argument("--no-process", action="store_true")

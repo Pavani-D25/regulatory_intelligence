@@ -294,3 +294,23 @@ def resolve_refs(conn: psycopg.Connection) -> int:
                           AND q.entity_id=r.from_regulation_id AND r.type='finalises' AND r.to_regulation_id=g.id
                           AND q.details->>'draft'=g.external_code""")
     return n
+
+
+def rederive_mandates(conn: psycopg.Connection, apply: bool = False, docs: list[str] | None = None) -> list[dict]:
+    """After a mandate-parser fix: correct the open mandate versions of notifications (see mandates.py). docs limits the
+    rule-obligation pass to those canonical IDs; S.O. 1365 table categories are always checked."""
+    out = M.correct_table_categories(conn, apply)
+    for row in conn.execute(
+            """SELECT p.regulation_id, p.document_id, p.page_from, p.page_to FROM regulations g
+               JOIN document_parts p ON p.regulation_id=g.id AND p.is_best_copy
+               WHERE g.local_class LIKE 'NOTIFICATION%%' AND """ + country.region_sql("g") +
+            " ORDER BY g.published_date NULLS LAST, g.id").fetchall():
+        doc = R.get_document(conn, row["regulation_id"])
+        if docs is not None and doc["canonical_id"] not in docs:
+            continue
+        if not (doc["status"] == "final" or doc["doc_class"] == DocClass.NOTIFICATION_DRAFT.value):
+            continue
+        f = R.get_file(conn, row["document_id"])
+        op = operative_text(english_text(load_pages(f["sha256"]), row["page_from"], row["page_to"]))
+        out += M.correct_rule_obligations(conn, doc, op, apply)
+    return out
