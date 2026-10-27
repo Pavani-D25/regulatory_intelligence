@@ -54,3 +54,6 @@ def test_vehicle_by_segment(client):
     assert all(not m["usage"] or {"transport", "all"} & set(m["usage"]) for m in taxi["mandates"])
     assert client.get("/vehicles/applicable", params={**q, "segment": "3W"}).status_code == 400
     assert client.get("/vehicles/applicable", params=q).status_code == 400
+    # "All vehicles" in the portal: every in-scope category, so any segment's mandates are among them
+    every = client.get("/vehicles/applicable", params={**q, "all_vehicles": True}).json()
+    assert {m["id"] for m in two["mandates"]} <= {m["id"] for m in every["mandates"]}

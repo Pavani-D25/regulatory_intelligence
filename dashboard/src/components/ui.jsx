@@ -118,7 +118,7 @@ export function Table({ head, children }) {
 export const Td = ({ children, className = "" }) => <td className={`px-3 py-2 align-top ${className}`}>{children}</td>;
 
 export function Button({ as = "button", className = "", variant = "primary", ...props }) {
-  const base = "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition no-underline hover:no-underline";
+  const base = "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition no-underline hover:no-underline disabled:cursor-not-allowed disabled:opacity-50";
   const v = variant === "primary"
     ? "bg-brand text-white hover:bg-brand/90"
     : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50";

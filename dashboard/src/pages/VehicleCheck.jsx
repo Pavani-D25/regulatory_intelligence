@@ -71,11 +71,14 @@ export default function VehicleCheck() {
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const { meta, version } = usePortal();
 
+  // ?all=1: "All vehicles" (every in-scope category); the share pack still needs one segment
   const chosen = sel.segment || sel.category;
+  const asked = chosen || params.get("all") === "1";
   const q = { segment: sel.segment, category: sel.segment ? "" : sel.category, engine_cc: sel.engine_cc,
-              powertrain: sel.powertrain, usage: sel.segment ? "" : sel.usage, on: sel.on };
+              powertrain: sel.powertrain, usage: sel.segment ? "" : sel.usage, on: sel.on,
+              all_vehicles: chosen ? "" : "true" };
   const { data, error, loading } = useLoad(async () => {
-    if (!chosen) return null;
+    if (!asked) return null;
     const [now, all] = await Promise.all([api.applicable(q), api.applicable({ ...q, include_future: true })]);
     const nowIds = new Set(now.mandates.map((m) => m.id));
     return { now: now.mandates, upcoming: all.mandates.filter((m) => !nowIds.has(m.id)) };
@@ -84,7 +87,8 @@ export default function VehicleCheck() {
   const submit = (e) => {
     e.preventDefault();
     const { category, usage, ...rest } = form;  // the segment replaces the old category / usage choices
-    setParams(Object.fromEntries(Object.entries(form.segment ? rest : { ...rest, category, usage }).filter(([, v]) => v)));
+    const vehicle = form.segment ? rest : form.category ? { ...rest, category, usage } : { ...rest, all: "1" };
+    setParams(Object.fromEntries(Object.entries(vehicle).filter(([, v]) => v)));
   };
 
   return (
@@ -116,7 +120,7 @@ export default function VehicleCheck() {
             <label htmlFor="on">On date</label>
             <input id="on" type="date" value={form.on} onChange={set("on")} />
           </div>
-          <Button type="submit" disabled={!form.segment && !form.category}>Check</Button>
+          <Button type="submit">Check</Button>
           {chosen && (
             <Button as="a" variant="secondary" className="ml-auto" href={sharePackUrl(q)}>
               ⤓ Download share pack
@@ -130,11 +134,11 @@ export default function VehicleCheck() {
       </Card>
 
       <ErrorBox error={error} />
-      {loading && chosen && <Loading />}
-      {!chosen && <Empty>Choose a vehicle segment (2W / 4W, then PV / CV, type and use as needed) and press Check.</Empty>}
+      {loading && asked && <Loading />}
+      {!asked && <Empty>Choose a vehicle segment (2W / 4W, then PV / CV, type and use as needed), or keep All vehicles, and press Check.</Empty>}
       {data && (
         <>
-          <Card title={`${sel.segment ? segmentLabel(sel.segment) : sel.category}${sel.usage && !sel.segment ? ` · ${sel.usage}` : ""} · in force on ${fmtDate(sel.on)} · ${data.now.length}`}>
+          <Card title={`${sel.segment ? segmentLabel(sel.segment) : sel.category || "All vehicles"}${sel.usage && !sel.segment ? ` · ${sel.usage}` : ""} · in force on ${fmtDate(sel.on)} · ${data.now.length}`}>
             <MandateTable rows={data.now} />
           </Card>
           <Card title={`Coming later · ${data.upcoming.length}`}>

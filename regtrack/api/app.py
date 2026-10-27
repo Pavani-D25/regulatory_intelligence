@@ -76,12 +76,16 @@ def vehicles_applicable(category: str | None = Query(None, examples=["L2"]), eng
                         power_kw: float | None = None, gvw_kg: float | None = None, seats: float | None = None,
                         powertrain: str | None = None, usage: str | None = None, on: date | None = None,
                         include_drafts: bool = False, include_future: bool = False,
-                        segment: str | None = Query(None, examples=["4W/PV/M1/transport"]), cc: CountryParam = None) -> dict:
+                        segment: str | None = Query(None, examples=["4W/PV/M1/transport"]), all_vehicles: bool = False,
+                        cc: CountryParam = None) -> dict:
     """Mandates for a vehicle on a date, with the standards behind each and their current versions. The vehicle is a
-    category code or a segment path."""
+    category code or a segment path; all_vehicles=true with neither means every in-scope category of the country."""
     cc = resolve_country(cc)
     on = on or date.today()
-    cats, usage = vehicle_codes(cc, category, segment, usage)
+    if all_vehicles and not (segment or category):
+        cats = sorted(in_scope_categories(cc) | {"ALL"})
+    else:
+        cats, usage = vehicle_codes(cc, category, segment, usage)
     args: list = [cats]
     sql = ["SELECT m.*, d.external_code AS source_canonical_id, d.title AS source_title "
            f"FROM {S.mandates(cc)} m JOIN regulations d ON d.id=m.source_doc_id WHERE m.vehicle_categories && %s"]
