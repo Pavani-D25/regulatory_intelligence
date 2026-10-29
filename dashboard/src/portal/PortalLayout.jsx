@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { api, docPath, familyPath, fileUrl, portal, setApiCountry, setApiYear } from "../api";
+import { api, docPath, familyPath, fileUrl, portal, setApiCountry, setApiVariant, setApiYear } from "../api";
 import "./portal.css";
 import { ago, Badge, fmt, fmtTime } from "./ui";
 
@@ -12,6 +12,7 @@ const NAV = [
   ["/compliance", "✓", "Compliance Matrix"], ["/requirements", "▥", "Requirements Register"], ["/impact", "⌁", "Impact View"], ["/ai", "✦", "Ask Regulatory AI"],
   ["/reports", "▤", "Reports"], ["/alerts", "◉", "Alerts"], ["/team", "◍", "Teams"], ["/admin", "⚙", "Admin"],
 ];
+const VARIANTS = [["", "All powertrains"], ["ev", "EV"], ["hybrid", "Hybrid"], ["ice", "ICE"]];
 const TOOLS = [["/vehicle", "◎", "Vehicle Check"], ["/versions", "⇄", "Versions"]];
 const TITLES = Object.fromEntries([...NAV, ...TOOLS, ["/search", "", "Search"], ["/doc", "", "Document"]].map(([p, , t]) => [p, t]));
 const REL_LABEL = {
@@ -274,6 +275,14 @@ export default function PortalLayout() {
     setYearState(y);
     setVersion((v) => v + 1);
   }, []);
+  // the powertrain variant every page shows ("" = all, ev / hybrid / ice: regulations specific to it)
+  const [variant, setVariantState] = useState(() => store.get("ri.variant") || "");
+  const setVariant = useCallback((v) => {
+    store.set("ri.variant", v);
+    setApiVariant(v);
+    setVariantState(v);
+    setVersion((n) => n + 1);
+  }, []);
   const countryName = (COUNTRIES.find(([c]) => c === country) || [null, "India"])[1];
   const [drawer, setDrawer] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
@@ -308,7 +317,7 @@ export default function PortalLayout() {
   const sch = meta?.scheduler;
 
   return (
-    <Ctx.Provider value={{ openReg: setDrawer, toast, meta, version, country, countryName, year }}>
+    <Ctx.Provider value={{ openReg: setDrawer, toast, meta, version, country, countryName, year, variant }}>
       <div className="app portal">
         <aside className="sidebar">
           <div className="brand"><div className="brandmark">RI</div><div><strong>Regulatory Intelligence</strong><small>{countryName} · Automotive</small></div></div>
@@ -345,6 +354,10 @@ export default function PortalLayout() {
                 <option value="">All years</option>
                 {year && !(meta?.years || []).includes(Number(year)) && <option value={year}>{year}</option>}
                 {(meta?.years || []).map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select className="select" value={variant} onChange={(e) => setVariant(e.target.value)} aria-label="Powertrain"
+                title="Show regulations specific to this powertrain on every page (general rules for all vehicles are not listed)">
+                {VARIANTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
               </select>
               <select className="select" defaultValue="en" aria-label="Language"><option value="en">English</option></select>
               <div className="avatar" title="Regulatory Affairs">RA</div>

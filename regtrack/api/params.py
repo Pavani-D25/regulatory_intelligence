@@ -46,3 +46,44 @@ def year_sql(alias: str, column: str = "published_date", keep_null: bool = False
         return ""
     cond = f"extract(year FROM {alias}.{column}) = {int(y)}"
     return f" AND ({alias}.id IS NULL OR {cond})" if keep_null else f" AND {cond}"
+
+
+# ?variant=ev|hybrid|ice (the portal's powertrain selector): regulations specific to that powertrain. Regulations with
+# no powertrain (general rules for every vehicle) are not specific to any, so they are left out; hydrogen (fuel cell or
+# combustion) is in none of the three.
+VARIANT: ContextVar[str | None] = ContextVar("regtrack_variant", default=None)
+VARIANTS = {
+    "ev": ("EV", "g.powertrains && '{bev}' OR EXISTS (SELECT 1 FROM regulation_domains rd JOIN domains dm ON dm.id = rd.domain_id "
+                 "WHERE rd.regulation_id = g.id AND lower(dm.code) IN ('battery', 'charging'))"),
+    "hybrid": ("Hybrid", "g.powertrains && '{hybrid}'"),
+    "ice": ("ICE", "g.powertrains && '{petrol,diesel,cng,lpg,ethanol_flex,biodiesel,lng,methanol}'"),
+}
+
+
+def parse_variant(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    v = raw.lower()
+    if v not in VARIANTS:
+        raise ValueError("variant is ev, hybrid or ice")
+    return v
+
+
+def variant_sql(alias: str, keep_null: bool = False) -> str:
+    """' AND <alias> is specific to the selected powertrain variant' (empty without one); alias = a regulations row."""
+    v = VARIANT.get()
+    if not v:
+        return ""
+    cond = "(" + VARIANTS[v][1].replace("g.", f"{alias}.") + ")"
+    return f" AND ({alias}.id IS NULL OR {cond})" if keep_null else f" AND {cond}"
+
+
+def view_sql(alias: str, keep_null: bool = False) -> str:
+    """The portal's view filters (year, powertrain variant) on a regulations row."""
+    return year_sql(alias, keep_null=keep_null) + variant_sql(alias, keep_null=keep_null)
+
+
+def view_label() -> str:
+    """'published in 2024, EV' for report headings; empty without filters."""
+    parts = ([f"published in {YEAR.get()}"] if YEAR.get() else []) + ([VARIANTS[VARIANT.get()][0]] if VARIANT.get() else [])
+    return ", ".join(parts)

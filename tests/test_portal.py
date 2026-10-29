@@ -377,3 +377,22 @@ def test_year_filter_on_every_list_view(client):
     assert client.get(f"/portal/regulations/{other['canonical_id']}/detail", params={"year": y}).status_code == 200
     assert client.get("/portal/regulations", params={"year": "abc"}).status_code == 400
     assert len(client.get("/portal/regulations").json()["rows"]) == len(every)
+
+
+def test_powertrain_variant_filter(client):
+    """?variant=ev|hybrid|ice: regulations specific to that powertrain on every list view; combined with ?year=."""
+    every = client.get("/portal/regulations").json()["rows"]
+    counts = {}
+    for v in ("ev", "hybrid", "ice"):
+        rows = client.get("/portal/regulations", params={"variant": v}).json()["rows"]
+        counts[v] = len(rows)
+        assert 0 < len(rows) < len(every), v
+        s = client.get("/portal/summary", params={"variant": v}).json()
+        assert s["kpis"]["tracked"] == len(rows)
+        for path in ("/portal/changes", "/portal/compliance", "/portal/impact", "/portal/alerts", "/portal/ask/context"):
+            assert client.get(path, params={"variant": v}).status_code == 200, (path, v)
+    ev_ids = {r["canonical_id"] for r in client.get("/portal/regulations", params={"variant": "ev"}).json()["rows"]}
+    y = client.get("/portal/meta").json()["years"][0]
+    both = client.get("/portal/regulations", params={"variant": "ev", "year": y}).json()["rows"]
+    assert {r["canonical_id"] for r in both} <= ev_ids and all(str(r["doc_date"]).startswith(str(y)) for r in both)
+    assert client.get("/portal/regulations", params={"variant": "diesel"}).status_code == 400

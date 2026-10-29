@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from regtrack import country, segments
 from regtrack.api import sql as S
-from regtrack.api.params import YEAR, CountryParam, parse_year, resolve_country
+from regtrack.api.params import VARIANT, YEAR, CountryParam, parse_variant, parse_year, resolve_country
 from regtrack.db import connect
 from regtrack.models.enums import in_scope_categories
 from regtrack.pipeline.search import search as chunk_search
@@ -33,17 +33,20 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http
 
 
 @app.middleware("http")
-async def year_filter(request: Request, call_next):
-    """?year= on any request: the publication year the list views show (params.YEAR)."""
+async def view_filters(request: Request, call_next):
+    """?year= and ?variant= on any request: the publication year and powertrain variant the list views show
+    (params.YEAR, params.VARIANT)."""
     try:
         y = parse_year(request.query_params.get("year"))
+        v = parse_variant(request.query_params.get("variant"))
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
-    token = YEAR.set(y)
+    ty, tv = YEAR.set(y), VARIANT.set(v)
     try:
         return await call_next(request)
     finally:
-        YEAR.reset(token)
+        YEAR.reset(ty)
+        VARIANT.reset(tv)
 
 DOC_COLS_BASE = ("id, canonical_id, doc_class, series, number, year, part, revision, amendment_no, corrigendum_no, "
                  "family_key, version_seq, is_current, official_title, subject, issuer, status, doc_date, "

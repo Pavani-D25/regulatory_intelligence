@@ -21,9 +21,18 @@ export function setApiYear(y) {
   currentYear = y || "";
 }
 
+// The selected powertrain variant ("" = all, "ev", "hybrid", "ice"): regulations specific to it (the API's ?variant=).
+let currentVariant = (() => {
+  try { return localStorage.getItem("ri.variant") || ""; } catch { return ""; }
+})();
+
+export function setApiVariant(v) {
+  currentVariant = v || "";
+}
+
 function qs(params = {}) {
   const p = new URLSearchParams();
-  Object.entries({ country: currentCountry, year: currentYear, ...params }).forEach(([k, v]) => {
+  Object.entries({ country: currentCountry, year: currentYear, variant: currentVariant, ...params }).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "" && v !== false) p.set(k, v);
   });
   const s = p.toString();

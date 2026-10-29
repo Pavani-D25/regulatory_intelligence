@@ -60,19 +60,21 @@ function MandateTable({ rows, upcoming = false }) {
 
 export default function VehicleCheck() {
   const [params, setParams] = useSearchParams();
-  const { meta, version, year } = usePortal();
+  const { meta, version, year, variant } = usePortal();
+  const variantPowertrain = { ev: "bev", hybrid: "hybrid" }[variant] || "";  // the header's EV / Hybrid preselects it
   // the vehicle: a segment path ("4W/PV/M1/transport", regtrack/segments.py); ?category= / ?usage= links still work
   const sel = {
     segment: params.get("segment") || "",
     category: params.get("category") || "",
     engine_cc: params.get("engine_cc") || "",
-    powertrain: params.get("powertrain") || "",
+    powertrain: params.get("powertrain") ?? variantPowertrain,
     usage: params.get("usage") || "",
     on: params.get("on") || defaultOn(year),
   };
   const [form, setForm] = useState(sel);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   useEffect(() => { if (!params.get("on")) setForm((f) => ({ ...f, on: defaultOn(year) })); }, [year]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!params.has("powertrain")) setForm((f) => ({ ...f, powertrain: variantPowertrain })); }, [variant]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ?all=1: "All vehicles" (every in-scope category); the share pack still needs one segment
   const chosen = sel.segment || sel.category;
@@ -91,7 +93,7 @@ export default function VehicleCheck() {
     e.preventDefault();
     const { category, usage, ...rest } = form;  // the segment replaces the old category / usage choices
     const vehicle = form.segment ? rest : form.category ? { ...rest, category, usage } : { ...rest, all: "1" };
-    setParams(Object.fromEntries(Object.entries(vehicle).filter(([, v]) => v)));
+    setParams(Object.fromEntries(Object.entries(vehicle).filter(([k, v]) => v || k === "powertrain")));  // "Any" is a choice over the header's variant
   };
 
   return (

@@ -14,7 +14,7 @@ from regtrack.db import vec_literal
 
 def search(conn: psycopg.Connection, q: str, category: str | None = None, in_scope: bool | None = True,
            is_current: bool | None = None, doc_class: str | None = None, limit: int = 10, cc: str | None = None,
-           hybrid: bool = False, year: int | None = None) -> dict:
+           hybrid: bool = False, extra: str = "") -> dict:
     """cc: country code (default: the COUNTRY setting); only that country's chunks are searched.
     hybrid: blend the vector ranking with the keyword ranking (see fuse); for questions, where an acronym or a
     technical term ('ABS') must find the clause that names it."""
@@ -34,9 +34,8 @@ def search(conn: psycopg.Connection, q: str, category: str | None = None, in_sco
     if doc_class:
         where.append("g.local_class = %s")
         args.append(doc_class)
-    if year:  # the regulation's publication year (the portal's year selector)
-        where.append("extract(year FROM g.published_date) = %s")
-        args.append(year)
+    if extra:  # a condition on the regulation (alias g), e.g. the portal's year / powertrain filters
+        where.append("TRUE" + extra)
     w = " AND ".join(where)
     cols = ("c.id, c.regulation_id, g.external_code AS canonical_id, g.local_class AS doc_class, c.clause_no, c.heading, "
             "c.page_from, c.page_to, left(c.content, 2000) AS content, g.title AS official_title, g.summary AS subject, "
