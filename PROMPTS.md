@@ -14,8 +14,8 @@ Phase 0: set up the project.
 - git init, .gitignore (.env, .venv, data/, discovery/out/, __pycache__).
 - pyproject.toml with: psycopg[binary], sqlalchemy, pydantic>=2, python-dotenv, pymupdf, httpx, tenacity,
   langchain-openai, playwright, fastapi, uvicorn, apscheduler, pytest, ruff.
-- docker-compose.yml: service "db" from pgvector/pgvector:pg16, port 5432, user/db/password regtrack,
-  named volume, and mount ./db/migrations + ./db/seeds so they can be applied.
+- PostgreSQL 16 + pgvector on the machine (README "Database"): port 5432, user/db/password regtrack;
+  db/migrations + db/seeds applied with `python -m regtrack.cli migrate`.
 - .env.example exactly as in CLAUDE.md; copy to .env and ask me for LLM_BASE_URL.
 - regtrack/config.py (loads .env), regtrack/db.py (connection), regtrack/llm.py
   (ChatOpenAI with_structured_output helper + embeddings helper + a reachability check).
@@ -197,7 +197,7 @@ no unexplained validator failures.
    - "Download share pack" button for the current vehicle selection.
    Clean, simple design; show "AI fields pending" where Qwen data is not yet filled.
 
-2. Optional MinIO object storage: docker-compose service, STORAGE_BACKEND=local|s3 in .env, same sha256
+2. Optional MinIO / S3 object storage: STORAGE_BACKEND=local|s3 in .env, same sha256
    keys and write-once rule, one-time upload command. Keep local as default.
 
 3. Resolve the non-LLM quality flags you can (amendment_gap, title_file_mismatch, doubtful years) and

@@ -9,7 +9,7 @@ Design: `docs/DB_DESIGN.md` (authoritative) and `docs/ETL_SPEC.md`. Start with `
 ## Quick start (new collaborators start here)
 
 You need **Python 3.11+**, **Node.js 18+**, and the database: **PostgreSQL 16 + pgvector**, either installed on the
-machine (see [Database without Docker](#database-without-docker)) or through **Docker Desktop**. Then one command
+machine (see [Database](#database)). Then one command
 sets everything up and starts it:
 
 | Windows | macOS / Linux / Git Bash |
@@ -18,7 +18,7 @@ sets everything up and starts it:
 
 The first run takes a few minutes. The script:
 
-1. checks the tools; starts the local database (`PG_BIN` set in `.env`) or Docker;
+1. checks the tools;
 2. creates `.env` from `.env.example`;
 3. creates `.venv` and installs the Python packages;
 4. starts the database and applies the migrations;
@@ -60,19 +60,19 @@ again by their sha256 name, so the snapshot works in any folder.
 py -3.13 -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
 copy .env.example .env          # then set LLM_BASE_URL (ngrok URL of LM Studio) and EMBED_MODEL
-docker compose up -d db         # pgvector/pgvector:pg16 on localhost:5432 (or: regtrack.cli db start, see below)
+.venv\Scripts\python -m regtrack.cli db start  # PostgreSQL on localhost:5432 (PG_BIN / PG_DATA, see Database)
 .venv\Scripts\python -m regtrack.cli check      # DB, pgvector, LLM, structured output, embedding dim
 .venv\Scripts\python -m regtrack.cli migrate    # db/migrations + db/seeds (idempotent)
 ```
 
-Low disk space on C: stops Docker Desktop (its WSL disk lives on C:) and pip (temp files). If `pip` fails with
-"No space left on device", set `TMP`/`TEMP`/`PIP_CACHE_DIR` to a folder on D: for the install. With C: nearly full,
-use the database without Docker (below), which keeps everything on D:.
+Low disk space on C: stops pip (temp files). If `pip` fails with "No space left on device", set
+`TMP`/`TEMP`/`PIP_CACHE_DIR` to a folder on D: for the install. The database below keeps everything on D:.
 
-## Database without Docker
+## Database
 
 PostgreSQL 16 and pgvector from conda-forge run directly on Windows; nothing is compiled and nothing goes on C:.
-This is how the main development laptop runs (PostgreSQL 16.15, pgvector 0.8.6, same versions as the Docker image).
+This is how the main development laptop runs (PostgreSQL 16.15, pgvector 0.8.6). On macOS / Linux, install
+PostgreSQL 16 + pgvector with your package manager and set `PG_BIN` / `PG_DATA` the same way.
 
 ```powershell
 # 1. Miniforge (conda-forge installer) to D:, no PATH changes
@@ -104,8 +104,8 @@ D:\pgsql\Library\bin\createdb.exe -h localhost -U regtrack regtrack     # first 
 .venv\Scripts\python -m regtrack.cli migrate        # or load a snapshot: start.ps1 -Snapshot <file.dump>
 ```
 
-The server log is `data\pglog\postgres.log`. With `PG_BIN` set, `start.bat` / `start.sh` start this server instead of
-Docker, and `snapshot-export` / `snapshot-import` use the local `pg_dump` / `pg_restore`. The server does not start with
+The server log is `data\pglog\postgres.log`. `start.bat` / `start.sh` start this server, and `snapshot-export` /
+`snapshot-import` use its `pg_dump` / `pg_restore`. The server does not start with
 Windows on its own: run `start.bat` (or `regtrack.cli db start`), or register it once as a Windows service from an
 administrator PowerShell:
 
@@ -113,8 +113,6 @@ administrator PowerShell:
 D:\pgsql\Library\bin\pg_ctl.exe register -N RegTrackPostgres -D D:\regulatory_intelligence\data\pg -S auto
 Start-Service RegTrackPostgres
 ```
-
-Do not run the Docker database at the same time: both use port 5432.
 
 ## Thai OCR (Tesseract)
 
@@ -220,10 +218,10 @@ Originals are write-once under the key `<sha[:2]>/<sha>.<ext>` in both backends.
   hold, so it cannot be deleted or overwritten. Parsing and the API read through a local cache (`CACHE_DIR`,
   default `data/cache`) that is checked against the sha256 in the key.
 
-Switching an existing installation to MinIO:
+Switching an existing installation to MinIO (or another S3-compatible store; set `S3_ENDPOINT`, `S3_ACCESS_KEY`,
+`S3_SECRET_KEY` in `.env` first):
 
 ```powershell
-docker compose --profile s3 up -d minio                  # console http://localhost:9001 (S3_ACCESS_KEY / S3_SECRET_KEY)
 .venv\Scripts\python -m regtrack.cli storage-upload      # upload every original (re-runs upload nothing new)
 .venv\Scripts\python -m regtrack.cli storage-upload --switch   # point file_object.storage_path at s3://
 # then set STORAGE_BACKEND=s3 in .env; local files are kept (never deleted)

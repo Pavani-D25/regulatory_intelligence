@@ -8,8 +8,8 @@ RegTrack India - one command to set up and start everything (Windows PowerShell 
   .\start.ps1 -NoSchedule           do not start the 6-hour auto-sync
   .\start.ps1 -Stop                 stop the API, auto-sync and portal (the database keeps running)
 
-Or double-click start.bat. Needs: Python 3.11+, Node.js 18+, and PostgreSQL 16 + pgvector: either installed on this
-machine (PG_BIN / PG_DATA in .env, see README "Database without Docker") or Docker Desktop.
+Or double-click start.bat. Needs: Python 3.11+, Node.js 18+, and PostgreSQL 16 + pgvector installed on this machine
+(PG_BIN / PG_DATA in .env, see README "Database").
 #>
 [CmdletBinding()]
 param(
@@ -21,8 +21,8 @@ param(
     [switch]$Stop
 )
 
-# "Continue", not "Stop": in Windows PowerShell 5.1 any stderr line from a native program (docker, pip, npm) becomes
-# an error record, so "Stop" would abort on harmless messages - e.g. `docker info` while Docker is still starting.
+# "Continue", not "Stop": in Windows PowerShell 5.1 any stderr line from a native program (pip, npm, pg_ctl) becomes
+# an error record, so "Stop" would abort on harmless messages.
 # Every step checks $LASTEXITCODE itself and calls Fail with a clear message.
 $ErrorActionPreference = "Continue"
 $Root = $PSScriptRoot
@@ -53,8 +53,6 @@ Write-Host "  RegTrack India - setup and start" -ForegroundColor White
 Write-Host "  $Root"
 
 # ---------------------------------------------------------------- 1. tools
-# database on this machine (PG_BIN set in .env) or in Docker
-$LocalDb = (Test-Path ".env") -and (Select-String -Path ".env" -Pattern '^\s*PG_BIN\s*=\s*[^#\s]' -Quiet)
 Step "Checking tools"
 $sysPy = $null
 foreach ($spec in @("py|-3", "python|")) {
@@ -71,24 +69,6 @@ foreach ($spec in @("py|-3", "python|")) {
 if (-not $sysPy -and -not (Test-Path $Py)) { Fail "Python 3.11 or newer is needed: https://www.python.org/downloads/ (tick 'Add python.exe to PATH')" }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "Node.js 18 or newer is needed: https://nodejs.org/" }
 Ok "Node.js found"
-if ($LocalDb) {
-    Ok "database: PostgreSQL on this machine (PG_BIN in .env)"
-} else {
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail "Docker Desktop is needed (or a local PostgreSQL, see README): https://www.docker.com/products/docker-desktop/" }
-docker info *> $null
-if ($LASTEXITCODE -ne 0) {
-    Info "Docker Desktop is not running - starting it (this can take a minute)"
-    try { docker desktop start *> $null } catch {}
-    if ($LASTEXITCODE -ne 0) {
-        $dd = Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"
-        if (Test-Path $dd) { Start-Process $dd }
-    }
-    $ready = $false
-    for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Seconds 3; docker info *> $null; if ($LASTEXITCODE -eq 0) { $ready = $true; break } }
-    if (-not $ready) { Fail "Docker did not start. Open Docker Desktop, wait until it says 'Engine running', then run this again." }
-}
-Ok "Docker engine running"
-}
 
 # ---------------------------------------------------------------- 2. settings
 Step "Settings (.env)"
@@ -119,22 +99,13 @@ if ($need) {
 } else { Ok "packages up to date" }
 
 # ---------------------------------------------------------------- 4. database
-if ($LocalDb) {
-    Step "Database (PostgreSQL 16 + pgvector on this machine)"
-    & $Py -m regtrack.cli db start
-    if ($LASTEXITCODE -ne 0) { Fail "the local database did not start (see data\pglog\postgres.log)" }
-} else {
-    Step "Database (PostgreSQL 16 + pgvector in Docker)"
-    $exists = docker ps -a --filter "name=^regtrack-db$" --format "{{.Names}}"
-    if ($exists) { docker start regtrack-db *> $null } else { docker compose up -d db; if ($LASTEXITCODE -ne 0) { Fail "could not start the database container" } }
-    $healthy = $false
-    for ($i = 0; $i -lt 40; $i++) {
-        $h = docker inspect -f "{{.State.Health.Status}}" regtrack-db 2>$null
-        if ($h -eq "healthy") { $healthy = $true; break }
-        Start-Sleep -Seconds 2
-    }
-    if (-not $healthy) { Fail "the database did not become ready (docker logs regtrack-db shows why)" }
+# PostgreSQL 16 + pgvector on this machine: PG_BIN / PG_DATA in .env (README "Database")
+if (-not (Select-String -Path ".env" -Pattern '^\s*PG_BIN\s*=\s*[^#\s]' -Quiet)) {
+    Fail "PG_BIN is not set in .env: install PostgreSQL 16 + pgvector and set PG_BIN / PG_DATA (README: Database)"
 }
+Step "Database (PostgreSQL 16 + pgvector on this machine)"
+& $Py -m regtrack.cli db start
+if ($LASTEXITCODE -ne 0) { Fail "the local database did not start (see data\pglog\postgres.log)" }
 Ok "database ready on localhost:5432"
 
 if ($Snapshot) {

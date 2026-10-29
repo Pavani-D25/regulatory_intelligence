@@ -10,7 +10,7 @@ schedule              start the 6-hour scheduler (blocking)
 rederive-mandates [--doc ID] [--apply]   after a mandate-parser fix: correct open mandate versions (dry run first)
 report                write reports/VALIDATION_REPORT.md
 api                   start the read-only FastAPI server
-db start|stop|status  the local PostgreSQL server (PG_BIN / PG_DATA in .env; not used with Docker)
+db start|stop|status  the PostgreSQL server on this machine (PG_BIN / PG_DATA in .env)
 storage-upload [--limit N] [--switch]   one-time upload of local originals to S3/MinIO
 snapshot-export [--with-files]          database dump (+ files zip) to share with a collaborator
 snapshot-import FILE --yes              load a .dump (replaces the database) or a files .zip
@@ -196,7 +196,7 @@ def cmd_db(args) -> int:
 
     if args.action == "status":
         if not localdb.local_mode():
-            print("PG_BIN is not set: the database runs in Docker")
+            print("PG_BIN is not set in .env: the folder with pg_ctl, pg_dump… (README: Database)")
             return 0
         running = localdb.status()
         print("running" if running else "not running")

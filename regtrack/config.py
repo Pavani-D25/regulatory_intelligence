@@ -44,7 +44,7 @@ class Settings:
     cache_dir: Path = ROOT / "data" / "cache"  # local copies of s3 objects for parsing/serving
     user_agent: str = "RegTrackIndia/0.1 (research)"
     country: str = "IN"  # whose rows this process sees (env REGTRACK_COUNTRY); see regtrack/country.py
-    pg_bin: Path | None = None  # local PostgreSQL programs (pg_ctl, pg_dump…); empty = database in Docker
+    pg_bin: Path | None = None  # PostgreSQL programs (pg_ctl, pg_dump…), e.g. D:\pgsql\Library\bin
     pg_data: Path | None = None  # local PostgreSQL data folder (initdb -D)
     import_dir: Path = ROOT / "data" / "import"  # documents people saved by hand: <import_dir>/<TH|MY>/... (read-only)
     tesseract_cmd: Path | None = None  # tesseract.exe outside PATH (README: conda-forge env D:\tesseract)

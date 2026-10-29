@@ -479,7 +479,7 @@ Things to test before relying on it:
 
 ## 6. Build order
 
-1. Docker Postgres + pgvector, `schema.sql`, seed `source`
+1. PostgreSQL 16 + pgvector on the machine, `schema.sql`, seed `source`
 2. **MoRTH API lister** (easiest: public JSON) → `source_record` → download → `document_file`
 3. ARAI lister via Playwright → `source_record`
 4. Extraction (PDF, DOC/DOCX) + classifier

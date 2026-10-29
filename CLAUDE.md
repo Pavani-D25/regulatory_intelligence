@@ -29,7 +29,7 @@ Users need four views: by vehicle, by year, by category and by version. They als
 
 ## Environment
 
-- Python 3.11+ in `.venv`. PostgreSQL 16 + pgvector runs directly on Windows, without Docker: conda-forge `postgresql=16.15` + `pgvector=0.8.6` in `D:\pgsql`, data in `data\pg`, started with `python -m regtrack.cli db start` (README "Database without Docker"). Docker Desktop (image `pgvector/pgvector:pg16`) remains an option for collaborators: leave `PG_BIN` empty.
+- Python 3.11+ in `.venv`. PostgreSQL 16 + pgvector runs directly on the machine: conda-forge `postgresql=16.15` + `pgvector=0.8.6` in `D:\pgsql`, data in `data\pg`, started with `python -m regtrack.cli db start` (README "Database").
 - Config comes from `.env` (never commit it). Keep `.env.example` up to date:
 
 ```
@@ -41,7 +41,7 @@ LLM_MODEL=qwen/qwen3.8-27b
 LLM_API_KEY=lm-studio
 EMBED_MODEL=<embedding model loaded in LM Studio>
 EMBED_DIM=768                                             # must match vector(N) in the migration
-PG_BIN=D:\pgsql\Library\bin                               # local PostgreSQL programs; empty = Docker
+PG_BIN=D:\pgsql\Library\bin                               # local PostgreSQL programs (pg_ctl, pg_dump…)
 PG_DATA=D:\regulatory_intelligence\data\pg                # local PostgreSQL data folder
 ```
 
@@ -79,7 +79,7 @@ PG_DATA=D:\regulatory_intelligence\data\pg                # local PostgreSQL dat
 
 ```
 regulatory_intelligence/
-  CLAUDE.md  PROMPTS.md  README.md  .env.example  docker-compose.yml  pyproject.toml
+  CLAUDE.md  PROMPTS.md  README.md  .env.example  pyproject.toml  start.bat / start.ps1 / start.sh
   docs/        DB_DESIGN.md  ETL_SPEC.md
   db/migrations/0001_init.sql        (given, tested on PG16)
   db/seeds/0001_vocab.sql            (given: vehicle_category, domain, source)

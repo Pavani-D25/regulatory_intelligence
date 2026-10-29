@@ -1,10 +1,10 @@
-"""The database server when it runs directly on the machine instead of in Docker (PG_BIN / PG_DATA in .env).
+"""The PostgreSQL server on this machine (PG_BIN / PG_DATA in .env).
 
     python -m regtrack.cli db status      is it running?
     python -m regtrack.cli db start       start it (returns once it accepts connections)
     python -m regtrack.cli db stop
 
-With PG_BIN empty the database runs in Docker (docker-compose.yml) and these commands only say so.
+With PG_BIN empty these commands only say that it has to be set.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def status() -> bool:
 
 def start() -> str:
     if not local_mode():
-        return "PG_BIN is not set: the database runs in Docker (docker compose up -d db)"
+        return "PG_BIN is not set in .env: the folder with pg_ctl, pg_dump… (README: Database)"
     if status():
         return f"already running ({_data()})"
     LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -65,7 +65,7 @@ def start() -> str:
 
 def stop() -> str:
     if not local_mode():
-        return "PG_BIN is not set: the database runs in Docker (docker stop regtrack-db)"
+        return "PG_BIN is not set in .env: the folder with pg_ctl, pg_dump… (README: Database)"
     if not status():
         return "not running"
     subprocess.run([tool("pg_ctl"), "-D", str(_data()), "-m", "fast", "-w", "stop"], check=True, capture_output=True)

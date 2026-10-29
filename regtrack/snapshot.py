@@ -6,13 +6,12 @@
 
 The database dump is enough for the portal, search and Ask AI. The files zip adds "Open original PDF" and lets the
 pipeline re-read documents. Stored file paths from another machine are found again by their sha256 name
-(storage.open_local), so the dump works in any folder. Uses the local pg_dump / pg_restore when PostgreSQL runs on
-the machine (PG_BIN in .env, regtrack/localdb.py), otherwise the ones inside the Docker container.
+(storage.open_local), so the dump works in any folder. Uses pg_dump / pg_restore from PG_BIN (.env, regtrack/localdb.py),
+or from the PATH when PG_BIN is empty.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 import zipfile
 from datetime import date
@@ -21,17 +20,13 @@ from pathlib import Path
 from regtrack import localdb
 from regtrack.config import ROOT, get_settings
 
-CONTAINER = os.getenv("REGTRACK_DB_CONTAINER", "regtrack-db")
 SNAP_DIR = ROOT / "data" / "snapshots"
 
 
 def _pg(program: str, args: list[str], **kw) -> subprocess.CompletedProcess:
-    """Run pg_dump / pg_restore against the regtrack database: local programs, or inside the Docker container."""
-    if localdb.local_mode():
-        cmd = [localdb.tool(program), "--dbname", get_settings().psycopg_dsn, *args]
-    else:
-        cmd = ["docker", "exec", "-i", CONTAINER, program, "-U", "regtrack", "--dbname", "regtrack", *args]
-    return subprocess.run(cmd, check=True, **kw)
+    """Run pg_dump / pg_restore against the regtrack database (PG_BIN's programs, or the ones on the PATH)."""
+    exe = localdb.tool(program) if localdb.local_mode() else program
+    return subprocess.run([exe, "--dbname", get_settings().psycopg_dsn, *args], check=True, **kw)
 
 
 def export(with_files: bool = False, out_dir: Path = SNAP_DIR) -> list[Path]:

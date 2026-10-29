@@ -40,13 +40,13 @@ Line numbers refer to branch `multi-country` (October 2026).
 
 ### The database console (psql)
 
-The database runs in Docker (container `regtrack-db`). Its console program, **psql**, is already inside that container.
+The database runs on this machine (`D:\pgsql`, README "Database"). Its console program, **psql**, is in `D:\pgsql\Library\bin`.
 
 1. In VS Code: **Terminal → New Terminal** (`` Ctrl+Shift+` ``).
 2. Run:
 
    ```powershell
-   docker exec -it regtrack-db psql -U regtrack -d regtrack
+   D:\pgsql\Library\bin\psql.exe -h localhost -U regtrack -d regtrack
    ```
 
 3. The prompt becomes `regtrack=#`. Type `\x auto` once, so wide rows are easier to read.
@@ -389,7 +389,7 @@ STORAGE_DIR=D:\regulatory_intelligence\data\raw
 STORAGE_BACKEND=local
 ```
 
-`local` means "save to this folder". The MinIO container is not used unless you set `STORAGE_BACKEND=s3`.
+`local` means "save to this folder". MinIO / S3 is not used unless you set `STORAGE_BACKEND=s3`.
 
 ```
 D:\regulatory_intelligence\data\raw\0d\0d470bd149c5…578c.pdf
@@ -1248,8 +1248,8 @@ Then open `http://localhost:5173`. Or run `start.bat` in the project folder, whi
 ### Commands
 
 ```powershell
-# database console
-docker exec -it regtrack-db psql -U regtrack -d regtrack
+# database console (password: regtrack)
+D:\pgsql\Library\bin\psql.exe -h localhost -U regtrack -d regtrack
 
 # health check: database, pgvector, LLM, embeddings
 .venv\Scripts\python -m regtrack.cli check

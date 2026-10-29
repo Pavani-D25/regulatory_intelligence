@@ -1,4 +1,4 @@
-"""S3/MinIO backend (optional). Skipped unless MinIO is running: docker compose --profile s3 up -d minio."""
+"""S3/MinIO backend (optional). Skipped unless an S3-compatible endpoint (S3_ENDPOINT in .env, e.g. MinIO) is up."""
 
 from __future__ import annotations
 
