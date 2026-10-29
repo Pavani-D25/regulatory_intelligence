@@ -12,13 +12,13 @@ import io
 import zipfile
 from datetime import date, datetime
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from regtrack import country, segments
 from regtrack.api import sql as S
-from regtrack.api.params import CountryParam, resolve_country
+from regtrack.api.params import YEAR, CountryParam, parse_year, resolve_country
 from regtrack.db import connect
 from regtrack.models.enums import in_scope_categories
 from regtrack.pipeline.search import search as chunk_search
@@ -30,6 +30,20 @@ app = FastAPI(title="RegTrack India", version="0.1.0",
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
                                                   "http://localhost:4173", "http://127.0.0.1:4173"],
                    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["*"], expose_headers=["Content-Disposition"])
+
+
+@app.middleware("http")
+async def year_filter(request: Request, call_next):
+    """?year= on any request: the publication year the list views show (params.YEAR)."""
+    try:
+        y = parse_year(request.query_params.get("year"))
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    token = YEAR.set(y)
+    try:
+        return await call_next(request)
+    finally:
+        YEAR.reset(token)
 
 DOC_COLS_BASE = ("id, canonical_id, doc_class, series, number, year, part, revision, amendment_no, corrigendum_no, "
                  "family_key, version_seq, is_current, official_title, subject, issuer, status, doc_date, "

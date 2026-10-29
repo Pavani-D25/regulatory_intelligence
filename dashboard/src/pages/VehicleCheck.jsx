@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, familyPath, sharePackUrl } from "../api";
 import { AiPending, Badge, Button, Card, Chips, DocLink, Empty, ErrorBox, Loading, Table, Td, fmtDate } from "../components/ui";
@@ -8,6 +8,8 @@ import useLoad from "../useLoad";
 
 const POWERTRAINS = ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"];
 const today = () => new Date().toISOString().slice(0, 10);
+// a past year chosen in the header: what applied at the end of that year
+const defaultOn = (year) => (year && Number(year) < new Date().getFullYear() ? `${year}-12-31` : today());
 
 function Standards({ m }) {
   if (!m.standards?.length) return <span className="text-zinc-400">not named in the notification</span>;
@@ -58,6 +60,7 @@ function MandateTable({ rows, upcoming = false }) {
 
 export default function VehicleCheck() {
   const [params, setParams] = useSearchParams();
+  const { meta, version, year } = usePortal();
   // the vehicle: a segment path ("4W/PV/M1/transport", regtrack/segments.py); ?category= / ?usage= links still work
   const sel = {
     segment: params.get("segment") || "",
@@ -65,11 +68,11 @@ export default function VehicleCheck() {
     engine_cc: params.get("engine_cc") || "",
     powertrain: params.get("powertrain") || "",
     usage: params.get("usage") || "",
-    on: params.get("on") || today(),
+    on: params.get("on") || defaultOn(year),
   };
   const [form, setForm] = useState(sel);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  const { meta, version } = usePortal();
+  useEffect(() => { if (!params.get("on")) setForm((f) => ({ ...f, on: defaultOn(year) })); }, [year]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ?all=1: "All vehicles" (every in-scope category); the share pack still needs one segment
   const chosen = sel.segment || sel.category;

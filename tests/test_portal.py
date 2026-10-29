@@ -357,3 +357,23 @@ def test_requirements_register_by_segment(client):
         for g in r["regulations"]:
             assert not g["categories"] or {"L1", "L3", "ALL"} & set(g["categories"])
     assert client.get("/portal/requirements", params={"country": "TH", "segment": "3W"}).status_code == 400
+
+
+def test_year_filter_on_every_list_view(client):
+    """?year= (the portal's year selector) narrows the list views to regulations published that year; the detail of
+    one regulation ignores it; a request without a year is unchanged."""
+    years = client.get("/portal/meta").json()["years"]
+    assert years and years == sorted(years, reverse=True)
+    y = years[1] if len(years) > 1 else years[0]
+    every = client.get("/portal/regulations").json()["rows"]
+    one = client.get("/portal/regulations", params={"year": y}).json()["rows"]
+    assert one and len(one) < len(every) and all(str(r["doc_date"]).startswith(str(y)) for r in one)
+    s = client.get("/portal/summary", params={"year": y}).json()
+    assert s["kpis"]["tracked"] == len(one) and all(t["ym"].startswith(str(y)) for t in s["trend"])
+    for path in ("/portal/changes", "/portal/compliance", "/portal/impact", "/portal/alerts", "/portal/reports",
+                 "/portal/requirements", "/portal/ask/context"):
+        assert client.get(path, params={"year": y}).status_code == 200, path
+    other = next(r for r in every if not str(r["doc_date"]).startswith(str(y)))
+    assert client.get(f"/portal/regulations/{other['canonical_id']}/detail", params={"year": y}).status_code == 200
+    assert client.get("/portal/regulations", params={"year": "abc"}).status_code == 400
+    assert len(client.get("/portal/regulations").json()["rows"]) == len(every)

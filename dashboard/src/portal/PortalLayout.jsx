@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { api, docPath, familyPath, fileUrl, portal, setApiCountry } from "../api";
+import { api, docPath, familyPath, fileUrl, portal, setApiCountry, setApiYear } from "../api";
 import "./portal.css";
 import { ago, Badge, fmt, fmtTime } from "./ui";
 
@@ -266,6 +266,14 @@ export default function PortalLayout() {
     setCountryState(cc);
     setVersion((v) => v + 1);
   }, []);
+  // the publication year every page shows ("" = all years); like the country, sent with every request
+  const [year, setYearState] = useState(() => store.get("ri.year") || "");
+  const setYear = useCallback((y) => {
+    store.set("ri.year", y);
+    setApiYear(y);
+    setYearState(y);
+    setVersion((v) => v + 1);
+  }, []);
   const countryName = (COUNTRIES.find(([c]) => c === country) || [null, "India"])[1];
   const [drawer, setDrawer] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
@@ -300,7 +308,7 @@ export default function PortalLayout() {
   const sch = meta?.scheduler;
 
   return (
-    <Ctx.Provider value={{ openReg: setDrawer, toast, meta, version, country, countryName }}>
+    <Ctx.Provider value={{ openReg: setDrawer, toast, meta, version, country, countryName, year }}>
       <div className="app portal">
         <aside className="sidebar">
           <div className="brand"><div className="brandmark">RI</div><div><strong>Regulatory Intelligence</strong><small>{countryName} · Automotive</small></div></div>
@@ -331,6 +339,12 @@ export default function PortalLayout() {
               <Bell version={version} openReg={setDrawer} />
               <select className="select" value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Country">
                 {COUNTRIES.map(([c, name]) => <option key={c} value={c}>{name}</option>)}
+              </select>
+              <select className="select" value={year} onChange={(e) => setYear(e.target.value)} aria-label="Year"
+                title="Show regulations published in this year on every page">
+                <option value="">All years</option>
+                {year && !(meta?.years || []).includes(Number(year)) && <option value={year}>{year}</option>}
+                {(meta?.years || []).map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
               <select className="select" defaultValue="en" aria-label="Language"><option value="en">English</option></select>
               <div className="avatar" title="Regulatory Affairs">RA</div>

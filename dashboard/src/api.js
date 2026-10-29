@@ -11,9 +11,19 @@ export function setApiCountry(cc) {
   currentCountry = cc;
 }
 
+// The selected publication year ("" = all years), injected the same way: every list view on every page shows that
+// year's regulations (the API's ?year=). PortalLayout writes it (setApiYear) and persists it as "ri.year".
+let currentYear = (() => {
+  try { return localStorage.getItem("ri.year") || ""; } catch { return ""; }
+})();
+
+export function setApiYear(y) {
+  currentYear = y || "";
+}
+
 function qs(params = {}) {
   const p = new URLSearchParams();
-  Object.entries({ country: currentCountry, ...params }).forEach(([k, v]) => {
+  Object.entries({ country: currentCountry, year: currentYear, ...params }).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "" && v !== false) p.set(k, v);
   });
   const s = p.toString();

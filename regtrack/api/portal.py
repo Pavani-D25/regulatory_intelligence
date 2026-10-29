@@ -30,7 +30,7 @@ from fastapi.responses import Response
 
 from regtrack import country, segments
 from regtrack.api import sql as S
-from regtrack.api.params import CountryParam, resolve_country
+from regtrack.api.params import YEAR, CountryParam, resolve_country, year_sql
 from regtrack.db import Jsonb, connect
 from regtrack.models.enums import in_scope_categories
 
@@ -180,10 +180,12 @@ def segment_filter(cc: str | None, segment: str | None) -> tuple[list[str], str]
 
 def regulations(conn, category: str | None = None, extra_where: str = "", args: tuple = (),
                 history: bool = False, reference: bool = False, cc: str | None = None,
-                uncategorised: bool = False, any_category: bool = False, segment: str | None = None) -> list[dict]:
+                uncategorised: bool = False, any_category: bool = False, segment: str | None = None,
+                yearly: bool = True) -> list[dict]:
     """In-scope regulations of one country (cc, default the setting) with impact/status. history=False leaves out
     superseded and withdrawn documents, reference=False leaves out reports, form tables, catalogues and unclassified
-    documents. segment (a vehicle-segment path, regtrack/segments.py) narrows to its codes and usage, over category."""
+    documents. segment (a vehicle-segment path, regtrack/segments.py) narrows to its codes and usage, over category.
+    yearly: only the request's ?year= (params.YEAR); a lookup of one regulation passes False."""
     vocab = load_vocab(conn, cc)
     if not history:
         extra_where = "AND d.status NOT IN ('superseded','withdrawn') " + extra_where
@@ -196,7 +198,7 @@ def regulations(conn, category: str | None = None, extra_where: str = "", args: 
     if seg:
         cats, usage = seg
         extra_where += usage
-    sql = REG_SQL.format(where=extra_where, docs=S.docs(cc), review=S.REVIEW.format(e="e"))
+    sql = REG_SQL.format(where=extra_where, docs=S.docs(cc, yearly), review=S.REVIEW.format(e="e"))
     if any_category:  # an out-of-scope regulation (trailers, tractors, N2/N3...) reached through a link: shown, labelled
         sql = sql.replace("AND d.vehicle_categories && %s", "AND (d.vehicle_categories && %s OR TRUE)")
     elif uncategorised:  # also a regulation that names no vehicle category yet (flagged needs_check), e.g. for its detail
@@ -312,20 +314,22 @@ def summary(cc: CountryParam = None, trend_view: str = "auto", trend_from: int |
         scope, usage = segment_filter(cc, segment) or (vocab["scope"], "")
         m_usage = usage.replace("d.usage", "m.usage")
         regs = regulations(conn, cc=cc, segment=segment)
+        if YEAR.get():  # one year chosen in the portal: its months
+            trend_view, trend_from, trend_to = "month", YEAR.get(), YEAR.get()
         tr = trend_series(conn, cc, scope, trend_view, trend_from, trend_to, usage)
         months = tr.pop("trend")
         changes = _rows(conn, f"""SELECT count(*) AS n, count(*) FILTER (WHERE e.review_status<>'confirmed') AS open
-                                 FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
+                                 FROM {S.changes(cc)} e JOIN {S.docs(cc, True)} d ON d.id=e.document_id
                                  WHERE e.detected_at > now() - interval '30 days' AND d.doc_class <> 'OFF_TOPIC'
                                    AND d.vehicle_categories && %s {usage}""", (scope,))[0]
         # upcoming obligations: notified (final) and proposed (draft notifications), soonest first
         deadlines = _rows(conn, f"""SELECT m.mandate_key, m.subject, m.implementation_date, m.vehicle_categories,
                    m.is_draft, d.external_code AS canonical_id FROM {S.mandates(cc)} m JOIN regulations d ON d.id=m.source_doc_id
-                   WHERE m.valid_to IS NULL AND m.vehicle_categories && %s {m_usage}
+                   WHERE m.valid_to IS NULL AND m.vehicle_categories && %s {m_usage}{year_sql('d')}
                      AND m.implementation_date >= current_date ORDER BY m.implementation_date, m.is_draft, m.mandate_key LIMIT 6""", (scope,))
         recent_deadlines = _rows(conn, f"""SELECT m.mandate_key, m.subject, m.implementation_date, m.vehicle_categories,
                    m.is_draft, d.external_code AS canonical_id FROM {S.mandates(cc)} m JOIN regulations d ON d.id=m.source_doc_id
-                   WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s {m_usage}
+                   WHERE m.valid_to IS NULL AND NOT m.is_draft AND m.vehicle_categories && %s {m_usage}{year_sql('d')}
                      AND m.implementation_date <= current_date
                    ORDER BY m.implementation_date DESC, m.mandate_key LIMIT 6""", (scope,))
         sources = _rows(conn, f"SELECT count(*) AS n, max(last_run_at) AS last FROM {S.sources(cc)} s "
@@ -367,10 +371,10 @@ def regulation_list(q: str | None = None, category: str | None = None, impact: s
         vocab = load_vocab(conn, cc)
         regs = regulations(conn, category, history=history, reference=reference, cc=cc, segment=segment)
         scope, usage = segment_filter(cc, segment) or (vocab["scope"], "")
-        n_reference = conn.execute(f"""SELECT count(*) AS n FROM {S.docs(cc)} d WHERE vehicle_categories && %s {usage}
+        n_reference = conn.execute(f"""SELECT count(*) AS n FROM {S.docs(cc, True)} d WHERE vehicle_categories && %s {usage}
                                       AND doc_class = ANY(%s) AND status NOT IN ('superseded','withdrawn')""",
                                    (scope, list(REFERENCE_CLASSES))).fetchone()["n"]
-        superseded = conn.execute(f"""SELECT count(*) AS n FROM {S.docs(cc)} d WHERE doc_class<>'OFF_TOPIC'
+        superseded = conn.execute(f"""SELECT count(*) AS n FROM {S.docs(cc, True)} d WHERE doc_class<>'OFF_TOPIC'
                                      AND vehicle_categories && %s {usage} AND status IN ('superseded','withdrawn')""",
                                   (scope,)).fetchone()["n"]
     by_issuer: dict[str, int] = {}
@@ -400,7 +404,7 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
     with connect() as conn:
         vocab = load_vocab(conn, cc)
         regs = regulations(conn, None, "AND d.canonical_id=%s", (canonical_id,), history=True, reference=True, cc=cc,
-                           any_category=True)
+                           any_category=True, yearly=False)
         if not regs:
             raise HTTPException(404, "not an in-scope regulation")
         r = regs[0]
@@ -534,7 +538,7 @@ def compliance(category: str | None = None, segment: str | None = None, cc: Coun
         vocab = load_vocab(conn, cc)
         cats = [category, "ALL"] if category in vocab["categories"] else vocab["scope"]
         cats, usage = segment_filter(cc, segment) or (cats, "")
-        rows = _rows(conn, COMP_SQL.format(tracked=TRACKED, mandates=S.mandates(cc), docs=S.docs(cc),
+        rows = _rows(conn, COMP_SQL.format(tracked=TRACKED, mandates=S.mandates(cc), docs=S.docs(cc, True),
                                            usage=usage.replace("d.usage", "m.usage")), (cats,))
         default_owner = _setting(conn, "default_owner", "Regulatory Affairs Team")
     for r in rows:
@@ -672,7 +676,7 @@ def ask_context(cc: CountryParam = None) -> dict:
         regs = regulations(conn, cc=cc)
         sources = _rows(conn, f"""SELECT s.code, s.name, s.last_run_at, s.last_status,
                    (SELECT count(DISTINCT d.id) FROM raw_ingestion_records f JOIN document_parts p ON p.document_id=f.document_id
-                      JOIN {S.docs(cc)} d ON d.id=p.regulation_id WHERE f.source_id=s.id AND d.vehicle_categories && %s)
+                      JOIN {S.docs(cc, True)} d ON d.id=p.regulation_id WHERE f.source_id=s.id AND d.vehicle_categories && %s)
                      AS documents
                    FROM {S.sources(cc)} s ORDER BY s.id""", (vocab["scope"],))
         chunks = conn.execute(f"SELECT count(*) AS n FROM document_chunks c WHERE in_scope AND NOT is_boilerplate "
@@ -728,7 +732,7 @@ def _answer(conn, q: str, cc: str) -> tuple[dict, list[dict]]:
 
     vocab = load_vocab(conn, cc)
     cat = next((c for c in vocab["categories"] if c.lower() in q.lower().split() or c in q), None)
-    hits = chunk_search(conn, q, cat, None, None, None, 8, cc=cc, hybrid=True)["results"]
+    hits = chunk_search(conn, q, cat, None, None, None, 8, cc=cc, hybrid=True, year=YEAR.get())["results"]
     sources = [{"canonical_id": h["canonical_id"], "clause": h["clause_no"], "pages": f"{h['page_from']}-{h['page_to']}",
                 "title": h["official_title"] or h["subject"], "snippet": " ".join((h["content"] or "").split())[:300]} for h in hits]
     ok, _ = llm.reachable()
@@ -792,7 +796,7 @@ def reports(segment: str | None = None, cc: CountryParam = None) -> dict:
         recent = _rows(conn, REPORT_LOG_SQL + " WHERE rg.code = %s ORDER BY r.generated_at DESC LIMIT 20", (cc,))
         month = conn.execute("SELECT count(*) AS n FROM reports r JOIN regions rg ON rg.id = r.scope_region_id "
                              "WHERE rg.code = %s AND r.generated_at > date_trunc('month', now())", (cc,)).fetchone()["n"]
-        awaiting = conn.execute(f"""SELECT count(*) AS n FROM {S.changes(cc)} e JOIN {S.docs(cc)} d ON d.id=e.document_id
+        awaiting = conn.execute(f"""SELECT count(*) AS n FROM {S.changes(cc)} e JOIN {S.docs(cc, True)} d ON d.id=e.document_id
                                    WHERE e.review_status<>'confirmed' AND d.doc_class <> 'OFF_TOPIC'
                                      AND d.vehicle_categories && %s {usage}""", (scope,)).fetchone()["n"]
         last = conn.execute("SELECT max(r.generated_at) AS t FROM reports r JOIN regions rg ON rg.id = r.scope_region_id "
@@ -829,6 +833,8 @@ def generate_report(kind: str, fmt: str = "html", owner: str = "Regulatory Affai
         seg_codes = (segment_filter(cc, segment) or (vocab["scope"], ""))[0]
     cats = [c for c in vocab["categories"] if c in seg_codes]
     scope_text = f"segment {segments.label(segment)} ({'/'.join(cats)})" if segment else f"vehicle categories {', '.join(cats)}"
+    if YEAR.get():
+        scope_text += f", regulations published in {YEAR.get()}"
     title = REPORTS[kind]
     stamp = datetime.now().strftime("%d %b %Y %H:%M")
     if kind == "executive":
@@ -910,7 +916,8 @@ def _notifications(conn, cc: str) -> list[dict]:
                           LEFT JOIN requirement_versions v ON v.id=a.requirement_version_id
                           LEFT JOIN compliance_requirements c ON c.id=v.requirement_id
                           WHERE NOT a.is_resolved AND r.is_enabled
-                            AND (r.scope_region_id IS NULL OR r.scope_region_id=(SELECT id FROM regions WHERE code=%s))""",
+                            AND (r.scope_region_id IS NULL OR r.scope_region_id=(SELECT id FROM regions WHERE code=%s))"""
+                       + year_sql("g", keep_null=True),
                   (cc,))
     out = []
     for n in rows:
@@ -1127,10 +1134,14 @@ def portal_meta(cc: CountryParam = None) -> dict:
                          (list(crawlers(cc)),)).fetchone()
         settings = S.settings(conn)
         teams = _rows(conn, "SELECT id, name FROM teams ORDER BY name")
+        # the portal's year selector: years with in-scope regulations, newest first
+        years = [r["y"] for r in conn.execute(f"""SELECT DISTINCT extract(year FROM d.doc_date)::int AS y FROM {S.docs(cc)} d
+                                                 WHERE d.doc_date IS NOT NULL AND d.doc_class <> 'OFF_TOPIC'
+                                                   AND d.vehicle_categories && %s ORDER BY 1 DESC""", (vocab["scope"],))]
     return {"country": cc, "sources": s["n"], "sources_total": s["total"], "last_sync": s["last"], "teams": teams,
             "scheduler": scheduler_status(settings),
             "categories": [{"code": c, "label": vocab["cat_label"].get(c, c)} for c in vocab["categories"]],
-            "segments": segments.tree(cc, vocab["cat_label"]),
+            "segments": segments.tree(cc, vocab["cat_label"]), "years": years,
             "statuses": STATUSES, "domains": [{"code": k, "label": v} for k, v in vocab["domain_label"].items()]}
 
 
@@ -1166,7 +1177,7 @@ def requirements(segment: str | None = None, cc: CountryParam = None) -> dict:
         raise HTTPException(400, str(e)) from e
     with connect() as conn:
         rows = _rows(conn, REQ_SQL, (cc,))
-        links = _rows(conn, REQ_LINK_SQL, (cc,))
+        links = _rows(conn, REQ_LINK_SQL.replace("AND l.role <> 'rejected'", "AND l.role <> 'rejected'" + year_sql("g")), (cc,))
 
     def fits(link: dict) -> bool:
         codes, usage = set(link["codes"] or []), set(link["usage"] or [])

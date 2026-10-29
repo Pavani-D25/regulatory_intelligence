@@ -10,6 +10,7 @@ tables translate v4B into that shape so the endpoints and the dashboard keep the
 from __future__ import annotations
 
 from regtrack import country
+from regtrack.api.params import year_sql
 from regtrack.pipeline import repo
 from regtrack.pipeline.mandates import version_sql
 
@@ -20,9 +21,9 @@ REVIEW = ("CASE WHEN {e}.review_status = 'reviewed' THEN 'confirmed' "
           "WHEN {e}.details->>'summary_by' = 'qwen' THEN 'auto' ELSE 'needs_check' END")
 
 
-def docs(cc: str | None = None) -> str:
-    """Regulations as documents (same columns as pipeline/repo.py)."""
-    return f"({repo.REG_SQL} WHERE {country.region_sql('g', cc)})"
+def docs(cc: str | None = None, yearly: bool = False) -> str:
+    """Regulations as documents (same columns as pipeline/repo.py); yearly: only the request's ?year= (params.YEAR)."""
+    return f"({repo.REG_SQL} WHERE {country.region_sql('g', cc)}{year_sql('g') if yearly else ''})"
 
 
 def mandates(cc: str | None = None) -> str:
