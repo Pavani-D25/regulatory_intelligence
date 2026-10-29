@@ -5,18 +5,21 @@ import pytest
 from regtrack import segments
 
 
-@pytest.mark.parametrize(("cc", "path", "expected"), [
-    ("IN", "", None),
-    ("IN", "2W", (["L1", "L2"], None)),
-    ("TH", "2W", (["L1", "L3"], None)),
-    ("IN", "2W/CV", (["L1", "L2"], "transport")),
-    ("IN", "2W/PV/L2/transport", (["L2"], "transport")),
-    ("IN", "4W", (["M1", "N1"], None)),
-    ("IN", "4W/PV", (["M1"], None)),  # taxis / cabs are passenger vehicles
-    ("IN", "4W/PV/M1/private", (["M1"], "private")),
-    ("IN", "4W/CV", (["N1"], None)),
-    ("MY", "4w/cv/n1/goods", (["N1"], None)),
-])
+@pytest.mark.parametrize(
+    ("cc", "path", "expected"),
+    [
+        ("IN", "", None),
+        ("IN", "2W", (["L1", "L2"], None)),
+        ("TH", "2W", (["L1", "L3"], None)),
+        ("IN", "2W/CV", (["L1", "L2"], "transport")),
+        ("IN", "2W/PV/L2/transport", (["L2"], "transport")),
+        ("IN", "4W", (["M1", "N1"], None)),
+        ("IN", "4W/PV", (["M1"], None)),  # taxis / cabs are passenger vehicles
+        ("IN", "4W/PV/M1/private", (["M1"], "private")),
+        ("IN", "4W/CV", (["N1"], None)),
+        ("MY", "4w/cv/n1/goods", (["N1"], None)),
+    ],
+)
 def test_resolve(cc, path, expected):
     assert segments.resolve(cc, path) == expected
 

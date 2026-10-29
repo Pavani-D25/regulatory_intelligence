@@ -24,17 +24,36 @@ def client():
 def test_classify_rules():
     from regtrack.api.portal import classify_row
 
-    vocab = {"categories": ["L1", "L2", "M1", "N1"], "scope": ["L1", "L2", "M1", "N1", "ALL"],
-             "cat_label": {}, "domain_label": {}}
-    base = dict(nature="technical", doc_class="NOTIFICATION_FINAL", doc_date=date(2015, 1, 1), next_obligation=None,
-                reapproval=False, last_event_at=None, last_event_review=None, doc_status="final", official_title="T",
-                subject=None, canonical_id="X", vehicle_categories=["M1"], issuer="MoRTH", domains=["braking"])
+    vocab = {
+        "categories": ["L1", "L2", "M1", "N1"],
+        "scope": ["L1", "L2", "M1", "N1", "ALL"],
+        "cat_label": {},
+        "domain_label": {},
+    }
+    base = dict(
+        nature="technical",
+        doc_class="NOTIFICATION_FINAL",
+        doc_date=date(2015, 1, 1),
+        next_obligation=None,
+        reapproval=False,
+        last_event_at=None,
+        last_event_review=None,
+        doc_status="final",
+        official_title="T",
+        subject=None,
+        canonical_id="X",
+        vehicle_categories=["M1"],
+        issuer="MoRTH",
+        domains=["braking"],
+    )
     assert classify_row(dict(base), vocab)["impact"] == "Medium"
     assert classify_row(dict(base, nature="administrative", doc_class="NOTIFICATION_FINAL"), vocab)["impact"] == "Low"
     up = classify_row(dict(base, next_obligation=date(2099, 1, 1)), vocab, today=date(2026, 1, 1))
     assert (up["impact"], up["status"]) == ("High", "Action Required")
     assert classify_row(dict(base, doc_class="NOTIFICATION_DRAFT"), vocab)["status"] == "Under Review"
-    team = classify_row(dict(base, review_status="Tracked", review_impact="Low", next_obligation=date(2099, 1, 1)), vocab)
+    team = classify_row(
+        dict(base, review_status="Tracked", review_impact="Low", next_obligation=date(2099, 1, 1)), vocab
+    )
     assert (team["impact"], team["status"], team["impact_basis"]) == ("Low", "Tracked", "team")
 
 
@@ -45,7 +64,14 @@ def test_views_only_india_scope(client):
     assert all(c["name"].startswith(c["code"]) for c in s["by_category"])
     regs = client.get("/portal/regulations").json()["rows"]
     assert regs and all(set(r["categories"]) <= {"L1", "L2", "M1", "N1", "ALL"} and r["categories"] for r in regs)
-    for path in ("/portal/changes", "/portal/compliance", "/portal/impact", "/portal/reports", "/portal/alerts", "/portal/admin"):
+    for path in (
+        "/portal/changes",
+        "/portal/compliance",
+        "/portal/impact",
+        "/portal/reports",
+        "/portal/alerts",
+        "/portal/admin",
+    ):
         assert client.get(path).status_code == 200, path
     heat = client.get("/portal/impact").json()
     assert all(1 <= v <= 5 for c in heat["cells"] for v in c["scores"])
@@ -61,17 +87,26 @@ def test_drawer_and_review_roundtrip(client):
     with connect() as conn:
         saved = conn.execute(f"SELECT id, {cols} FROM regulations WHERE external_code=%s", (cid,)).fetchone()
     try:
-        assert client.put(f"/portal/regulations/{cid}/review",
-                          json={"status": "Tracked", "owner": "pytest", "impact": "Low"}).status_code == 200
+        assert (
+            client.put(
+                f"/portal/regulations/{cid}/review", json={"status": "Tracked", "owner": "pytest", "impact": "Low"}
+            ).status_code
+            == 200
+        )
         d = client.get(f"/portal/regulations/{cid}/detail").json()
         assert (d["status"], d["impact"], d["impact_basis"], d["owner"]) == ("Tracked", "Low", "team", "pytest")
-        assert client.put(f"/portal/regulations/{cid}/review", json={"status": "Tracked", "owner": "pytest"}).status_code == 200
+        assert (
+            client.put(f"/portal/regulations/{cid}/review", json={"status": "Tracked", "owner": "pytest"}).status_code
+            == 200
+        )
         assert client.get(f"/portal/regulations/{cid}/detail").json()["impact_basis"] == "rules"  # back to the rule
         assert client.put(f"/portal/regulations/{cid}/review", json={"status": "Bogus"}).status_code == 400
     finally:
         with connect() as conn:
-            conn.execute(f"UPDATE regulations SET ({cols}) = (%s,%s,%s,%s,%s,%s) WHERE id=%s",
-                         (*[saved[c.strip()] for c in cols.split(",")], saved["id"]))
+            conn.execute(
+                f"UPDATE regulations SET ({cols}) = (%s,%s,%s,%s,%s,%s) WHERE id=%s",
+                (*[saved[c.strip()] for c in cols.split(",")], saved["id"]),
+            )
             conn.execute("DELETE FROM teams WHERE name='pytest'")
             conn.commit()
 
@@ -84,14 +119,18 @@ def test_compliance_alerts_reports(client):
     key = rows[0]["mandate_key"]
     cols = "owner_team_id, evidence_links, status, due_date, note, updated_at"
     with connect() as conn:
-        saved = conn.execute(f"SELECT id, {cols} FROM compliance_requirements WHERE requirement_code=%s", (key,)).fetchone()
+        saved = conn.execute(
+            f"SELECT id, {cols} FROM compliance_requirements WHERE requirement_code=%s", (key,)
+        ).fetchone()
     try:
         r = client.put(f"/portal/compliance/{key}", json={"owner": "pytest", "status": "Compliant"})
         assert r.status_code == 200
         assert client.get("/portal/compliance").json()["kpis"]["compliant_pct"] > 0
         row = next(r for r in client.get("/portal/compliance").json()["rows"] if r["mandate_key"] == key)
         assert (row["owner"], row["status"]) == ("pytest", "Compliant") and row["updated_at"]
-        rid = client.post("/portal/alerts", json={"name": "pytest rule", "condition": "new_document", "scope": "L2"}).json()["id"]
+        rid = client.post(
+            "/portal/alerts", json={"name": "pytest rule", "condition": "new_document", "scope": "L2"}
+        ).json()["id"]
         rule = next(r for r in client.get("/portal/alerts").json()["rules"] if r["id"] == rid)
         assert (rule["scope"], rule["condition"], rule["enabled"]) == ("L2", "new_document", True)
         assert client.patch(f"/portal/alerts/{rid}", json={"enabled": False}).status_code == 200
@@ -103,9 +142,16 @@ def test_compliance_alerts_reports(client):
         assert [r["owner"] for r in recent[:2]] == ["pytest", "pytest"] and recent[0]["kind"] == "Compliance Gap Report"
     finally:
         with connect() as conn:
-            conn.execute(f"UPDATE compliance_requirements SET ({cols}) = (%s,%s,%s,%s,%s,%s) WHERE id=%s",
-                         (*[Jsonb(saved[c.strip()]) if c.strip() == "evidence_links" else saved[c.strip()]
-                            for c in cols.split(",")], saved["id"]))
+            conn.execute(
+                f"UPDATE compliance_requirements SET ({cols}) = (%s,%s,%s,%s,%s,%s) WHERE id=%s",
+                (
+                    *[
+                        Jsonb(saved[c.strip()]) if c.strip() == "evidence_links" else saved[c.strip()]
+                        for c in cols.split(",")
+                    ],
+                    saved["id"],
+                ),
+            )
             conn.execute("DELETE FROM alert_rules WHERE name='pytest rule'")
             conn.execute("DELETE FROM reports WHERE owner_team_id=(SELECT id FROM teams WHERE name='pytest')")
             conn.execute("DELETE FROM teams WHERE name='pytest'")
@@ -140,8 +186,12 @@ def test_no_static_values(client):
 
     meta = client.get("/portal/meta").json()
     with connect() as conn:
-        labels = {r["code"]: r["label"] for r in conn.execute(
-            "SELECT code, label FROM vehicle_categories WHERE region_id=(SELECT id FROM regions WHERE code='IN')")}
+        labels = {
+            r["code"]: r["label"]
+            for r in conn.execute(
+                "SELECT code, label FROM vehicle_categories WHERE region_id=(SELECT id FROM regions WHERE code='IN')"
+            )
+        }
     assert all(labels[c["code"]].startswith(c["label"].split(" ", 1)[1]) for c in meta["categories"])
     assert {"alive", "heartbeat", "auto_sync"} <= meta["scheduler"].keys()
     ctx = client.get("/portal/ask/context").json()
@@ -192,9 +242,20 @@ def test_motor_vehicle_law_rule():
 
     assert motor_vehicle_law("THE MOTOR VEHICLES ACT, 1988", "") == "in_force"
     assert motor_vehicle_law("THE CENTRAL MOTOR VEHICLES RULES, 1989", "") == "in_force"
-    assert motor_vehicle_law("THE MOTOR VEHIC ES (AMENDMENT) ACT, 1969", "An Act further to amend the Motor Vehicles Act, 1939.") == "repealed"
-    assert motor_vehicle_law("REGISTERED NO. DL-33004/2000", "An Act further to amend the Motor Vehicles Act, 1988.") == "in_force"
-    assert motor_vehicle_law("THE CARRIAGE BY ROAD ACT, 2007", "An Act to provide for the regulation of common carriers") is None
+    assert (
+        motor_vehicle_law(
+            "THE MOTOR VEHIC ES (AMENDMENT) ACT, 1969", "An Act further to amend the Motor Vehicles Act, 1939."
+        )
+        == "repealed"
+    )
+    assert (
+        motor_vehicle_law("REGISTERED NO. DL-33004/2000", "An Act further to amend the Motor Vehicles Act, 1988.")
+        == "in_force"
+    )
+    assert (
+        motor_vehicle_law("THE CARRIAGE BY ROAD ACT, 2007", "An Act to provide for the regulation of common carriers")
+        is None
+    )
 
 
 def test_reference_documents_hidden_unless_asked(client):
@@ -213,7 +274,9 @@ def test_drafts_are_not_published_standards():
         bad = conn.execute("""SELECT count(*) AS n FROM regulations d JOIN document_parts p ON p.regulation_id=d.id AND p.is_best_copy
                               JOIN raw_ingestion_records fs ON fs.document_id=p.document_id
                               JOIN sources s ON s.id=fs.source_id AND s.code='ARAI_AIS'
-                              WHERE d.local_class='AIS_STANDARD' AND fs.payload->>'code' ILIKE 'Draft%%'""").fetchone()["n"]
+                              WHERE d.local_class='AIS_STANDARD' AND fs.payload->>'code' ILIKE 'Draft%%'""").fetchone()[
+            "n"
+        ]
     assert bad == 0
 
 
@@ -228,33 +291,59 @@ def test_workspace_teams_watches_schedules(client, tmp_path, monkeypatch):
     cid = client.get("/portal/regulations").json()["rows"][0]["canonical_id"]
     tid = client.post("/portal/teams", json={"name": "pytest workspace"}).json()["id"]
     try:
-        assert client.post("/portal/teams", json={"name": "pytest workspace"}).json()["id"] == tid  # same name, same team
-        uid = client.post("/portal/users", json={"email": "PyTest@Example.com", "name": "Py Test", "team_id": tid}).json()["id"]
+        assert (
+            client.post("/portal/teams", json={"name": "pytest workspace"}).json()["id"] == tid
+        )  # same name, same team
+        uid = client.post(
+            "/portal/users", json={"email": "PyTest@Example.com", "name": "Py Test", "team_id": tid}
+        ).json()["id"]
         assert client.post("/portal/users", json={"email": "pytest@example.com", "name": "x"}).status_code == 409
         assert client.post("/portal/users", json={"email": "not-an-email", "name": "x"}).status_code == 400
         assert client.patch(f"/portal/users/{uid}", json={"role": "editor", "is_active": False}).status_code == 200
         u = next(x for x in client.get("/portal/team").json()["users"] if x["id"] == uid)
-        assert (u["email"], u["role"], u["is_active"], u["team"]) == ("pytest@example.com", "editor", False, "pytest workspace")
+        assert (u["email"], u["role"], u["is_active"], u["team"]) == (
+            "pytest@example.com",
+            "editor",
+            False,
+            "pytest workspace",
+        )
         assert any(t["id"] == tid for t in client.get("/portal/meta").json()["teams"])
         # watch: one team, once
         wid = client.post("/portal/watches", json={"canonical_id": cid, "team_id": tid}).json()["id"]
         assert client.post("/portal/watches", json={"canonical_id": cid, "team_id": tid}).status_code == 409
         assert client.post("/portal/watches", json={"canonical_id": cid}).status_code == 400
         assert client.post("/portal/watches", json={"canonical_id": "NO-SUCH-ID", "team_id": tid}).status_code == 404
-        assert [w["team"] for w in client.get("/portal/watches", params={"canonical_id": cid}).json()["watches"]
-                if w["id"] == wid] == ["pytest workspace"]
+        assert [
+            w["team"]
+            for w in client.get("/portal/watches", params={"canonical_id": cid}).json()["watches"]
+            if w["id"] == wid
+        ] == ["pytest workspace"]
         # schedule: due a week later, the scheduler writes the report file, logs it and moves the next date
-        sid = client.post("/portal/report-schedules", json={"kind": "compliance_gap", "frequency": "weekly",
-                                                             "team_ids": [tid]}).json()["id"]
-        assert client.post("/portal/report-schedules", json={"kind": "compliance_gap", "frequency": "hourly",
-                                                             "team_ids": [tid]}).status_code == 400
+        sid = client.post(
+            "/portal/report-schedules", json={"kind": "compliance_gap", "frequency": "weekly", "team_ids": [tid]}
+        ).json()["id"]
+        assert (
+            client.post(
+                "/portal/report-schedules", json={"kind": "compliance_gap", "frequency": "hourly", "team_ids": [tid]}
+            ).status_code
+            == 400
+        )
         # a schedule for one vehicle segment: its report covers only that segment
-        seg_id = client.post("/portal/report-schedules", json={"kind": "executive", "frequency": "weekly",
-                                                                "team_ids": [tid], "segment": "4W/CV"}).json()["id"]
-        assert client.post("/portal/report-schedules", json={"kind": "executive", "frequency": "weekly",
-                                                             "team_ids": [tid], "segment": "3W"}).status_code == 400
+        seg_id = client.post(
+            "/portal/report-schedules",
+            json={"kind": "executive", "frequency": "weekly", "team_ids": [tid], "segment": "4W/CV"},
+        ).json()["id"]
+        assert (
+            client.post(
+                "/portal/report-schedules",
+                json={"kind": "executive", "frequency": "weekly", "team_ids": [tid], "segment": "3W"},
+            ).status_code
+            == 400
+        )
         files = W.run_due_schedules(datetime.now().astimezone() + timedelta(days=8))
-        assert len(files) == 2 and all((tmp_path / f).read_text(encoding="utf-8").startswith("<!doctype html>") for f in files)
+        assert len(files) == 2 and all(
+            (tmp_path / f).read_text(encoding="utf-8").startswith("<!doctype html>") for f in files
+        )
         seg_file = next(f for f in files if "_4W-CV_" in f)
         assert "segment 4W-CV (N1)" in (tmp_path / seg_file).read_text(encoding="utf-8")
         rows = {x["id"]: x for x in client.get("/portal/report-schedules").json()["schedules"]}
@@ -297,7 +386,11 @@ def test_alert_rule_by_segment(client):
     ids = []
     try:
         ids.append(client.post("/portal/alerts", json={**body, "name": "pytest all"}).json()["id"])
-        ids.append(client.post("/portal/alerts", json={**body, "name": "pytest taxi", "segment": "4W/PV/M1/transport"}).json()["id"])
+        ids.append(
+            client.post("/portal/alerts", json={**body, "name": "pytest taxi", "segment": "4W/PV/M1/transport"}).json()[
+                "id"
+            ]
+        )
         rules = {r["id"]: r for r in client.get("/portal/alerts", params={"country": "IN"}).json()["rules"]}
         assert rules[ids[1]]["scope"] == "4W-PV · M1 · transport" and rules[ids[1]]["segment"] == "4W/PV/M1/transport"
         assert rules[ids[1]]["matches"] <= rules[ids[0]]["matches"]
@@ -370,8 +463,15 @@ def test_year_filter_on_every_list_view(client):
     assert one and len(one) < len(every) and all(str(r["doc_date"]).startswith(str(y)) for r in one)
     s = client.get("/portal/summary", params={"year": y}).json()
     assert s["kpis"]["tracked"] == len(one) and all(t["ym"].startswith(str(y)) for t in s["trend"])
-    for path in ("/portal/changes", "/portal/compliance", "/portal/impact", "/portal/alerts", "/portal/reports",
-                 "/portal/requirements", "/portal/ask/context"):
+    for path in (
+        "/portal/changes",
+        "/portal/compliance",
+        "/portal/impact",
+        "/portal/alerts",
+        "/portal/reports",
+        "/portal/requirements",
+        "/portal/ask/context",
+    ):
         assert client.get(path, params={"year": y}).status_code == 200, path
     other = next(r for r in every if not str(r["doc_date"]).startswith(str(y)))
     assert client.get(f"/portal/regulations/{other['canonical_id']}/detail", params={"year": y}).status_code == 200
@@ -389,7 +489,13 @@ def test_powertrain_variant_filter(client):
         assert 0 < len(rows) < len(every), v
         s = client.get("/portal/summary", params={"variant": v}).json()
         assert s["kpis"]["tracked"] == len(rows)
-        for path in ("/portal/changes", "/portal/compliance", "/portal/impact", "/portal/alerts", "/portal/ask/context"):
+        for path in (
+            "/portal/changes",
+            "/portal/compliance",
+            "/portal/impact",
+            "/portal/alerts",
+            "/portal/ask/context",
+        ):
             assert client.get(path, params={"variant": v}).status_code == 200, (path, v)
     ev_ids = {r["canonical_id"] for r in client.get("/portal/regulations", params={"variant": "ev"}).json()["rows"]}
     y = client.get("/portal/meta").json()["years"][0]

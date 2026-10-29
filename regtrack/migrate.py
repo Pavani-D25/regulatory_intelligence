@@ -59,8 +59,7 @@ def migrate(dsn: str | None = None, until: int | None = None) -> list[str]:
                 continue
             with conn.transaction():
                 conn.execute(sql)
-                conn.execute("INSERT INTO schema_migrations (name, kind, sha256) VALUES (%s,%s,%s)",
-                             (key, kind, sha))
+                conn.execute("INSERT INTO schema_migrations (name, kind, sha256) VALUES (%s,%s,%s)", (key, kind, sha))
             conn.commit()
             out.append(f"applied {key}")
         conn.commit()

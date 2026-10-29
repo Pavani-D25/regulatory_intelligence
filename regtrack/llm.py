@@ -41,8 +41,9 @@ def reachable(force: bool = False, ttl: float = 120.0) -> tuple[bool, str]:
     if hit and not force and time.time() - hit[0] < ttl:
         return hit[1], hit[2]
     try:
-        r = httpx.get(f"{s.llm_base_url}/models", headers={**HEADERS, "Authorization": f"Bearer {s.llm_api_key}"},
-                      timeout=8.0)
+        r = httpx.get(
+            f"{s.llm_base_url}/models", headers={**HEADERS, "Authorization": f"Bearer {s.llm_api_key}"}, timeout=8.0
+        )
         ok = r.status_code == 200 and "data" in r.json()
         msg = ", ".join(m.get("id", "?") for m in r.json().get("data", [])) if ok else f"HTTP {r.status_code}"
     except Exception as e:  # noqa: BLE001
@@ -58,8 +59,16 @@ def chat_model(timeout: float = 600.0):
     # LLM_REASONING_EFFORT=none (default): a "thinking" model (Qwen3 in LM Studio) otherwise puts its structured answer
     # in reasoning_content or never finishes it (a tunnel then times out, Cloudflare 524), whatever LM Studio's toggle
     extra = {"reasoning_effort": s.llm_reasoning_effort} if s.llm_reasoning_effort else {}
-    return ChatOpenAI(base_url=s.llm_base_url, model=s.llm_model, api_key=s.llm_api_key, temperature=0,
-                      timeout=timeout, max_retries=1, default_headers=HEADERS, **extra)
+    return ChatOpenAI(
+        base_url=s.llm_base_url,
+        model=s.llm_model,
+        api_key=s.llm_api_key,
+        temperature=0,
+        timeout=timeout,
+        max_retries=1,
+        default_headers=HEADERS,
+        **extra,
+    )
 
 
 def structured(model: type[M], system: str, user: str, timeout: float = 600.0) -> M:
@@ -88,8 +97,12 @@ def structured_with_image(model: type[M], system: str, prompt: str, png: bytes, 
     from langchain_core.messages import HumanMessage, SystemMessage
 
     b64 = base64.b64encode(png).decode()
-    msg_h = HumanMessage(content=[{"type": "text", "text": prompt},
-                                  {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}])
+    msg_h = HumanMessage(
+        content=[
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+        ]
+    )
     llm = chat_model(timeout).with_structured_output(model, method="json_schema")
     try:
         return llm.invoke([SystemMessage(content=system), msg_h])
@@ -103,8 +116,14 @@ def embedder():
     from langchain_openai import OpenAIEmbeddings
 
     s = get_settings()
-    return OpenAIEmbeddings(base_url=s.llm_base_url, model=s.embed_model, api_key=s.llm_api_key,
-                            check_embedding_ctx_length=False, default_headers=HEADERS, timeout=120)
+    return OpenAIEmbeddings(
+        base_url=s.llm_base_url,
+        model=s.embed_model,
+        api_key=s.llm_api_key,
+        check_embedding_ctx_length=False,
+        default_headers=HEADERS,
+        timeout=120,
+    )
 
 
 def embed(texts: list[str]) -> list[list[float]]:

@@ -26,8 +26,19 @@ CRAWLERS_BY_COUNTRY: dict[str, dict[str, str]] = {
     "IN": {"MORTH_API": "morth", "ARAI_AIS": "arai", "EGAZETTE": "egazette", "INDIACODE": "indiacode"},
     "TH": {"TH_TISI_MANDATORY": "thailand_tisi", "TH_LOCAL": "local_import"},
     # one module for the five JPJ / DOE pages: its crawl(code) takes the source code
-    "MY": {c: "malaysia" for c in ("MY_JPJ_VTA", "MY_JPJ_CTA", "MY_JPJ_AED", "MY_DOE_EMISSION", "MY_DOE_VTA_GUIDE",
-                                     "MY_JPJ_ACTS", "MY_DOE_REGS")} | {"MY_LOCAL": "local_import"},
+    "MY": {
+        c: "malaysia"
+        for c in (
+            "MY_JPJ_VTA",
+            "MY_JPJ_CTA",
+            "MY_JPJ_AED",
+            "MY_DOE_EMISSION",
+            "MY_DOE_VTA_GUIDE",
+            "MY_JPJ_ACTS",
+            "MY_DOE_REGS",
+        )
+    }
+    | {"MY_LOCAL": "local_import"},
 }
 CRAWLERS = CRAWLERS_BY_COUNTRY["IN"]  # India's; code that runs crawls uses crawlers()
 
@@ -35,6 +46,8 @@ CRAWLERS = CRAWLERS_BY_COUNTRY["IN"]  # India's; code that runs crawls uses craw
 def crawlers(cc: str | None = None) -> dict[str, str]:
     """The crawlers of the current country (or of `cc`)."""
     return CRAWLERS_BY_COUNTRY.get(country.code(cc), {})
+
+
 HEARTBEAT_MIN = 5
 
 
@@ -91,19 +104,31 @@ def main() -> None:
 
     sched = BlockingScheduler(timezone="Asia/Kolkata")
     with connect() as conn:
-        sources = conn.execute("SELECT code, sync_frequency_minutes FROM sources WHERE sync_frequency_minutes > 0 "
-                               f"AND is_active AND {country.region_sql()} AND code = ANY(%s) ORDER BY id",
-                               (list(crawlers()),)).fetchall()
+        sources = conn.execute(
+            "SELECT code, sync_frequency_minutes FROM sources WHERE sync_frequency_minutes > 0 "
+            f"AND is_active AND {country.region_sql()} AND code = ANY(%s) ORDER BY id",
+            (list(crawlers()),),
+        ).fetchall()
     for i, s in enumerate(sources):
         hours = min(s["sync_frequency_minutes"] / 60, 6)
-        sched.add_job(_scheduled_run, "interval", hours=hours, args=[s["code"]], id=s["code"],
-                      max_instances=1, coalesce=True, misfire_grace_time=3600,
-                      next_run_time=_staggered(i))
+        sched.add_job(
+            _scheduled_run,
+            "interval",
+            hours=hours,
+            args=[s["code"]],
+            id=s["code"],
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
+            next_run_time=_staggered(i),
+        )
         log.info("scheduled %s every %sh", s["code"], hours)
     # pipeline catch-up every hour: picks up files left behind while the LLM / embeddings were offline
     sched.add_job(_catch_up, "interval", hours=1, id="pipeline", max_instances=1, coalesce=True)
     # scheduled reports (portal: Reports > Schedules) whose date has come
-    sched.add_job(_reports, "interval", hours=1, id="reports", max_instances=1, coalesce=True, next_run_time=_staggered(-2))
+    sched.add_job(
+        _reports, "interval", hours=1, id="reports", max_instances=1, coalesce=True, next_run_time=_staggered(-2)
+    )
     sched.add_job(heartbeat, "interval", minutes=HEARTBEAT_MIN, id="heartbeat", next_run_time=_staggered(-1))
     sched.start()
 
@@ -120,8 +145,10 @@ def _reports() -> None:
 
 def heartbeat() -> None:
     with connect() as conn:
-        conn.execute("INSERT INTO app_settings (key, value) VALUES ('scheduler_heartbeat', to_jsonb(now()::text)) "
-                     "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('scheduler_heartbeat', to_jsonb(now()::text)) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+        )
         conn.commit()
 
 

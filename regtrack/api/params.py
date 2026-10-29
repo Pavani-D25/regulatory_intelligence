@@ -11,7 +11,9 @@ from regtrack import country
 
 # ?country=TH; without it, the COUNTRY setting (regtrack/country.py). Annotated keeps the default a real None, so
 # endpoints can also be called as plain functions (the report builder does).
-CountryParam = Annotated[str | None, Query(alias="country", description="Country code (IN, TH); default: the COUNTRY setting")]
+CountryParam = Annotated[
+    str | None, Query(alias="country", description="Country code (IN, TH); default: the COUNTRY setting")
+]
 
 
 def resolve_country(value: str | None) -> str:
@@ -53,8 +55,11 @@ def year_sql(alias: str, column: str = "published_date", keep_null: bool = False
 # combustion) is in none of the three.
 VARIANT: ContextVar[str | None] = ContextVar("regtrack_variant", default=None)
 VARIANTS = {
-    "ev": ("EV", "g.powertrains && '{bev}' OR EXISTS (SELECT 1 FROM regulation_domains rd JOIN domains dm ON dm.id = rd.domain_id "
-                 "WHERE rd.regulation_id = g.id AND lower(dm.code) IN ('battery', 'charging'))"),
+    "ev": (
+        "EV",
+        "g.powertrains && '{bev}' OR EXISTS (SELECT 1 FROM regulation_domains rd JOIN domains dm ON dm.id = rd.domain_id "
+        "WHERE rd.regulation_id = g.id AND lower(dm.code) IN ('battery', 'charging'))",
+    ),
     "hybrid": ("Hybrid", "g.powertrains && '{hybrid}'"),
     "ice": ("ICE", "g.powertrains && '{petrol,diesel,cng,lpg,ethanol_flex,biodiesel,lng,methanol}'"),
 }
@@ -85,5 +90,7 @@ def view_sql(alias: str, keep_null: bool = False) -> str:
 
 def view_label() -> str:
     """'published in 2024, EV' for report headings; empty without filters."""
-    parts = ([f"published in {YEAR.get()}"] if YEAR.get() else []) + ([VARIANTS[VARIANT.get()][0]] if VARIANT.get() else [])
+    parts = ([f"published in {YEAR.get()}"] if YEAR.get() else []) + (
+        [VARIANTS[VARIANT.get()][0]] if VARIANT.get() else []
+    )
     return ", ".join(parts)

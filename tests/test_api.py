@@ -38,7 +38,9 @@ def test_families_and_document_files(client):
 
 
 def test_vehicle_and_unknown_file(client):
-    r = client.get("/vehicles/applicable", params={"category": "L2", "engine_cc": 110, "powertrain": "petrol", "on": "2026-01-01"})
+    r = client.get(
+        "/vehicles/applicable", params={"category": "L2", "engine_cc": 110, "powertrain": "petrol", "on": "2026-01-01"}
+    )
     assert r.status_code == 200 and r.json()["in_scope_category"]
     assert client.get("/files/" + "0" * 64).status_code == 404
 

@@ -38,8 +38,14 @@ def read_rows(page) -> list[dict]:
         if cells.count() < 3:
             continue
         links = [a.get_attribute("href") for a in tr.locator("a").all() if a.get_attribute("href")]
-        out.append({"sr": cells.nth(0).inner_text().strip(), "code": cells.nth(1).inner_text().strip(),
-                    "title": cells.nth(2).inner_text().strip(), "links": links})
+        out.append(
+            {
+                "sr": cells.nth(0).inner_text().strip(),
+                "code": cells.nth(1).inner_text().strip(),
+                "title": cells.nth(2).inner_text().strip(),
+                "links": links,
+            }
+        )
     return out
 
 
@@ -93,10 +99,17 @@ def to_listing(r: dict) -> list[Listing]:
     for href in r["links"] or [None]:
         if href and "/storage/" not in href:
             continue  # only public storage links
-        out.append(Listing(item_id=f"{r['tab']}:{href or r['code']}", url=href, title=r["code"], listing_date=None,
-                           category=r["tab"].lower(), raw={"sr": r["sr"], "code": r["code"], "title": r["title"],
-                                                           "tab": r["tab"], "parsed": parsed},
-                           file_name=(href or "").rsplit("/", 1)[-1] or None))
+        out.append(
+            Listing(
+                item_id=f"{r['tab']}:{href or r['code']}",
+                url=href,
+                title=r["code"],
+                listing_date=None,
+                category=r["tab"].lower(),
+                raw={"sr": r["sr"], "code": r["code"], "title": r["title"], "tab": r["tab"], "parsed": parsed},
+                file_name=(href or "").rsplit("/", 1)[-1] or None,
+            )
+        )
     return out
 
 

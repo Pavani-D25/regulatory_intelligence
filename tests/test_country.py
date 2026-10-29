@@ -25,27 +25,40 @@ def two_countries(migrated, monkeypatch):
         for cc, cid, dc in (("IN", "TEST-IN-0001", "AIS_STANDARD"), ("TH", "TEST-TH-0001", "TIS_STANDARD")):
             rid = conn.execute("SELECT id FROM regions WHERE code=%s", (cc,)).fetchone()["id"]
             # Thailand has no vehicle categories seeded yet (multi-country rollout): a test one, removed afterwards
-            conn.execute("INSERT INTO vehicle_categories (region_id, code, label, un_codes) "
-                         "VALUES (%s, 'M1', 'test passenger car', '{M1}') ON CONFLICT DO NOTHING", (rid,))
-            fid = conn.execute("INSERT INTO documents (region_id, checksum_sha256, storage_path, file_ext, stage) "
-                               "VALUES (%s, %s, %s, 'pdf', 'downloaded') RETURNING id",
-                               (rid, cc.lower() * 32, f"test/{cc}.pdf")).fetchone()["id"]
+            conn.execute(
+                "INSERT INTO vehicle_categories (region_id, code, label, un_codes) "
+                "VALUES (%s, 'M1', 'test passenger car', '{M1}') ON CONFLICT DO NOTHING",
+                (rid,),
+            )
+            fid = conn.execute(
+                "INSERT INTO documents (region_id, checksum_sha256, storage_path, file_ext, stage) "
+                "VALUES (%s, %s, %s, 'pdf', 'downloaded') RETURNING id",
+                (rid, cc.lower() * 32, f"test/{cc}.pdf"),
+            ).fetchone()["id"]
             reg = conn.execute(
                 "INSERT INTO regulations (region_id, external_code, local_class, legal_status, published_date, in_scope, "
                 "nature, title) VALUES (%s, %s, (SELECT code FROM document_classes WHERE region_id=%s "
                 "ORDER BY (code=%s) DESC, code LIMIT 1), 'final', current_date, true, 'technical', %s) RETURNING id",
-                (rid, cid, rid, dc, f"{cc} test brake standard")).fetchone()["id"]
-            conn.execute("INSERT INTO regulation_vehicle_categories SELECT %s, id FROM vehicle_categories "
-                         "WHERE region_id=%s AND code='M1'", (reg, rid))
-            conn.execute("INSERT INTO document_chunks (document_id, regulation_id, chunk_index, content, region_id, "
-                         "in_scope, is_current, vehicle_category_ids) VALUES (%s, %s, 0, %s, %s, true, true, "
-                         "ARRAY(SELECT id FROM vehicle_categories WHERE region_id=%s AND code='M1'))",
-                         (fid, reg, f"{WORD} braking requirement for {cc}", rid, rid))
+                (rid, cid, rid, dc, f"{cc} test brake standard"),
+            ).fetchone()["id"]
+            conn.execute(
+                "INSERT INTO regulation_vehicle_categories SELECT %s, id FROM vehicle_categories "
+                "WHERE region_id=%s AND code='M1'",
+                (reg, rid),
+            )
+            conn.execute(
+                "INSERT INTO document_chunks (document_id, regulation_id, chunk_index, content, region_id, "
+                "in_scope, is_current, vehicle_category_ids) VALUES (%s, %s, 0, %s, %s, true, true, "
+                "ARRAY(SELECT id FROM vehicle_categories WHERE region_id=%s AND code='M1'))",
+                (fid, reg, f"{WORD} braking requirement for {cc}", rid, rid),
+            )
             ids[cc] = {"file": fid, "reg": reg}
         conn.commit()
     yield ids
     with connect(dsn=dsn) as conn:
-        conn.execute("DELETE FROM regulations WHERE id = ANY(%s)", ([v["reg"] for v in ids.values()],))  # + chunks, links
+        conn.execute(
+            "DELETE FROM regulations WHERE id = ANY(%s)", ([v["reg"] for v in ids.values()],)
+        )  # + chunks, links
         conn.execute("DELETE FROM documents WHERE id = ANY(%s)", ([v["file"] for v in ids.values()],))
         conn.execute("DELETE FROM vehicle_categories WHERE label='test passenger car'")
         conn.commit()

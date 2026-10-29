@@ -13,20 +13,23 @@ from regtrack.pipeline import patterns as P
 from regtrack.pipeline.text import PageText
 
 HEADER_ZONE = 700  # an amendment header must start near the top of a page
-STATUS_PAGE = re.compile(r"status\s+chart|amendment\s+record|list\s+of\s+amendments|contents|"
-                         r"composition\s+of|record\s+of\s+amendments", re.I)
+STATUS_PAGE = re.compile(
+    r"status\s+chart|amendment\s+record|list\s+of\s+amendments|contents|"
+    r"composition\s+of|record\s+of\s+amendments",
+    re.I,
+)
 
 
 @dataclass
 class Segment:
-    kind: str                 # base | amendment | corrigendum
+    kind: str  # base | amendment | corrigendum
     page_from: int
     page_to: int
     number: int | None = None
     issued: str | None = None
     precision: str | None = None
     header_format: str | None = None
-    target_raw: str | None = None   # 'AIS-038 (Rev.2)' as printed in the header
+    target_raw: str | None = None  # 'AIS-038 (Rev.2)' as printed in the header
 
     @property
     def label(self) -> str:
@@ -51,8 +54,16 @@ def _header_on_page(p: PageText) -> Segment | None:
     m = P.CORR_HEADER.search(zone)
     if m and m.start() < HEADER_ZONE - 100 and before_status(m):
         iso, prec, fmt = P.header_date(m.group("mid"))
-        return Segment("corrigendum", p.page, p.page, int(m.group(1)) if m.group(1) else None, iso, prec, fmt,
-                       m.group("code").strip())
+        return Segment(
+            "corrigendum",
+            p.page,
+            p.page,
+            int(m.group(1)) if m.group(1) else None,
+            iso,
+            prec,
+            fmt,
+            m.group("code").strip(),
+        )
     return None
 
 
@@ -73,8 +84,13 @@ def split_ais(pages: list[PageText]) -> list[Segment]:
             # the same header repeated on following pages (running header) continues the segment
             starts.append(h)
             seen.add((h.kind, h.number))
-        elif _is_cover(p) and p.page > 1 and starts and starts[-1].kind != "base" and not any(
-                s.kind == "base" for s in starts):
+        elif (
+            _is_cover(p)
+            and p.page > 1
+            and starts
+            and starts[-1].kind != "base"
+            and not any(s.kind == "base" for s in starts)
+        ):
             starts.append(Segment("base", p.page, p.page))
     if not any(s.kind == "base" for s in starts):
         first = starts[0].page_from if starts else n + 1

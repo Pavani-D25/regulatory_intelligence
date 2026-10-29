@@ -22,11 +22,21 @@ def upload_all(limit: int | None = None, switch: bool = False, verify: bool = Tr
     s = get_settings()
     client = s3_client()
     locked = ensure_bucket(client, s.s3_bucket)
-    stats = {"bucket": s.s3_bucket, "object_lock": locked, "checked": 0, "uploaded": 0, "already_there": 0,
-             "missing_local": 0, "bad_hash": 0, "switched": 0}
+    stats = {
+        "bucket": s.s3_bucket,
+        "object_lock": locked,
+        "checked": 0,
+        "uploaded": 0,
+        "already_there": 0,
+        "missing_local": 0,
+        "bad_hash": 0,
+        "switched": 0,
+    }
     with connect() as conn:
-        rows = conn.execute("SELECT id, checksum_sha256 AS sha256, file_ext AS ext, storage_path FROM documents ORDER BY id"
-                            + (f" LIMIT {int(limit)}" if limit else "")).fetchall()
+        rows = conn.execute(
+            "SELECT id, checksum_sha256 AS sha256, file_ext AS ext, storage_path FROM documents ORDER BY id"
+            + (f" LIMIT {int(limit)}" if limit else "")
+        ).fetchall()
         for r in rows:
             stats["checked"] += 1
             if is_s3_uri(r["storage_path"]):

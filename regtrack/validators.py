@@ -19,8 +19,10 @@ def _validator(doc_class: str) -> Draft202012Validator:
 def validate_data(doc_class: str, data: dict) -> list[str]:
     """Return schema errors as 'path: message' strings (empty list = valid)."""
     v = _validator(doc_class)
-    return [f"{'/'.join(str(x) for x in e.absolute_path) or '$'}: {e.message[:200]}"
-            for e in sorted(v.iter_errors(data), key=lambda e: list(e.absolute_path))]
+    return [
+        f"{'/'.join(str(x) for x in e.absolute_path) or '$'}: {e.message[:200]}"
+        for e in sorted(v.iter_errors(data), key=lambda e: list(e.absolute_path))
+    ]
 
 
 def in_scope(categories: list[str], cc: str | None = None) -> bool:

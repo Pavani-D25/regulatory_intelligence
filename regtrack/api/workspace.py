@@ -15,8 +15,12 @@ from regtrack.db import Jsonb, connect
 
 router = APIRouter(prefix="/portal", tags=["portal workspace"])
 ROLES = ["viewer", "editor", "admin"]
-FREQUENCIES = {"daily": timedelta(days=1), "weekly": timedelta(weeks=1), "monthly": timedelta(days=30),
-               "quarterly": timedelta(days=91)}
+FREQUENCIES = {
+    "daily": timedelta(days=1),
+    "weekly": timedelta(weeks=1),
+    "monthly": timedelta(days=30),
+    "quarterly": timedelta(days=91),
+}
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 REPORT_DIR = ROOT / "data" / "reports"
 
@@ -26,8 +30,9 @@ def _rows(conn, sql: str, args=None) -> list[dict]:
 
 
 def _regulation_id(conn, canonical_id: str) -> int:
-    r = conn.execute(f"SELECT id FROM regulations g WHERE external_code=%s AND {country.region_sql('g')}",
-                     (canonical_id,)).fetchone()
+    r = conn.execute(
+        f"SELECT id FROM regulations g WHERE external_code=%s AND {country.region_sql('g')}", (canonical_id,)
+    ).fetchone()
     if not r:
         raise HTTPException(404, "unknown regulation")
     return r["id"]
@@ -37,14 +42,20 @@ def _regulation_id(conn, canonical_id: str) -> int:
 @router.get("/team")
 def team_directory() -> dict:
     with connect() as conn:
-        teams = _rows(conn, """SELECT t.id, t.code, t.name,
+        teams = _rows(
+            conn,
+            """SELECT t.id, t.code, t.name,
                    (SELECT count(*) FROM users u WHERE u.team_id=t.id AND u.is_active) AS users,
                    (SELECT count(*) FROM regulation_watches w WHERE w.watcher_team_id=t.id) AS watches,
                    (SELECT count(*) FROM regulations g WHERE g.owner_team_id=t.id) AS regulations,
                    (SELECT count(*) FROM compliance_requirements c WHERE c.owner_team_id=t.id) AS requirements
-                   FROM teams t ORDER BY t.name""")
-        users = _rows(conn, """SELECT u.id, u.email, u.name, u.team_id, t.name AS team, u.role, u.is_active, u.created_at
-                               FROM users u LEFT JOIN teams t ON t.id=u.team_id ORDER BY u.is_active DESC, u.name""")
+                   FROM teams t ORDER BY t.name""",
+        )
+        users = _rows(
+            conn,
+            """SELECT u.id, u.email, u.name, u.team_id, t.name AS team, u.role, u.is_active, u.created_at
+                               FROM users u LEFT JOIN teams t ON t.id=u.team_id ORDER BY u.is_active DESC, u.name""",
+        )
     return {"teams": teams, "users": users, "roles": ROLES}
 
 
@@ -72,8 +83,10 @@ def add_user(body: dict = Body(...)) -> dict:
     with connect() as conn:
         if conn.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
             raise HTTPException(409, "a user with this e-mail address exists")
-        uid = conn.execute("INSERT INTO users (email, name, team_id, role) VALUES (%s,%s,%s,%s) RETURNING id",
-                           (email, name, body.get("team_id") or None, role)).fetchone()["id"]
+        uid = conn.execute(
+            "INSERT INTO users (email, name, team_id, role) VALUES (%s,%s,%s,%s) RETURNING id",
+            (email, name, body.get("team_id") or None, role),
+        ).fetchone()["id"]
         conn.commit()
     return {"id": uid}
 
@@ -119,8 +132,11 @@ def watches(canonical_id: str | None = None) -> dict:
         if canonical_id:
             where.append("g.external_code=%s")
             args.append(canonical_id)
-        rows = _rows(conn, WATCH_SQL + " WHERE " + " AND ".join(where)
-                     + " ORDER BY e.detected_at DESC NULLS LAST, w.created_at DESC", args)
+        rows = _rows(
+            conn,
+            WATCH_SQL + " WHERE " + " AND ".join(where) + " ORDER BY e.detected_at DESC NULLS LAST, w.created_at DESC",
+            args,
+        )
     return {"count": len(rows), "watches": rows}
 
 
@@ -131,8 +147,11 @@ def add_watch(body: dict = Body(...)) -> dict:
         raise HTTPException(400, "a watch is for one team or one user")
     with connect() as conn:
         rid = _regulation_id(conn, body.get("canonical_id") or "")
-        row = conn.execute("""INSERT INTO regulation_watches (regulation_id, watcher_team_id, watcher_user_id)
-                              VALUES (%s,%s,%s) ON CONFLICT DO NOTHING RETURNING id""", (rid, team, user)).fetchone()
+        row = conn.execute(
+            """INSERT INTO regulation_watches (regulation_id, watcher_team_id, watcher_user_id)
+                              VALUES (%s,%s,%s) ON CONFLICT DO NOTHING RETURNING id""",
+            (rid, team, user),
+        ).fetchone()
         if not row:
             raise HTTPException(409, "already watched")
         conn.commit()
@@ -151,12 +170,16 @@ def delete_watch(watch_id: int) -> dict:
 @router.get("/ask/conversations")
 def conversations(limit: int = 30) -> dict:
     with connect() as conn:
-        rows = _rows(conn, """SELECT c.id, c.started_at,
+        rows = _rows(
+            conn,
+            """SELECT c.id, c.started_at,
                    (SELECT content FROM assistant_messages m WHERE m.conversation_id=c.id AND m.role='user'
                     ORDER BY m.id LIMIT 1) AS first_question,
                    (SELECT count(*) FROM assistant_messages m WHERE m.conversation_id=c.id AND m.role='user') AS questions,
                    (SELECT max(created_at) FROM assistant_messages m WHERE m.conversation_id=c.id) AS last_at
-                   FROM assistant_conversations c ORDER BY last_at DESC NULLS LAST, c.id DESC LIMIT %s""", (limit,))
+                   FROM assistant_conversations c ORDER BY last_at DESC NULLS LAST, c.id DESC LIMIT %s""",
+            (limit,),
+        )
     return {"conversations": rows}
 
 
@@ -179,13 +202,19 @@ def report_schedules() -> dict:
     from regtrack.api.portal import REPORTS
 
     with connect() as conn:
-        rows = _rows(conn, SCHEDULE_SQL + " WHERE rg.code=%s ORDER BY s.is_active DESC, s.next_run_at", (country.code(),))
+        rows = _rows(
+            conn, SCHEDULE_SQL + " WHERE rg.code=%s ORDER BY s.is_active DESC, s.next_run_at", (country.code(),)
+        )
         names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM teams")}
     for r in rows:
         r["kind"] = _kind_of(r["template"])
         r["teams"] = [names.get(t, "?") for t in (r.pop("recipients") or {}).get("teams", [])]
         r["scope"] = segments.label(r["segment"]) if r["segment"] else "All categories"
-    return {"schedules": rows, "frequencies": list(FREQUENCIES), "templates": [{"kind": k, "name": v} for k, v in REPORTS.items()]}
+    return {
+        "schedules": rows,
+        "frequencies": list(FREQUENCIES),
+        "templates": [{"kind": k, "name": v} for k, v in REPORTS.items()],
+    }
 
 
 @router.post("/report-schedules")
@@ -206,8 +235,15 @@ def add_report_schedule(body: dict = Body(...)) -> dict:
             """INSERT INTO report_schedules (template_id, scope_region_id, frequency, recipients, next_run_at, parameters)
                VALUES ((SELECT id FROM report_templates WHERE name=%s), (SELECT id FROM regions WHERE code=%s), %s, %s,
                        now() + %s, %s) RETURNING id""",
-            (REPORTS[kind], country.code(), freq, Jsonb({"teams": teams}), FREQUENCIES[freq],
-             Jsonb({"segment": segment} if segment else {}))).fetchone()["id"]
+            (
+                REPORTS[kind],
+                country.code(),
+                freq,
+                Jsonb({"teams": teams}),
+                FREQUENCIES[freq],
+                Jsonb({"segment": segment} if segment else {}),
+            ),
+        ).fetchone()["id"]
         conn.commit()
     return {"id": sid}
 
@@ -255,9 +291,11 @@ def run_due_schedules(now: datetime | None = None) -> list[str]:
         with connect() as conn:
             # the report generate_report just logged: attach the file and the schedule
             if path:
-                conn.execute("""UPDATE reports SET file_path=%s, parameters = parameters || jsonb_build_object('schedule_id', %s)
+                conn.execute(
+                    """UPDATE reports SET file_path=%s, parameters = parameters || jsonb_build_object('schedule_id', %s)
                                 WHERE id=(SELECT max(id) FROM reports WHERE template_id=(SELECT id FROM report_templates WHERE name=%s))""",
-                             (str(path), s["id"], s["template"]))
+                    (str(path), s["id"], s["template"]),
+                )
             step = FREQUENCIES[s["frequency"]]
             nxt = s["next_run_at"]
             while nxt <= now:

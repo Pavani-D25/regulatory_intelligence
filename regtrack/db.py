@@ -15,8 +15,9 @@ __all__ = ["connect", "transaction", "is_reachable", "Jsonb"]
 
 
 def connect(autocommit: bool = False, dsn: str | None = None) -> psycopg.Connection:
-    return psycopg.connect(dsn or get_settings().psycopg_dsn, autocommit=autocommit, row_factory=dict_row,
-                           connect_timeout=5)
+    return psycopg.connect(
+        dsn or get_settings().psycopg_dsn, autocommit=autocommit, row_factory=dict_row, connect_timeout=5
+    )
 
 
 @contextmanager

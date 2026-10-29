@@ -43,8 +43,8 @@ TITLE = re.compile(r"<title>(.*?)</title>", re.I | re.S)
 # the page's own content ends where the shared footer begins
 FOOTER = re.compile(r"Contact Information|Contact Us|Hubungi Kami", re.I)
 # PDF viewer widgets: their settings, in the page itself, give the PDF's public URL (no token, no session)
-FB3D_DATA = re.compile(r"FB3D_CLIENT_DATA\.push\('([A-Za-z0-9+/=]+)'\)")      # JPJ: 3D FlipBook, base64 JSON
-DEARFLIP = re.compile(r"window\.option_df_\d+ = (\{.*?\});", re.S)             # DOE: DearFlip options
+FB3D_DATA = re.compile(r"FB3D_CLIENT_DATA\.push\('([A-Za-z0-9+/=]+)'\)")  # JPJ: 3D FlipBook, base64 JSON
+DEARFLIP = re.compile(r"window\.option_df_\d+ = (\{.*?\});", re.S)  # DOE: DearFlip options
 
 
 def viewer_pdfs(html: str) -> list[str]:
@@ -77,9 +77,9 @@ def main_content(raw: bytes, title: str | None) -> str:
     start = text.find(f"/ {head}") if head else -1  # breadcrumb "Home / <title>"
     if start < 0 and head:
         start = text.rfind(head, 0, len(text) // 2)
-    body = text[max(start, 0):]
+    body = text[max(start, 0) :]
     m = FOOTER.search(body)
-    body = body[:m.start()] if m else body
+    body = body[: m.start()] if m else body
     return re.sub(r"\d{1,3}(?:,\d{3})+|\b\d{5,}\b", "", body)  # stray counters inside the body
 
 
@@ -87,9 +87,16 @@ def page_listing(code: str, url: str, raw: bytes) -> tuple[Listing, list[Listing
     tm = TITLE.search(raw.decode("utf-8", errors="ignore"))
     title = re.sub(r"\s+", " ", htmllib.unescape(tm.group(1))).strip() if tm else None
     digest = hashlib.sha256(main_content(raw, title).encode("utf-8")).hexdigest()[:16]
-    page = Listing(item_id=f"{url}#{digest}", url=url, title=title, listing_date=None, category="page",
-                   raw={"content_hash": digest}, file_name=urlparse(url).path.strip("/").split("/")[-1] + ".html",
-                   content=raw)
+    page = Listing(
+        item_id=f"{url}#{digest}",
+        url=url,
+        title=title,
+        listing_date=None,
+        category="page",
+        raw={"content_hash": digest},
+        file_name=urlparse(url).path.strip("/").split("/")[-1] + ".html",
+        content=raw,
+    )
     host = urlparse(url).netloc
     seen: set[str] = set()
     files: list[Listing] = []
@@ -101,8 +108,17 @@ def page_listing(code: str, url: str, raw: bytes) -> tuple[Listing, list[Listing
             continue
         seen.add(link)
         name = link.rsplit("/", 1)[-1]
-        files.append(Listing(item_id=link, url=link, title=re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", label)).strip() or name,
-                             listing_date=None, category="attachment", raw={"page": url}, file_name=name))
+        files.append(
+            Listing(
+                item_id=link,
+                url=link,
+                title=re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", label)).strip() or name,
+                listing_date=None,
+                category="attachment",
+                raw={"page": url},
+                file_name=name,
+            )
+        )
     return page, files
 
 

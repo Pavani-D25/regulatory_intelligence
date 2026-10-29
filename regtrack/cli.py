@@ -1,19 +1,19 @@
 """Command line: python -m regtrack.cli <command>.
 
-  check                 DB / pgvector / LLM / structured output / embedding dimension
-  migrate               apply db/migrations + db/seeds (idempotent)
-  schemas               export JSON Schemas from the Pydantic models
-  import-seed           Phase 2: import SEED_CORPUS_DIR (read-only) into storage + DB
-  run [--stage S] [--limit N]   run pipeline stages on pending files (resumable)
-  crawl [SOURCE]        run the current country's live crawlers once (India: MORTH_API, ARAI_AIS, EGAZETTE, INDIACODE)
-  schedule              start the 6-hour scheduler (blocking)
-  rederive-mandates [--doc ID] [--apply]   after a mandate-parser fix: correct open mandate versions (dry run first)
-  report                write reports/VALIDATION_REPORT.md
-  api                   start the read-only FastAPI server
-  db start|stop|status  the local PostgreSQL server (PG_BIN / PG_DATA in .env; not used with Docker)
-  storage-upload [--limit N] [--switch]   one-time upload of local originals to S3/MinIO
-  snapshot-export [--with-files]          database dump (+ files zip) to share with a collaborator
-  snapshot-import FILE --yes              load a .dump (replaces the database) or a files .zip
+check                 DB / pgvector / LLM / structured output / embedding dimension
+migrate               apply db/migrations + db/seeds (idempotent)
+schemas               export JSON Schemas from the Pydantic models
+import-seed           Phase 2: import SEED_CORPUS_DIR (read-only) into storage + DB
+run [--stage S] [--limit N]   run pipeline stages on pending files (resumable)
+crawl [SOURCE]        run the current country's live crawlers once (India: MORTH_API, ARAI_AIS, EGAZETTE, INDIACODE)
+schedule              start the 6-hour scheduler (blocking)
+rederive-mandates [--doc ID] [--apply]   after a mandate-parser fix: correct open mandate versions (dry run first)
+report                write reports/VALIDATION_REPORT.md
+api                   start the read-only FastAPI server
+db start|stop|status  the local PostgreSQL server (PG_BIN / PG_DATA in .env; not used with Docker)
+storage-upload [--limit N] [--switch]   one-time upload of local originals to S3/MinIO
+snapshot-export [--with-files]          database dump (+ files zip) to share with a collaborator
+snapshot-import FILE --yes              load a .dump (replaces the database) or a files .zip
 """
 
 from __future__ import annotations
@@ -245,7 +245,8 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--dry-run", action="store_true", help="call the LLM but write nothing")
     sp.set_defaults(fn=cmd_llm_smoke)
     sub.add_parser("resolve-flags", help="resolve quality flags whose evidence settles them").set_defaults(
-        fn=cmd_resolve_flags)
+        fn=cmd_resolve_flags
+    )
     sp = sub.add_parser("storage-upload", help="one-time upload of local originals to S3/MinIO")
     sp.add_argument("--limit", type=int)
     sp.add_argument("--switch", action="store_true", help="rewrite documents.storage_path to s3:// URIs")

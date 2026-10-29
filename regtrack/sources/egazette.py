@@ -23,10 +23,16 @@ from regtrack.sources.common import Listing, RunStats, finish_run, record_listin
 log = logging.getLogger(__name__)
 HOME = "https://egazette.gov.in/"
 MINISTRIES = ["Ministry of Road Transport and Highways"]
-SKIP = re.compile(r"NH\s+Act|National\s+Highways?|Section\s+3A|Section\s+3D|Section\s+3G|land\s+acquisition|"
-                  r"toll|fee\s+plaza|bypass|entrustment|user\s+fee|P\s*and\s*M\s+File|Arbitrat", re.I)
-KEEP = re.compile(r"Motor\s+Vehicles?|CMVR|G\.?S\.?R|vehicle|driving|registration|permit|emission|AIS|helmet|"
-                  r"e-?rickshaw|scrapp|fitness|HSRP|FASTag|trailer|tyre", re.I)
+SKIP = re.compile(
+    r"NH\s+Act|National\s+Highways?|Section\s+3A|Section\s+3D|Section\s+3G|land\s+acquisition|"
+    r"toll|fee\s+plaza|bypass|entrustment|user\s+fee|P\s*and\s*M\s+File|Arbitrat",
+    re.I,
+)
+KEEP = re.compile(
+    r"Motor\s+Vehicles?|CMVR|G\.?S\.?R|vehicle|driving|registration|permit|emission|AIS|helmet|"
+    r"e-?rickshaw|scrapp|fitness|HSRP|FASTag|trailer|tyre",
+    re.I,
+)
 
 
 class CaptchaRequired(RuntimeError):
@@ -76,8 +82,11 @@ def months_back(n: int) -> list[tuple[int, int]]:
     return out
 
 
-def scrape(months: int = 2, download: bool = True, max_pages: int = 30,
-           ) -> tuple[list[Listing], list[str]]:
+def scrape(
+    months: int = 2,
+    download: bool = True,
+    max_pages: int = 30,
+) -> tuple[list[Listing], list[str]]:
     from playwright.sync_api import sync_playwright
 
     listings: list[Listing] = []
@@ -94,7 +103,7 @@ def scrape(months: int = 2, download: bool = True, max_pages: int = 30,
         ctx = b.new_context(user_agent=f"{base_ua} {get_settings().user_agent}", accept_downloads=True)
         page = ctx.new_page()
         for ministry in MINISTRIES:
-            for (y, m) in months_back(months):
+            for y, m in months_back(months):
                 page.goto(HOME, wait_until="networkidle", timeout=120000)
                 _pause()
                 _check_gate(page)
@@ -123,14 +132,29 @@ def scrape(months: int = 2, download: bool = True, max_pages: int = 30,
                         # skip definite highway items; generic subjects are downloaded and judged by content
                         if not ugid or SKIP.search(subject + " " + meta):
                             continue
-                        raw = {"gazette_id": ugid, "subject": subject, "metadata": meta, "ministry": _cell(r, "lbl_Ministry"),
-                               "department": _cell(r, "lbl_Department"), "part_section": _cell(r, "lbl_PartSection"),
-                               "category": _cell(r, "lbl_Category"), "issue_date": _cell(r, "lbl_IssueDate"),
-                               "publish_date": _cell(r, "lbl_PublishDate"), "size": _cell(r, "lbl_FileSize")}
-                        listings.append(Listing(item_id=ugid, url=pdf_url(ugid) if download else None, title=subject,
-                                                listing_date=_d(raw["issue_date"]),
-                                                category=f"{ministry}|{raw['part_section']}", raw=raw,
-                                                file_name=f"{ugid}.pdf"))
+                        raw = {
+                            "gazette_id": ugid,
+                            "subject": subject,
+                            "metadata": meta,
+                            "ministry": _cell(r, "lbl_Ministry"),
+                            "department": _cell(r, "lbl_Department"),
+                            "part_section": _cell(r, "lbl_PartSection"),
+                            "category": _cell(r, "lbl_Category"),
+                            "issue_date": _cell(r, "lbl_IssueDate"),
+                            "publish_date": _cell(r, "lbl_PublishDate"),
+                            "size": _cell(r, "lbl_FileSize"),
+                        }
+                        listings.append(
+                            Listing(
+                                item_id=ugid,
+                                url=pdf_url(ugid) if download else None,
+                                title=subject,
+                                listing_date=_d(raw["issue_date"]),
+                                category=f"{ministry}|{raw['part_section']}",
+                                raw=raw,
+                                file_name=f"{ugid}.pdf",
+                            )
+                        )
                     # ASP.NET pager: '__doPostBack(gvGazetteList, Page$N)'; pages 11+ sit behind the '...' link
                     nxt = page.locator(f"a[href*=\"'Page${pno + 1}'\"]")
                     if not nxt.count():

@@ -31,8 +31,18 @@ def listings(code: str) -> list[Listing]:
         content = path.read_bytes()
         rel = path.relative_to(root).as_posix()
         digest = hashlib.sha256(content).hexdigest()[:16]
-        out.append(Listing(item_id=f"{rel}#{digest}", url=None, title=path.stem, listing_date=None, category="local",
-                           raw={"path": rel}, file_name=path.name, content=content))
+        out.append(
+            Listing(
+                item_id=f"{rel}#{digest}",
+                url=None,
+                title=path.stem,
+                listing_date=None,
+                category="local",
+                raw={"path": rel},
+                file_name=path.name,
+                content=content,
+            )
+        )
     return out
 
 

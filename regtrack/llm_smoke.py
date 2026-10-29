@@ -20,8 +20,14 @@ from regtrack.db import connect, vec_literal
 from regtrack.pipeline import repo
 
 CLASS_MIX = [  # (doc_class, how many) — notifications and AIS standards dominate the Qwen work
-    ("NOTIFICATION_FINAL", 2), ("NOTIFICATION_DRAFT", 1), ("NOTIFICATION_ORDER", 1), ("NOTIFICATION_EXTENSION", 1),
-    ("AIS_STANDARD", 2), ("AIS_AMENDMENT", 1), ("AIS_DRAFT", 1), ("CIRCULAR_OM", 1),
+    ("NOTIFICATION_FINAL", 2),
+    ("NOTIFICATION_DRAFT", 1),
+    ("NOTIFICATION_ORDER", 1),
+    ("NOTIFICATION_EXTENSION", 1),
+    ("AIS_STANDARD", 2),
+    ("AIS_AMENDMENT", 1),
+    ("AIS_DRAFT", 1),
+    ("CIRCULAR_OM", 1),
 ]
 
 
@@ -30,13 +36,17 @@ class _Ping(BaseModel):
     number: int
 
 
-PICK_SQL = """SELECT d.*, df.page_from, df.page_to, fo.checksum_sha256 AS sha256, fo.storage_path, fo.id AS file_id
-               FROM (""" + repo.REG_SQL + """) d JOIN document_parts df ON df.regulation_id=d.id AND df.is_best_copy
+PICK_SQL = (
+    """SELECT d.*, df.page_from, df.page_to, fo.checksum_sha256 AS sha256, fo.storage_path, fo.id AS file_id
+               FROM ("""
+    + repo.REG_SQL
+    + """) d JOIN document_parts df ON df.regulation_id=d.id AND df.is_best_copy
                JOIN documents fo ON fo.id=df.document_id
                WHERE {cls} coalesce((d.extraction->>'llm_pending')::boolean, true)
                  AND d.canonical_id !~ '^(NOTIF|AIS-UNIDENTIFIED)-' AND coalesce(fo.text_layer, true)
                  AND d.doc_class <> 'OFF_TOPIC' AND NOT (d.id = ANY(%s))
                ORDER BY d.in_scope DESC NULLS LAST, d.doc_date DESC NULLS LAST, d.id LIMIT %s"""
+)
 
 
 def pick_documents(conn, n: int = 10) -> list[dict]:
@@ -50,7 +60,9 @@ def pick_documents(conn, n: int = 10) -> list[dict]:
 
 
 def column_dim(conn) -> int | None:
-    r = conn.execute("""SELECT atttypmod FROM pg_attribute WHERE attrelid='document_chunks'::regclass AND attname='embedding'""").fetchone()
+    r = conn.execute(
+        """SELECT atttypmod FROM pg_attribute WHERE attrelid='document_chunks'::regclass AND attname='embedding'"""
+    ).fetchone()
     return r["atttypmod"] if r and r["atttypmod"] > 0 else None
 
 
@@ -59,7 +71,9 @@ def run(n: int = 10, dry_run: bool = False, max_chunks: int = 40) -> int:
     from regtrack.pipeline.text import english_text, load_pages
 
     s = get_settings()
-    print(f"LLM_BASE_URL={s.llm_base_url}  LLM_MODEL={s.llm_model}  EMBED_MODEL={s.embed_model}  EMBED_DIM={s.embed_dim}")
+    print(
+        f"LLM_BASE_URL={s.llm_base_url}  LLM_MODEL={s.llm_model}  EMBED_MODEL={s.embed_model}  EMBED_DIM={s.embed_dim}"
+    )
     ok, detail = llm.reachable(force=True)
     print(f"[{'OK ' if ok else 'FAIL'}] reachable: {detail}")
     if not ok:
@@ -91,14 +105,23 @@ def run(n: int = 10, dry_run: bool = False, max_chunks: int = 40) -> int:
                 for k, v in check.items():
                     if v is not None:
                         agree[k].append(v)
-                print(f"  [OK ] {d['canonical_id']:<28} {d['doc_class']:<22} {time.time() - t:5.1f}s  "
-                      f"subject={res.subject!r:.60}  categories={res.vehicle_categories}  fields={len(filled)}  "
-                      f"identity-check={check}")
+                print(
+                    f"  [OK ] {d['canonical_id']:<28} {d['doc_class']:<22} {time.time() - t:5.1f}s  "
+                    f"subject={res.subject!r:.60}  categories={res.vehicle_categories}  fields={len(filled)}  "
+                    f"identity-check={check}"
+                )
                 if not dry_run:
                     df = {"page_from": d["page_from"], "page_to": d["page_to"], "is_best_copy": True}
                     doc = repo.get_document(conn, d["id"])
-                    X.extract_document(conn, doc, df, {"sha256": d["sha256"], "storage_path": d["storage_path"],
-                                                       "id": d["file_id"]}, pages, [], use_llm=True)
+                    X.extract_document(
+                        conn,
+                        doc,
+                        df,
+                        {"sha256": d["sha256"], "storage_path": d["storage_path"], "id": d["file_id"]},
+                        pages,
+                        [],
+                        use_llm=True,
+                    )
                     conn.commit()
             except Exception as e:  # noqa: BLE001
                 failures += 1
@@ -108,8 +131,11 @@ def run(n: int = 10, dry_run: bool = False, max_chunks: int = 40) -> int:
                 print(f"  agreement {k}: {sum(v)}/{len(v)}")
 
         print("\nEmbeddings:")
-        chunks = conn.execute("SELECT id, heading, content FROM document_chunks WHERE regulation_id = ANY(%s) AND NOT is_boilerplate "
-                              "ORDER BY id LIMIT %s", ([d["id"] for d in docs], max_chunks)).fetchall()
+        chunks = conn.execute(
+            "SELECT id, heading, content FROM document_chunks WHERE regulation_id = ANY(%s) AND NOT is_boilerplate "
+            "ORDER BY id LIMIT %s",
+            ([d["id"] for d in docs], max_chunks),
+        ).fetchall()
         if not chunks:
             print("  no chunks for these documents")
             return 1 if failures else 0
@@ -120,16 +146,23 @@ def run(n: int = 10, dry_run: bool = False, max_chunks: int = 40) -> int:
             print(f"  [FAIL] {type(e).__name__}: {str(e)[:300]}")
             return 1
         dim, col = len(vecs[0]), column_dim(conn)
-        print(f"  {len(vecs)} chunks in {time.time() - t:.1f}s, dimension {dim} (EMBED_DIM={s.embed_dim}, column vector({col}))")
+        print(
+            f"  {len(vecs)} chunks in {time.time() - t:.1f}s, dimension {dim} (EMBED_DIM={s.embed_dim}, column vector({col}))"
+        )
         if dim != s.embed_dim or (col and dim != col):
-            print(f"  [FAIL] dimension mismatch: set EMBED_DIM={dim} and add db/migrations/0002_embedding_dim.sql "
-                  f"(ALTER TABLE chunk ALTER COLUMN embedding TYPE vector({dim}); recreate the HNSW index). Nothing written.")
+            print(
+                f"  [FAIL] dimension mismatch: set EMBED_DIM={dim} and add db/migrations/0002_embedding_dim.sql "
+                f"(ALTER TABLE chunk ALTER COLUMN embedding TYPE vector({dim}); recreate the HNSW index). Nothing written."
+            )
             return 1
         if not dry_run:
             for c, v in zip(chunks, vecs, strict=True):
                 conn.execute("UPDATE chunk SET embedding=%s::vector WHERE id=%s", (vec_literal(v), c["id"]))
             conn.commit()
             print(f"  [OK ] wrote {len(vecs)} embeddings")
-    print("\nSmoke test", "PASSED" if not failures else f"had {failures} failure(s)",
-          "- next: python -m regtrack.cli run  (processes everything pending)")
+    print(
+        "\nSmoke test",
+        "PASSED" if not failures else f"had {failures} failure(s)",
+        "- next: python -m regtrack.cli run  (processes everything pending)",
+    )
     return 1 if failures else 0

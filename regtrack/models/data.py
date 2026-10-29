@@ -139,8 +139,19 @@ class Conditions(_Data):
 
 
 class Provision(_Data):
-    action: Literal["insert", "substitute", "omit", "insert_row", "substitute_row", "omit_row",
-                    "amend_table_entry", "extend_date", "exempt", "commence", "other"]
+    action: Literal[
+        "insert",
+        "substitute",
+        "omit",
+        "insert_row",
+        "substitute_row",
+        "omit_row",
+        "amend_table_entry",
+        "extend_date",
+        "exempt",
+        "commence",
+        "other",
+    ]
     target: str | None = Field(None, description="e.g. 'Rule 96(4A)' or 'SO-1365(E)-2004 Table Sr.26(b)'")
     subject: str | None = None
     standards: list[str] = Field(default_factory=list)
@@ -236,12 +247,12 @@ class GenericData(_Data):
 class TisStandardData(_Data):
     """TIS_STANDARD: a Thai mandatory standard (มอก.) as its TISI page gives it (regtrack/pipeline/thai.py)."""
 
-    title: str | None = None                      # Thai title
-    tis_no: str | None = None                     # as printed, e.g. "มอก. 721-2551"
-    year_be: int | None = None                    # Buddhist-Era year of the edition (the regulations.year column is CE)
+    title: str | None = None  # Thai title
+    tis_no: str | None = None  # as printed, e.g. "มอก. 721-2551"
+    year_be: int | None = None  # Buddhist-Era year of the edition (the regulations.year column is CE)
     effective_date: str | None = Field(None, pattern=ISO_DATE)  # วันที่มีผลบังคับใช้
-    scope_text: str | None = None                 # ขอบข่าย
+    scope_text: str | None = None  # ขอบข่าย
     hs_codes: list[str] = Field(default_factory=list)
-    title_en: str | None = None                   # English title: the PDF cover's, else a machine translation
-    title_en_source: str | None = None            # "cover" (TISI's own wording) | "machine translation"
-    scope_en: str | None = None                   # machine translation of scope_text (labelled in the portal)
+    title_en: str | None = None  # English title: the PDF cover's, else a machine translation
+    title_en_source: str | None = None  # "cover" (TISI's own wording) | "machine translation"
+    scope_en: str | None = None  # machine translation of scope_text (labelled in the portal)

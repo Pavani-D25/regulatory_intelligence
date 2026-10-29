@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 URL = "https://www.tisi.go.th/website/standardlist/comp_thai/th"
 SOURCE = "TH_TISI_MANDATORY"
 
+
 def _launch(p):
     from regtrack.sources.browser import launch
 
@@ -74,14 +75,21 @@ def scrape() -> list[dict]:
                 full = p_loc.inner_text()
                 b_loc = p_loc.locator("b")
                 number = b_loc.inner_text().strip() if b_loc.count() else ""
-                rest = full[len(number):] if number and full.startswith(number) else full
+                rest = full[len(number) :] if number and full.startswith(number) else full
                 parts = rest.split("วันที่มีผลใช้บังคับ:")
                 title = parts[0].strip()
                 effective_text = parts[1].strip() if len(parts) > 1 else None
                 a_loc = li.locator("div.col-4 a")
                 href = a_loc.get_attribute("href") if a_loc.count() else None
-                items.append({"category": category, "number": number, "title": title,
-                             "effective_text": effective_text, "href": href})
+                items.append(
+                    {
+                        "category": category,
+                        "number": number,
+                        "title": title,
+                        "effective_text": effective_text,
+                        "href": href,
+                    }
+                )
         b.close()
     return items
 
@@ -92,9 +100,14 @@ def to_listing(r: dict) -> Listing | None:
         return None
     m = re.search(r"[?&]id=(\d+)", href)
     item_id = f"id={m.group(1)}" if m else href
-    return Listing(item_id=item_id, url=href, title=f"{r['number']} {r['title']}".strip(),
-                   listing_date=parse_thai_date(r["effective_text"]), category=r["category"] or None,
-                   raw={"number": r["number"], "effective_text": r["effective_text"]})
+    return Listing(
+        item_id=item_id,
+        url=href,
+        title=f"{r['number']} {r['title']}".strip(),
+        listing_date=parse_thai_date(r["effective_text"]),
+        category=r["category"] or None,
+        raw={"number": r["number"], "effective_text": r["effective_text"]},
+    )
 
 
 DETAIL_SQL = """SELECT r.external_ref, r.listing_title, r.listing_category, d.storage_path
@@ -116,9 +129,18 @@ def full_text_listings(conn, detail_refs: set[str]) -> list[Listing]:
         for href in thai.FULL_TEXT_LINK.findall(raw.decode(html_encoding(raw), errors="ignore")):
             link = quote(unquote(href), safe=":/")  # the same file is linked both raw-Thai and %-encoded (มอก.341)
             number = (r["listing_title"] or "").split(" ")[0]
-            out.setdefault(link, Listing(item_id=link, url=link, title=f"{number} full text", listing_date=None,
-                                         category=thai.FULL_TEXT, file_name=link.rsplit("/", 1)[-1],
-                                         raw={"detail": r["external_ref"], "detail_category": r["listing_category"]}))
+            out.setdefault(
+                link,
+                Listing(
+                    item_id=link,
+                    url=link,
+                    title=f"{number} full text",
+                    listing_date=None,
+                    category=thai.FULL_TEXT,
+                    file_name=link.rsplit("/", 1)[-1],
+                    raw={"detail": r["external_ref"], "detail_category": r["listing_category"]},
+                ),
+            )
     return list(out.values())
 
 

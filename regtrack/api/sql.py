@@ -17,8 +17,10 @@ from regtrack.pipeline.mandates import version_sql
 RUN_STATUS = "CASE {c} WHEN 'success' THEN 'ok' WHEN 'warning' THEN 'partial' ELSE {c} END"
 # a change's review state as the portal knows it: reviewed -> confirmed; otherwise auto when Qwen wrote the summary,
 # needs_check when it is a template
-REVIEW = ("CASE WHEN {e}.review_status = 'reviewed' THEN 'confirmed' "
-          "WHEN {e}.details->>'summary_by' = 'qwen' THEN 'auto' ELSE 'needs_check' END")
+REVIEW = (
+    "CASE WHEN {e}.review_status = 'reviewed' THEN 'confirmed' "
+    "WHEN {e}.details->>'summary_by' = 'qwen' THEN 'auto' ELSE 'needs_check' END"
+)
 
 
 def docs(cc: str | None = None, filtered: bool = False) -> str:
@@ -47,25 +49,25 @@ def changes(cc: str | None = None) -> str:
                        coalesce(e.details, '{{}}'::jsonb) - 'legacy_review_status'
                          || CASE WHEN e.reviewed_at IS NOT NULL
                                  THEN jsonb_build_object('reviewed_at', e.reviewed_at) ELSE '{{}}'::jsonb END AS details,
-                       {REVIEW.format(e='e')} AS review_status,
+                       {REVIEW.format(e="e")} AS review_status,
                        e.reviewed_at, e.sla_due_at, rg.code AS country
                 FROM regulation_changes e JOIN regions rg ON rg.id = e.region_id
-                WHERE {country.region_sql('e', cc)})"""
+                WHERE {country.region_sql("e", cc)})"""
 
 
 def sources(cc: str | None = None) -> str:
     """sources with the old names: schedule_hours, last_run_at, last_status (ok / partial / failed)."""
     return f"""(SELECT s.id, s.code, s.name, s.base_url, s.sync_frequency_minutes / 60 AS schedule_hours,
-                       s.last_synced_at AS last_run_at, {RUN_STATUS.format(c='s.last_sync_status')} AS last_status,
+                       s.last_synced_at AS last_run_at, {RUN_STATUS.format(c="s.last_sync_status")} AS last_status,
                        s.is_active, rg.code AS country
-                FROM sources s JOIN regions rg ON rg.id = s.region_id WHERE {country.region_sql('s', cc)})"""
+                FROM sources s JOIN regions rg ON rg.id = s.region_id WHERE {country.region_sql("s", cc)})"""
 
 
 def runs(cc: str | None = None) -> str:
     """ingestion_runs as crawl runs (status ok / partial / failed / running)."""
-    return f"""(SELECT r.id, r.source_id, r.started_at, r.finished_at, {RUN_STATUS.format(c='r.status')} AS status,
+    return f"""(SELECT r.id, r.source_id, r.started_at, r.finished_at, {RUN_STATUS.format(c="r.status")} AS status,
                        r.stats, r.log
-                FROM ingestion_runs r JOIN sources s ON s.id = r.source_id WHERE {country.region_sql('s', cc)})"""
+                FROM ingestion_runs r JOIN sources s ON s.id = r.source_id WHERE {country.region_sql("s", cc)})"""
 
 
 def settings(conn) -> dict[str, str]:
@@ -74,7 +76,10 @@ def settings(conn) -> dict[str, str]:
 
 
 def put_setting(conn, key: str, value: str) -> None:
-    conn.execute("""INSERT INTO app_settings (key, value)
+    conn.execute(
+        """INSERT INTO app_settings (key, value)
                     VALUES (%s, CASE WHEN %s ~ '^-?[0-9]+(\\.[0-9]+)?$' OR %s IN ('true','false') THEN %s::jsonb
                                      ELSE to_jsonb(%s::text) END)
-                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (key, value, value, value, value))
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
+        (key, value, value, value, value),
+    )

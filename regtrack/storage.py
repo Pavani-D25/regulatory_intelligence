@@ -101,6 +101,7 @@ def _finalise(tmp: Path, dst: Path) -> None:
 # <sha[:2]>/<sha>.<ext>; documents.storage_path is s3://<bucket>/<key>. Write-once in both: an existing key is
 # never written again; in a bucket created with object locking every object also gets a legal hold (no delete).
 
+
 def object_key(sha: str, ext: str) -> str:
     return f"{sha[:2]}/{sha}.{ext}"
 
@@ -110,7 +111,7 @@ def is_s3_uri(storage_path: str) -> bool:
 
 
 def split_s3_uri(uri: str) -> tuple[str, str]:
-    bucket, _, key = uri[len("s3://"):].partition("/")
+    bucket, _, key = uri[len("s3://") :].partition("/")
     return bucket, key
 
 
@@ -167,8 +168,14 @@ def s3_put(path_or_bytes: Path | bytes, sha: str, ext: str) -> tuple[str, bool]:
     if locked:
         extra["legal_hold"] = True
     if isinstance(path_or_bytes, (bytes, bytearray)):
-        client.put_object(s.s3_bucket, key, io.BytesIO(path_or_bytes), len(path_or_bytes),
-                          metadata={"x-amz-meta-sha256": sha}, **extra)
+        client.put_object(
+            s.s3_bucket,
+            key,
+            io.BytesIO(path_or_bytes),
+            len(path_or_bytes),
+            metadata={"x-amz-meta-sha256": sha},
+            **extra,
+        )
     else:
         client.fput_object(s.s3_bucket, key, str(path_or_bytes), metadata={"x-amz-meta-sha256": sha}, **extra)
     return uri, True

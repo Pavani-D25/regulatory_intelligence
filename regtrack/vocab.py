@@ -24,12 +24,16 @@ def _arr(s: str) -> list[str]:
 @lru_cache(maxsize=1)
 def _parse() -> tuple[dict, dict]:
     sql = SEED.read_text(encoding="utf-8")
-    cat_sql = sql[sql.index("INSERT INTO vehicle_category"):sql.index("INSERT INTO domain")]
-    dom_sql = sql[sql.index("INSERT INTO domain"):sql.index("INSERT INTO source")]
-    cats = {m.group(1): {"label": m.group(2), "synonyms": _arr(m.group(3)), "in_scope": m.group(4) == "TRUE"}
-            for m in _ROW.finditer(cat_sql)}
-    doms = {RENAMED.get(m.group(1), m.group(1)): {"label": m.group(2), "keywords": _arr(m.group(3))}
-            for m in _ROW.finditer(dom_sql)}
+    cat_sql = sql[sql.index("INSERT INTO vehicle_category") : sql.index("INSERT INTO domain")]
+    dom_sql = sql[sql.index("INSERT INTO domain") : sql.index("INSERT INTO source")]
+    cats = {
+        m.group(1): {"label": m.group(2), "synonyms": _arr(m.group(3)), "in_scope": m.group(4) == "TRUE"}
+        for m in _ROW.finditer(cat_sql)
+    }
+    doms = {
+        RENAMED.get(m.group(1), m.group(1)): {"label": m.group(2), "keywords": _arr(m.group(3))}
+        for m in _ROW.finditer(dom_sql)
+    }
     return cats, doms
 
 

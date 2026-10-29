@@ -15,8 +15,8 @@ from regtrack.pipeline import patterns as P
 
 @dataclass
 class NotificationId:
-    series: str            # GSR | SO
-    number: str            # '659'
+    series: str  # GSR | SO
+    number: str  # '659'
     extraordinary: bool
     date: date | None
     year: int | None
@@ -39,7 +39,7 @@ class NotificationId:
 
 @dataclass
 class Identity:
-    kind: str                              # notification | ais | tap | form | none
+    kind: str  # notification | ais | tap | form | none
     canonical_id: str | None = None
     series: str | None = None
     number: str | None = None
@@ -61,7 +61,7 @@ _INTRO = re.compile(r"(NOTIFICATION|ORDER|CORRIGENDUM|ADDENDUM|New\s+Delhi)", re
 
 def _date_before(text: str, pos: int, window: int = 600) -> date | None:
     """The notification date: 'New Delhi, the 25th August, 2022' just before the heading."""
-    seg = text[max(0, pos - window):pos]
+    seg = text[max(0, pos - window) : pos]
     ms = list(P.NEW_DELHI_DATE.finditer(seg))
     for m in reversed(ms):
         d = P.parse_date(m.group(1))
@@ -73,10 +73,13 @@ def _date_before(text: str, pos: int, window: int = 600) -> date | None:
 
 def _year_before(text: str, pos: int, window: int = 300) -> int | None:
     """Fallback when the day is garbled: 'New Delhi, the ~th March, 2014' -> 2014."""
-    seg = text[max(0, pos - window):pos]
+    seg = text[max(0, pos - window) : pos]
     # skip years that belong to a title ("Central Motor Vehicles Rules, 1989", "Motor Vehicles Act, 1988 (59 of 1988)")
-    ys = [m.group(1) for m in re.finditer(r"(?<!\d)(19[5-9]\d|20[0-4]\d)(?!\d)", seg)
-          if not re.search(r"(?:Rules|Act|of)\s*,?\s*$", seg[max(0, m.start() - 12):m.start()], re.I)]
+    ys = [
+        m.group(1)
+        for m in re.finditer(r"(?<!\d)(19[5-9]\d|20[0-4]\d)(?!\d)", seg)
+        if not re.search(r"(?:Rules|Act|of)\s*,?\s*$", seg[max(0, m.start() - 12) : m.start()], re.I)
+    ]
     return int(ys[-1]) if ys else None
 
 
@@ -106,18 +109,21 @@ def notification_ids(text: str) -> list[NotificationId]:
             # heading must look operative: followed by 'In exercise', 'Whereas', 'The Central Government' ... (the words
             # in any case: OCR gives 'whereas the draft', 'the draft rules'); otherwise any capitalised word
             if heading_pass:
-                tail = text[m.end():m.end() + 80]
-                if not re.match(r"\s*((?i:In\s+exercise|exercise|Whereas|The\s+Central|The\s+draft|In\s+the|"
-                                r"In\s+pursuance|Notwithstanding|The\s*following|In\s+supersession|Corrigendum)|"
-                                r"[A-Z])", tail):
+                tail = text[m.end() : m.end() + 80]
+                if not re.match(
+                    r"\s*((?i:In\s+exercise|exercise|Whereas|The\s+Central|The\s+draft|In\s+the|"
+                    r"In\s+pursuance|Notwithstanding|The\s*following|In\s+supersession|Corrigendum)|"
+                    r"[A-Z])",
+                    tail,
+                ):
                     continue
             if heading_pass:
                 d = _date_before(text, m.start())
                 year = d.year if d else (_year_before(text, m.start()) or masthead_year)
             else:  # a reference: 'S.O. 1365(E), dated the 13th December, 2004'
-                after = re.match(r"[\s,]*(?:dated|dt\.?|of)\s*(?:the\s*)?(.{0,40})", text[m.end():m.end() + 60], re.I)
+                after = re.match(r"[\s,]*(?:dated|dt\.?|of)\s*(?:the\s*)?(.{0,40})", text[m.end() : m.end() + 60], re.I)
                 d = P.parse_date(after.group(1)) if after else None
-                ym = re.match(r"\s*(?:,|of|dated)?\s*(\d{4})", text[m.end():m.end() + 12])
+                ym = re.match(r"\s*(?:,|of|dated)?\s*(\d{4})", text[m.end() : m.end() + 12])
                 year = d.year if d else (int(ym.group(1)) if ym and 1950 < int(ym.group(1)) < 2100 else None)
             found.append(NotificationId(series, num, ext, d, year, pos=m.start(), heading=heading_pass))
             seen.add(key)
@@ -130,33 +136,46 @@ def notification_identity(english: str, hindi_text: str | None = None) -> Identi
     primary = heads[0] if heads else None
     if primary is None:
         # first id within the first 3000 chars with a resolvable date
-        early = [i for i in ids if i.pos < 3000 and i.year
-                 and not REF_BEFORE.search(english[max(0, i.pos - 40):i.pos])]
+        early = [
+            i for i in ids if i.pos < 3000 and i.year and not REF_BEFORE.search(english[max(0, i.pos - 40) : i.pos])
+        ]
         primary = early[0] if early else None
     if primary is None and hindi_text:
         m = P.HI_ID.search(hindi_text)
         if m:
             yr = _masthead_year(hindi_text)
             if yr:
-                primary = NotificationId("GSR" if m.group(1).startswith("सा") else "SO", str(int(m.group(2))), True,
-                                         None, yr, hindi=True)
+                primary = NotificationId(
+                    "GSR" if m.group(1).startswith("सा") else "SO", str(int(m.group(2))), True, None, yr, hindi=True
+                )
     if primary is None:
         return None
     others = [i.canonical_id for i in ids if i is not primary and i.year]
-    return Identity(kind="notification", canonical_id=primary.canonical_id, series=primary.series_label,
-                    number=primary.number_label, year=primary.year, doc_date=primary.date,
-                    doc_date_precision="day" if primary.date else "year",
-                    others=list(dict.fromkeys(others))[:20],
-                    ref_numbers=sorted({f"{i.series}-{i.number}" for i in ids if i is not primary}),
-                    evidence=english[max(0, primary.pos - 120):primary.pos + 120].strip())
+    return Identity(
+        kind="notification",
+        canonical_id=primary.canonical_id,
+        series=primary.series_label,
+        number=primary.number_label,
+        year=primary.year,
+        doc_date=primary.date,
+        doc_date_precision="day" if primary.date else "year",
+        others=list(dict.fromkeys(others))[:20],
+        ref_numbers=sorted({f"{i.series}-{i.number}" for i in ids if i is not primary}),
+        evidence=english[max(0, primary.pos - 120) : primary.pos + 120].strip(),
+    )
 
 
 def title_notification_ids(title: str) -> list[tuple[str, str]]:
     """IDs claimed by a listing title (series, number) - used only for the mismatch check."""
-    out = [(P.series_code(m.group(1)), str(int(m.group(2)))) for m in P.NUM_ID.finditer(title or "")
-           if not re.match(r"\s*(cc|kw|km)", title[m.end():m.end() + 4] or "", re.I)]
+    out = [
+        (P.series_code(m.group(1)), str(int(m.group(2))))
+        for m in P.NUM_ID.finditer(title or "")
+        if not re.match(r"\s*(cc|kw|km)", title[m.end() : m.end() + 4] or "", re.I)
+    ]
     # ranges: "S.O. 425(E) to 426(E)"
-    for m in re.finditer(P.SERIES_RE + r"\s*(\d{1,5})\s*\(?E?\)?\s*(?:to|-|–|&|and)\s*(\d{1,5})\s*\(\s*E\s*\)", title or "", re.I):
+    for m in re.finditer(
+        P.SERIES_RE + r"\s*(\d{1,5})\s*\(?E?\)?\s*(?:to|-|–|&|and)\s*(\d{1,5})\s*\(\s*E\s*\)", title or "", re.I
+    ):
         out.append((P.series_code(m.group(1)), str(int(m.group(3)))))
     return out
 
@@ -193,7 +212,7 @@ def ais_identity(cover: str) -> Identity | None:
             best = near[0]
     p = P.parse_ais_code(best.group(0))
     # Rev/Part are sometimes printed on the following line: look a little further
-    window = head[best.start():best.end() + 60]
+    window = head[best.start() : best.end() + 60]
     if p["rev"] is None:
         r = re.search(r"\(\s*Rev(?:ision)?\s*\.?\s*(\d{1,2})\s*\)", window, re.I)
         if r:
@@ -203,25 +222,47 @@ def ais_identity(cover: str) -> Identity | None:
         if r:
             p["part"] = P._part_num(r.group(1))
     cid = P.ais_canonical(p["code"], p["part"], p["rev"])
-    ym = cover_month(head[best.end():best.end() + 1500])
-    return Identity(kind="ais", canonical_id=cid, number=f"{p['code']:03d}",
-                    part=str(p["part"]) if p["part"] else None, revision=p["rev"],
-                    year=ym[0] if ym else p.get("year"), family_key=P.ais_family(p["code"], p["part"]),
-                    doc_date=date(ym[0], ym[1], 1) if ym else None, doc_date_precision="month" if ym else None,
-                    evidence=best.group(0))
+    ym = cover_month(head[best.end() : best.end() + 1500])
+    return Identity(
+        kind="ais",
+        canonical_id=cid,
+        number=f"{p['code']:03d}",
+        part=str(p["part"]) if p["part"] else None,
+        revision=p["rev"],
+        year=ym[0] if ym else p.get("year"),
+        family_key=P.ais_family(p["code"], p["part"]),
+        doc_date=date(ym[0], ym[1], 1) if ym else None,
+        doc_date_precision="month" if ym else None,
+        evidence=best.group(0),
+    )
 
 
 # ------------------------------------------------------------------ ARAI listing code strings
 # 'Amd. 1 to 4', 'Amds. 1 to 13', 'Amendments 1 to 9', 'Amendment No. 1' (not 'Corrigendum 1 to Amd. 5')
-ARAI_AMD = re.compile(r"(?<!to )\bAm(?:en)?d(?:ment)?s?\.?\s*(?:No\.?\s*)?(\d{1,2})(?:\s*(?:to|-|–)\s*(\d{1,2}))?", re.I)
+ARAI_AMD = re.compile(
+    r"(?<!to )\bAm(?:en)?d(?:ment)?s?\.?\s*(?:No\.?\s*)?(\d{1,2})(?:\s*(?:to|-|–)\s*(\d{1,2}))?", re.I
+)
 
 
 def parse_arai_code(code: str) -> dict:
     """ARAI 'code' free text -> structured (ETL_SPEC 1.1). It is a listing CLAIM, used as a hint only."""
     s = code.strip()
-    out: dict = {"raw": s, "kind": "standard", "code": None, "part": None, "rev": None, "year": None,
-                 "amendments": [], "corrigenda": [], "draft": False, "draft_stage": None, "table": None,
-                 "draft_amendment_no": None, "hosted_on": None, "comments_until": None}
+    out: dict = {
+        "raw": s,
+        "kind": "standard",
+        "code": None,
+        "part": None,
+        "rev": None,
+        "year": None,
+        "amendments": [],
+        "corrigenda": [],
+        "draft": False,
+        "draft_stage": None,
+        "table": None,
+        "draft_amendment_no": None,
+        "hosted_on": None,
+        "comments_until": None,
+    }
     if s.lower() == "list":
         out["kind"] = "list"
         return out
@@ -244,7 +285,7 @@ def parse_arai_code(code: str) -> dict:
         out["table"] = t.group(1).replace(" ", "")
         out["kind"] = "table"
     for m in ARAI_AMD.finditer(s):
-        if out["draft_amendment_no"] and re.match(r"Draft", s[max(0, m.start() - 6):m.start()].strip() or "x"):
+        if out["draft_amendment_no"] and re.match(r"Draft", s[max(0, m.start() - 6) : m.start()].strip() or "x"):
             continue
         a, b = int(m.group(1)), int(m.group(2) or m.group(1))
         out["amendments"].extend(range(a, b + 1))
@@ -272,8 +313,13 @@ def tap_identity(text: str) -> Identity | None:
         return None
     m = P.TAP_ISSUE.search(text[:8000])
     issue = int(m.group(1)) if m else 4
-    return Identity(kind="tap", canonical_id=f"TAP-115/116(Issue.{issue})", number="115/116",
-                    family_key="TAP-115/116", evidence=m.group(0) if m else None)
+    return Identity(
+        kind="tap",
+        canonical_id=f"TAP-115/116(Issue.{issue})",
+        number="115/116",
+        family_key="TAP-115/116",
+        evidence=m.group(0) if m else None,
+    )
 
 
 def form_identity(text: str, file_name: str = "") -> Identity | None:

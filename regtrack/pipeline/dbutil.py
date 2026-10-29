@@ -58,19 +58,28 @@ def add_flag(conn: psycopg.Connection, entity: str, entity_id: int, rule: str, d
     hit = conn.execute(
         f"SELECT 1 FROM quality_flags WHERE entity=%s AND entity_id=%s AND rule=%s "
         f"AND (coalesce(details,'{{}}'::jsonb){notes}) = %s::jsonb "
-        f"AND (resolved_at IS NULL OR details ? 'resolution') LIMIT 1", (entity, entity_id, rule, d)).fetchone()
+        f"AND (resolved_at IS NULL OR details ? 'resolution') LIMIT 1",
+        (entity, entity_id, rule, d),
+    ).fetchone()
     if hit:
         return False
-    conn.execute("INSERT INTO quality_flags (entity, entity_id, rule, details) VALUES (%s,%s,%s,%s::jsonb)",
-                 (entity, entity_id, rule, d))
+    conn.execute(
+        "INSERT INTO quality_flags (entity, entity_id, rule, details) VALUES (%s,%s,%s,%s::jsonb)",
+        (entity, entity_id, rule, d),
+    )
     return True
 
 
 def set_stage(conn: psycopg.Connection, file_id: int, stage: str, error: str | None = None) -> None:
     """Move a stored file (documents) to a stage; its listings follow (downloaded / processed / failed)."""
-    cur = conn.execute("UPDATE documents SET stage=%s, stage_error=%s WHERE id=%s "
-                       "AND (stage<>%s OR stage_error IS DISTINCT FROM %s)", (stage, error, file_id, stage, error))
+    cur = conn.execute(
+        "UPDATE documents SET stage=%s, stage_error=%s WHERE id=%s AND (stage<>%s OR stage_error IS DISTINCT FROM %s)",
+        (stage, error, file_id, stage, error),
+    )
     if cur.rowcount:
         status = {"downloaded": "downloaded", "failed": "failed"}.get(stage, "processed")
-        conn.execute("UPDATE raw_ingestion_records SET processing_status=%s WHERE document_id=%s "
-                     "AND processing_status NOT IN (%s, 'needs_review')", (status, file_id, status))
+        conn.execute(
+            "UPDATE raw_ingestion_records SET processing_status=%s WHERE document_id=%s "
+            "AND processing_status NOT IN (%s, 'needs_review')",
+            (status, file_id, status),
+        )

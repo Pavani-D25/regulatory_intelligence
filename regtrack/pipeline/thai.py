@@ -15,8 +15,20 @@ AUTOMOTIVE_CATEGORY = "ยานยนต์"  # the TISI list's own "automotive
 FULL_TEXT = "fulltext"  # listing category of a standard's full-text PDF (service.tisi.go.th/fulltext/...)
 FULL_TEXT_LINK = re.compile(r"""href=["'](https?://service\.tisi\.go\.th/fulltext/[^"']+\.pdf)["']""", re.I)
 
-THAI_MONTH = {"ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
-              "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12}
+THAI_MONTH = {
+    "ม.ค.": 1,
+    "ก.พ.": 2,
+    "มี.ค.": 3,
+    "เม.ย.": 4,
+    "พ.ค.": 5,
+    "มิ.ย.": 6,
+    "ก.ค.": 7,
+    "ส.ค.": 8,
+    "ก.ย.": 9,
+    "ต.ค.": 10,
+    "พ.ย.": 11,
+    "ธ.ค.": 12,
+}
 DATE_RE = re.compile(r"(\d{1,2})\s+([ก-๙.]+)\s+(\d{4}|\d{2})(?!\d)")
 # "มอก. 721-2551", "มอก.60947 เล่ม 2-2569", "มอก.60335 เล่ม 2(24)-2563" (เล่ม = part)
 # the full-text PDFs print "มอก. 721   2551" (the dash is a lost glyph): a dash, or two or more spaces
@@ -67,8 +79,16 @@ def tis_number(text: str) -> dict | None:
         return None
     number, part, year_be = m.group(1), m.group(2), int(m.group(3))
     base = f"TIS-{number}" + (f"(Part{part})" if part else "")
-    return {"number": number, "part": part, "year_be": year_be, "year": year_be - 543, "family_key": base,
-            "canonical_id": f"{base}-{year_be}", "tis_no": clean(m.group(0)), "end": m.end()}
+    return {
+        "number": number,
+        "part": part,
+        "year_be": year_be,
+        "year": year_be - 543,
+        "family_key": base,
+        "canonical_id": f"{base}-{year_be}",
+        "tis_no": clean(m.group(0)),
+        "end": m.end(),
+    }
 
 
 def tis_numbers(text: str) -> list[dict]:
@@ -99,7 +119,7 @@ def title_of(text: str) -> str | None:
     n = tis_number(text)
     if not n:
         return None
-    rest = text[n["end"]:n["end"] + 600]
+    rest = text[n["end"] : n["end"] + 600]
     t = clean(re.split(r"\(\s*วันที่มีผล|ขอบข่าย", rest)[0])
     return t or None
 
@@ -109,7 +129,7 @@ def scope_of(text: str) -> str | None:
         return None
     s = text.split("ขอบข่าย", 1)[1]
     m = SCOPE_END.search(s)
-    return clean(s[:m.start()] if m else s[:3000]) or None
+    return clean(s[: m.start()] if m else s[:3000]) or None
 
 
 def is_automotive(category: str | None, text: str) -> bool:
@@ -131,7 +151,7 @@ def categories_from(title: str | None, scope: str | None) -> list[str]:
     for letter, digit in UN_CODE.findall(scope):
         cats.add(f"{letter}{digit}")
     for m in CLASS_WORD.finditer(scope):
-        for letter in UN_CLASS.findall(scope[m.end():m.end() + CLASS_WINDOW]):
+        for letter in UN_CLASS.findall(scope[m.end() : m.end() + CLASS_WINDOW]):
             cats.update(CLASS_CATEGORIES[letter])
     if MOTORCYCLE.search(words):
         cats.add("L3")
@@ -147,17 +167,28 @@ def fields_of(text: str) -> dict:
     n = tis_number(text) or {}
     eff = EFFECTIVE.search(text)
     eff_date = parse_thai_date(eff.group(1)) if eff else None
-    return {"title": title_of(text), "tis_no": n.get("tis_no"), "year_be": n.get("year_be"),
-            "effective_date": eff_date.isoformat() if eff_date else None, "scope_text": scope_of(text),
-            "hs_codes": sorted(set(HS_CODE.findall(text)))}
+    return {
+        "title": title_of(text),
+        "tis_no": n.get("tis_no"),
+        "year_be": n.get("year_be"),
+        "effective_date": eff_date.isoformat() if eff_date else None,
+        "scope_text": scope_of(text),
+        "hs_codes": sorted(set(HS_CODE.findall(text))),
+    }
 
 
 # domains and powertrains from the Thai title + scope (the English vocabularies of regtrack/vocab.py do not apply)
-DOMAIN_WORDS = [("EMISSION", re.compile(r"สารมลพิษ|ไอเสีย")),
-                ("SAFETY_EQUIPMENT", re.compile(r"ยางล้อ|ยางใน|เข็มขัดนิรภัย|หมวกนิรภัย|กระจกนิรภัย")),
-                ("EV_ALT_FUEL", re.compile(r"ก๊าซธรรมชาติ|ก๊าซปิโตรเลียมเหลว"))]
-POWERTRAIN_WORDS = [("petrol", re.compile(r"จุดระเบิดด้วยประกายไฟ")), ("diesel", re.compile(r"จุดระเบิดด้วยการอัด")),
-                    ("cng", re.compile(r"ก๊าซธรรมชาติ")), ("lpg", re.compile(r"ก๊าซปิโตรเลียมเหลว"))]
+DOMAIN_WORDS = [
+    ("EMISSION", re.compile(r"สารมลพิษ|ไอเสีย")),
+    ("SAFETY_EQUIPMENT", re.compile(r"ยางล้อ|ยางใน|เข็มขัดนิรภัย|หมวกนิรภัย|กระจกนิรภัย")),
+    ("EV_ALT_FUEL", re.compile(r"ก๊าซธรรมชาติ|ก๊าซปิโตรเลียมเหลว")),
+]
+POWERTRAIN_WORDS = [
+    ("petrol", re.compile(r"จุดระเบิดด้วยประกายไฟ")),
+    ("diesel", re.compile(r"จุดระเบิดด้วยการอัด")),
+    ("cng", re.compile(r"ก๊าซธรรมชาติ")),
+    ("lpg", re.compile(r"ก๊าซปิโตรเลียมเหลว")),
+]
 
 
 def domains_from(title: str | None, scope: str | None) -> list[str]:
@@ -181,22 +212,48 @@ def full_text_fields(text: str) -> dict:
 # Acts (พระราชบัญญัติ), ministerial regulations (กฎกระทรวง), DLT notifications (ประกาศกรมการขนส่งทางบก) and other
 # notices, in Thai or in an official English translation. Identity, title and date from the first page.
 THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
-THAI_MONTH_FULL = {m: i for i, m in enumerate(("มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-                                               "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"), 1)}
+THAI_MONTH_FULL = {
+    m: i
+    for i, m in enumerate(
+        (
+            "มกราคม",
+            "กุมภาพันธ์",
+            "มีนาคม",
+            "เมษายน",
+            "พฤษภาคม",
+            "มิถุนายน",
+            "กรกฎาคม",
+            "สิงหาคม",
+            "กันยายน",
+            "ตุลาคม",
+            "พฤศจิกายน",
+            "ธันวาคม",
+        ),
+        1,
+    )
+}
 FULL_DATE = re.compile(r"(\d{1,2})\s*(" + "|".join(THAI_MONTH_FULL) + r")\s*(?:พ\.\s*ศ\.\s*)?(\d{4})")
 LAW_KINDS = [  # (class, pattern on the first page), most specific first
     ("TIS_STANDARD", re.compile(r"มาตรฐานผลิตภัณฑ์อุตสาหกรรม|THAI INDUSTRIAL STANDARD")),
     ("MINISTERIAL_REGULATION", re.compile(r"กฎกระทรวง|Ministerial\s+Regulation", re.I)),
-    ("DLT_NOTIFICATION", re.compile(r"ประกาศกรมการขนส่งทางบก|Notification\s+of\s+the\s+Department\s+of\s+Land\s+Transport", re.I)),
+    (
+        "DLT_NOTIFICATION",
+        re.compile(r"ประกาศกรมการขนส่งทางบก|Notification\s+of\s+the\s+Department\s+of\s+Land\s+Transport", re.I),
+    ),
     ("TH_ACT", re.compile(r"^\s*พระราชบัญญัติ|\bAct,?\s+B\.\s*E\.\s*\d{4}", re.M | re.I)),
-    ("GAZETTE_NOTICE", re.compile(r"ประกาศ(?:กระทรวง|สำนักงาน|กรม)|ราชกิจจานุเบกษา|Notification\s+of\s+the\s+Ministry", re.I)),
+    (
+        "GAZETTE_NOTICE",
+        re.compile(r"ประกาศ(?:กระทรวง|สำนักงาน|กรม)|ราชกิจจานุเบกษา|Notification\s+of\s+the\s+Ministry", re.I),
+    ),
 ]
 MR_NO = re.compile(r"กฎกระทรวง\s*(?:ฉบับที่\s*(\d{1,3}))?\s*\(?\s*พ\.\s*ศ\.\s*(\d{4})\s*\)?")
 ACT_TITLE = re.compile(r"(พระราชบัญญัติ[^\n]{2,120}?พ\.\s*ศ\.\s*(\d{4}))")
 SUBJECT = re.compile(r"เรื่อง\s+([^\n]{4,200})")
-MINISTRY = [("MOT", re.compile(r"กระทรวงคมนาคม|Ministry\s+of\s+Transport", re.I)),
-            ("MOIND", re.compile(r"กระทรวงอุตสาหกรรม|Ministry\s+of\s+Industry", re.I)),
-            ("MOI", re.compile(r"กระทรวงมหาดไทย|Ministry\s+of\s+Interior", re.I))]
+MINISTRY = [
+    ("MOT", re.compile(r"กระทรวงคมนาคม|Ministry\s+of\s+Transport", re.I)),
+    ("MOIND", re.compile(r"กระทรวงอุตสาหกรรม|Ministry\s+of\s+Industry", re.I)),
+    ("MOI", re.compile(r"กระทรวงมหาดไทย|Ministry\s+of\s+Interior", re.I)),
+]
 EN_YEAR = re.compile(r"B\.\s*E\.\s*(\d{4})")
 
 
@@ -237,9 +294,11 @@ def law_identity(text: str, doc_class: str) -> dict | None:
         ministry = next((code for code, rx in MINISTRY if rx.search(head)), "TH")
         if m:
             year_be = int(m.group(2))
-            line = clean(head[m.start():m.start() + 200].split("\n")[0])
+            line = clean(head[m.start() : m.start() + 200].split("\n")[0])
             title = line
-            cid = f"TH-MR-{ministry}-{m.group(1)}-{year_be}" if m.group(1) else f"TH-MR-{ministry}-{_h8(line)}-{year_be}"
+            cid = (
+                f"TH-MR-{ministry}-{m.group(1)}-{year_be}" if m.group(1) else f"TH-MR-{ministry}-{_h8(line)}-{year_be}"
+            )
     elif doc_class == "TH_ACT":
         m = ACT_TITLE.search(head)
         if m:
@@ -258,12 +317,19 @@ def law_identity(text: str, doc_class: str) -> dict | None:
         first = clean(head[:200].split("\n")[0]) if head.strip() else ""
         if y and first:
             year_be, title = int(y.group(1)), first
-            kind = {"TH_ACT": "TH-ACT", "MINISTERIAL_REGULATION": "TH-MR-EN", "DLT_NOTIFICATION": "TH-DLT"}.get(doc_class, "TH-NOTICE")
+            kind = {"TH_ACT": "TH-ACT", "MINISTERIAL_REGULATION": "TH-MR-EN", "DLT_NOTIFICATION": "TH-DLT"}.get(
+                doc_class, "TH-NOTICE"
+            )
             cid = f"{kind}-{year_be}-{_h8(title)}"
     if not cid:
         return None
-    return {"canonical_id": cid, "title": title, "year_be": year_be, "year": (year_be - 543) if year_be else None,
-            "date": full_thai_date(head[-3000:]) or full_thai_date(head)}
+    return {
+        "canonical_id": cid,
+        "title": title,
+        "year_be": year_be,
+        "year": (year_be - 543) if year_be else None,
+        "date": full_thai_date(head[-3000:]) or full_thai_date(head),
+    }
 
 
 # topics of the legal texts (their own vocabulary list, so the TIS domains above stay as they are)
@@ -274,7 +340,12 @@ LAW_DOMAIN_WORDS = [
     ("BRAKING", re.compile(r"ห้ามล้อ|เบรก|brak", re.I)),
     ("EV_ALT_FUEL", re.compile(r"รถยนต์ไฟฟ้า|ยานยนต์ไฟฟ้า|electric\s+vehicle|\bR\s?100\b", re.I)),
     ("BATTERY", re.compile(r"แบตเตอรี่|REESS|traction\s+battery", re.I)),
-    ("FUEL_EFFICIENCY", re.compile(r"คาร์บอนไดออกไซด์|อัตราการใช้น้ำมัน|อัตราการใช้เชื้อเพลิง|อีโคสติ๊กเกอร์|ECO\s*Sticker|CO2|fuel\s+consumption", re.I)),
+    (
+        "FUEL_EFFICIENCY",
+        re.compile(
+            r"คาร์บอนไดออกไซด์|อัตราการใช้น้ำมัน|อัตราการใช้เชื้อเพลิง|อีโคสติ๊กเกอร์|ECO\s*Sticker|CO2|fuel\s+consumption", re.I
+        ),
+    ),
     ("SAFETY_EQUIPMENT", re.compile(r"เข็มขัดนิรภัย|กระจกนิรภัย|ยางล้อ|safety\s+belt", re.I)),
 ]
 
@@ -285,9 +356,11 @@ def law_domains(text: str) -> list[str]:
 
 
 # ------------------------------------------------------------------ English titles (dashboard)
-COVER_SKIP = re.compile(r"THAI INDUSTRIAL STANDARD|INDUSTRIAL STANDARDS INSTITUTE|MINISTRY OF INDUSTRY|ISBN|\bICS\b|UDC|^TIS\b|"
-                        r"<<<PAGE",
-                        re.I)
+COVER_SKIP = re.compile(
+    r"THAI INDUSTRIAL STANDARD|INDUSTRIAL STANDARDS INSTITUTE|MINISTRY OF INDUSTRY|ISBN|\bICS\b|UDC|^TIS\b|"
+    r"<<<PAGE",
+    re.I,
+)
 SMALL_WORDS = {"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"}
 ACRONYMS = {"UN", "EU", "EV", "LPG", "NGV", "CNG", "ABS", "EMC", "HV", "TIS", "ISO", "IEC", "ECE", "GVW"}
 
@@ -303,8 +376,11 @@ def nice_case(s: str) -> str:
             out.append(w.lower())
         else:
             # capitalise the first letter even after an opening bracket or quote: "(component" -> "(Component"
-            out.append("-".join(re.sub(r"^(\W*)(\w)", lambda m: m.group(1) + m.group(2).upper(), p.lower())
-                                for p in w.split("-")))
+            out.append(
+                "-".join(
+                    re.sub(r"^(\W*)(\w)", lambda m: m.group(1) + m.group(2).upper(), p.lower()) for p in w.split("-")
+                )
+            )
     return " ".join(out)
 
 
@@ -314,8 +390,12 @@ def english_cover_title(text: str) -> str | None:
     cand: list[str] = []
     for ln in lines:
         letters = re.findall(r"[A-Za-z]", ln)
-        title_like = (len(letters) >= (3 if cand else 8) and not THAI_ANY.search(ln) and not COVER_SKIP.search(ln)
-                      and sum(ch.isupper() for ch in letters) / len(letters) > 0.8)
+        title_like = (
+            len(letters) >= (3 if cand else 8)
+            and not THAI_ANY.search(ln)
+            and not COVER_SKIP.search(ln)
+            and sum(ch.isupper() for ch in letters) / len(letters) > 0.8
+        )
         if title_like:
             cand.append(ln)
         elif cand and not ln:

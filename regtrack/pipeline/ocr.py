@@ -22,10 +22,12 @@ from pydantic import BaseModel, Field
 log = logging.getLogger(__name__)
 DPI = 200
 WORD = re.compile(r"[A-Za-z]{2,}")
-COMMON = set("""the of and to in a is that for be by with as on or this shall any under such which from
+COMMON = set(
+    """the of and to in a is that for be by with as on or this shall any under such which from
 notification rule rules vehicle vehicles motor government central india section sub said date new delhi
 ministry road transport highways no namely amendment hereby following published gazette part ii extraordinary
-order made act year with effect provided be may an at are has have it its not other all""".split())
+order made act year with effect provided be may an at are has have it its not other all""".split()
+)
 
 
 class OcrPage(BaseModel):
@@ -73,8 +75,10 @@ def heuristic_confidence(text: str) -> float:
     return round(min(1.0, good / len(tokens) * min(1.0, 0.5 + 2 * common / len(tokens))), 3)
 
 
-GOOD_TOKEN = re.compile(r"^[(\[\"']?(?:[A-Z]?[a-z]+|[A-Z]+|\d+(?:[.,/\-]\d+)*(?:st|nd|rd|th)?|[A-Z]\.(?:[A-Z]\.)*)"
-                        r"(?:\([A-Za-z0-9]+\))?[)\]\"']?[.,;:\-—]*$")
+GOOD_TOKEN = re.compile(
+    r"^[(\[\"']?(?:[A-Z]?[a-z]+|[A-Z]+|\d+(?:[.,/\-]\d+)*(?:st|nd|rd|th)?|[A-Z]\.(?:[A-Z]\.)*)"
+    r"(?:\([A-Za-z0-9]+\))?[)\]\"']?[.,;:\-—]*$"
+)
 
 
 # ------------------------------------------------------------------ engines
@@ -158,8 +162,9 @@ def tesseract_available() -> bool:
 
 
 def tesseract_ocr(png: bytes, lang: str = "eng") -> str:
-    r = subprocess.run([tesseract_cmd(), "stdin", "stdout", "-l", lang], input=png, capture_output=True, timeout=300,
-                       env=_tess_env())
+    r = subprocess.run(
+        [tesseract_cmd(), "stdin", "stdout", "-l", lang], input=png, capture_output=True, timeout=300, env=_tess_env()
+    )
     return r.stdout.decode("utf-8", "ignore")
 
 
@@ -183,7 +188,9 @@ def qwen_vision_available() -> bool:
         page = doc.new_page(width=300, height=100)
         page.insert_text((20, 60), "MOTOR VEHICLES 42", fontsize=20)
         png = page.get_pixmap(dpi=100).tobytes("png")
-        r = llm.structured_with_image(OcrPage, "You transcribe page images.", "Transcribe this image.", png, timeout=120)
+        r = llm.structured_with_image(
+            OcrPage, "You transcribe page images.", "Transcribe this image.", png, timeout=120
+        )
         _vision_ok = "42" in r.text
     except Exception as e:  # noqa: BLE001
         log.info("Qwen vision probe failed: %s", e)
@@ -193,10 +200,14 @@ def qwen_vision_available() -> bool:
 
 QWEN_OCR_PROMPT = {  # per country: the page's language and the numbers that must stay exact
     "IN": ("scanned Indian Gazette pages", "Keep numbers, dates and G.S.R./S.O. numbers exact."),
-    "TH": ("scanned Thai regulatory documents (Thai script, sometimes English)",
-           "Write Thai in Thai script exactly as printed; keep มอก. numbers, Thai or Arabic numerals and dates exact."),
-    "MY": ("scanned Malaysian regulatory documents (Malay or English)",
-           "Keep P.U. (A) numbers, Act numbers and dates exact."),
+    "TH": (
+        "scanned Thai regulatory documents (Thai script, sometimes English)",
+        "Write Thai in Thai script exactly as printed; keep มอก. numbers, Thai or Arabic numerals and dates exact.",
+    ),
+    "MY": (
+        "scanned Malaysian regulatory documents (Malay or English)",
+        "Keep P.U. (A) numbers, Act numbers and dates exact.",
+    ),
 }
 
 
@@ -205,8 +216,11 @@ def qwen_ocr(png: bytes, cc: str | None = None) -> str:
 
     what, keep = QWEN_OCR_PROMPT.get((cc or "IN").upper(), QWEN_OCR_PROMPT["IN"])
     r = llm.structured_with_image(
-        OcrPage, f"You transcribe {what} exactly. Output plain text only, no commentary, no translation.",
-        f"Transcribe all text on this page in reading order. {keep}", png)
+        OcrPage,
+        f"You transcribe {what} exactly. Output plain text only, no commentary, no translation.",
+        f"Transcribe all text on this page in reading order. {keep}",
+        png,
+    )
     return r.text
 
 

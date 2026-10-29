@@ -18,9 +18,15 @@ from regtrack.sources.common import Listing, RunStats, finish_run, record_listin
 
 log = logging.getLogger(__name__)
 BASE = "https://indiacode.gov.in/server/api"
-QUERIES = ['"Central Motor Vehicles Rules"', '"Motor Vehicles (Amendment)"', '"Vehicle Scrapping"',
-           '"Battery Waste Management Rules"', '"Registered Vehicle Scrapping Facility"',
-           '"High Security Registration Plate"', '"End-of-Life Vehicles"']
+QUERIES = [
+    '"Central Motor Vehicles Rules"',
+    '"Motor Vehicles (Amendment)"',
+    '"Vehicle Scrapping"',
+    '"Battery Waste Management Rules"',
+    '"Registered Vehicle Scrapping Facility"',
+    '"High Security Registration Plate"',
+    '"End-of-Life Vehicles"',
+]
 
 
 def _md(it: dict, key: str) -> str | None:
@@ -48,16 +54,22 @@ def bitstreams(c, item_uuid: str) -> list[dict]:
         if b.get("name") != "ORIGINAL":
             continue
         for bs in ((b.get("_embedded") or {}).get("bitstreams") or {}).get("_embedded", {}).get("bitstreams", []):
-            out.append({"id": bs["uuid"], "name": bs.get("name"), "url": f"{BASE}/core/bitstreams/{bs['uuid']}/content"})
+            out.append(
+                {"id": bs["uuid"], "name": bs.get("name"), "url": f"{BASE}/core/bitstreams/{bs['uuid']}/content"}
+            )
     return out
 
 
 def known(conn, item_id: str, title: str | None) -> bool:
     sid = source_id(conn, "INDIACODE")
-    return conn.execute(
-        "SELECT 1 FROM raw_ingestion_records WHERE source_id=%s AND (external_ref LIKE %s OR "
-        "(external_ref LIKE '%%log.csv:%%' AND listing_title IS NOT DISTINCT FROM %s)) LIMIT 1",
-        (sid, item_id + "%", title)).fetchone() is not None
+    return (
+        conn.execute(
+            "SELECT 1 FROM raw_ingestion_records WHERE source_id=%s AND (external_ref LIKE %s OR "
+            "(external_ref LIKE '%%log.csv:%%' AND listing_title IS NOT DISTINCT FROM %s)) LIMIT 1",
+            (sid, item_id + "%", title),
+        ).fetchone()
+        is not None
+    )
 
 
 def crawl(queries: list[str] | None = None, max_pages: int = 20, size: int = 50) -> dict:
@@ -70,8 +82,10 @@ def crawl(queries: list[str] | None = None, max_pages: int = 20, size: int = 50)
             with http.client() as c:
                 for q in queries or QUERIES:
                     for page in range(max_pages):
-                        url = (f"{BASE}/discover/search/objects?query={quote(q)}&size={size}&page={page}"
-                               f"&sort=dc.date.accessioned,DESC&dsoType=ITEM")
+                        url = (
+                            f"{BASE}/discover/search/objects?query={quote(q)}&size={size}&page={page}"
+                            f"&sort=dc.date.accessioned,DESC&dsoType=ITEM"
+                        )
                         r = http.get(c, url, headers={"Accept": "application/json"})
                         if r.status_code in (401, 403):
                             notes.append(f"{q}: HTTP {r.status_code} (login required) - stopped")
@@ -97,19 +111,34 @@ def crawl(queries: list[str] | None = None, max_pages: int = 20, size: int = 50)
                                 page_known += 1
                                 continue
                             for bs in bitstreams(c, item_id):
-                                lst = Listing(item_id=f"{item_id}:{bs['id']}", url=bs["url"], title=title,
-                                              listing_date=_d(_md(it, "dc.date.issued")), category=q,
-                                              raw={"item_id": item_id, "handle": it.get("handle"), "query": q,
-                                                   "bitstream": bs["name"],
-                                                   "ministry": _md(it, "dc.identifier.ministry_name"),
-                                                   "act": _md(it, "dc.identifier.act_name")},
-                                              file_name=bs["name"])
+                                lst = Listing(
+                                    item_id=f"{item_id}:{bs['id']}",
+                                    url=bs["url"],
+                                    title=title,
+                                    listing_date=_d(_md(it, "dc.date.issued")),
+                                    category=q,
+                                    raw={
+                                        "item_id": item_id,
+                                        "handle": it.get("handle"),
+                                        "query": q,
+                                        "bitstream": bs["name"],
+                                        "ministry": _md(it, "dc.identifier.ministry_name"),
+                                        "act": _md(it, "dc.identifier.act_name"),
+                                    },
+                                    file_name=bs["name"],
+                                )
                                 record_listing(conn, c, "INDIACODE", run_id, lst, stats)
                         if page_known == len(objs) or page + 1 >= sr["page"]["totalPages"]:
                             break
         except Exception as e:  # noqa: BLE001
             status = "failed" if not stats.seen else "partial"
             notes.append(f"{type(e).__name__}: {e}"[:500])
-        finish_run(conn, "INDIACODE", run_id, status if not stats.errors or status != "ok" else "partial", stats,
-                   "\n".join(notes + stats.notes))
+        finish_run(
+            conn,
+            "INDIACODE",
+            run_id,
+            status if not stats.errors or status != "ok" else "partial",
+            stats,
+            "\n".join(notes + stats.notes),
+        )
     return {"run_id": run_id, "status": status, **stats.as_dict()}

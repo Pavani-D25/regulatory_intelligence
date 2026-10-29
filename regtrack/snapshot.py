@@ -43,7 +43,9 @@ def export(with_files: bool = False, out_dir: Path = SNAP_DIR) -> list[Path]:
     if with_files:
         s = get_settings()
         z = out_dir / f"regtrack_files_{date.today():%Y-%m-%d}.zip"
-        with zipfile.ZipFile(z, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:  # PDFs are compressed already
+        with zipfile.ZipFile(
+            z, "w", compression=zipfile.ZIP_STORED, allowZip64=True
+        ) as zf:  # PDFs are compressed already
             for base, arc in ((s.storage_dir, "raw"), (s.text_dir, "text")):
                 if base.exists():
                     for p in base.rglob("*"):

@@ -38,17 +38,24 @@ def client() -> httpx.Client:
 
     import truststore
 
-    return httpx.Client(headers={"User-Agent": get_settings().user_agent, "Accept": "application/json, */*"},
-                        timeout=httpx.Timeout(60.0, connect=20.0), follow_redirects=True,
-                        verify=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
+    return httpx.Client(
+        headers={"User-Agent": get_settings().user_agent, "Accept": "application/json, */*"},
+        timeout=httpx.Timeout(60.0, connect=20.0),
+        follow_redirects=True,
+        verify=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
+    )
 
 
 def _retryable(e: BaseException) -> bool:
     return isinstance(e, (RetryableHTTP, httpx.TransportError))
 
 
-@retry(retry=retry_if_exception(_retryable), wait=wait_exponential(multiplier=2, min=2, max=120),
-       stop=stop_after_attempt(6), reraise=True)
+@retry(
+    retry=retry_if_exception(_retryable),
+    wait=wait_exponential(multiplier=2, min=2, max=120),
+    stop=stop_after_attempt(6),
+    reraise=True,
+)
 def get(c: httpx.Client, url: str, **kw) -> httpx.Response:
     _pace(url)
     r = c.get(url, **kw)

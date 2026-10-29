@@ -22,11 +22,17 @@ BASE = "https://morth.gov.in/backend/"
 API = BASE + "api/{slug}?page={page}&per_page={per}&wings=&order_by=desc&search="
 SLUGS = ["gazettes-notifications", "orders-and-notices", "guidelines"]
 KEEP_GROUPS = re.compile(r"motor\s+vehicle|road\s+safety|road\s+transport|transport", re.I)
-SKIP_GROUPS = re.compile(r"\bNH\b|national\s+highway|entrustment|declaration|toll|bridge|land\s+acquisition|"
-                         r"de-?notification|EPC|HAM|BOT", re.I)
+SKIP_GROUPS = re.compile(
+    r"\bNH\b|national\s+highway|entrustment|declaration|toll|bridge|land\s+acquisition|"
+    r"de-?notification|EPC|HAM|BOT",
+    re.I,
+)
 KEEP_WINGS = re.compile(r"road\s+transport|road\s+safety|transport", re.I)
-AUTO_TITLE = re.compile(r"\b(?:G\.?S\.?R|S\.?O)\b|motor\s+vehicle|CMVR|AIS|vehicle|driving|licen[cs]e|registration|"
-                        r"permit|emission|fitness|helmet|HSRP|scrapp|e-?rickshaw|trailer|tyre|fastag|road\s+safety", re.I)
+AUTO_TITLE = re.compile(
+    r"\b(?:G\.?S\.?R|S\.?O)\b|motor\s+vehicle|CMVR|AIS|vehicle|driving|licen[cs]e|registration|"
+    r"permit|emission|fitness|helmet|HSRP|scrapp|e-?rickshaw|trailer|tyre|fastag|road\s+safety",
+    re.I,
+)
 
 
 def keep(row: dict) -> bool:
@@ -74,12 +80,32 @@ def to_listing(slug: str, fd: dict, g: dict) -> Listing | None:
     if not path or "/tmp/" in path or path.startswith("tmp"):
         return None  # broken temp links seen in the API
     url = BASE + quote(path.lstrip("/"), safe="/")
-    return Listing(item_id=f"{slug}:{path}", url=url, title=(fd.get("title") or "").strip() or None,
-                   listing_date=_d(fd.get("published_date")), category=f"{slug}|{g.get('name') or fd.get('name') or ''}",
-                   raw={k: fd.get(k) for k in ("title", "file", "published_date", "wings_division", "name",
-                                               "document_type_id", "file_size", "page_id", "is_archived", "code",
-                                               "circular_guideline_number", "link", "last_date")},
-                   file_name=path.rsplit("/", 1)[-1])
+    return Listing(
+        item_id=f"{slug}:{path}",
+        url=url,
+        title=(fd.get("title") or "").strip() or None,
+        listing_date=_d(fd.get("published_date")),
+        category=f"{slug}|{g.get('name') or fd.get('name') or ''}",
+        raw={
+            k: fd.get(k)
+            for k in (
+                "title",
+                "file",
+                "published_date",
+                "wings_division",
+                "name",
+                "document_type_id",
+                "file_size",
+                "page_id",
+                "is_archived",
+                "code",
+                "circular_guideline_number",
+                "link",
+                "last_date",
+            )
+        },
+        file_name=path.rsplit("/", 1)[-1],
+    )
 
 
 def crawl(slugs: list[str] | None = None) -> dict:

@@ -15,8 +15,9 @@ FX = Path(__file__).parent / "fixtures"
 
 def writes(conn) -> int:
     """Rows inserted, updated or deleted so far in this transaction (all tables)."""
-    return conn.execute("SELECT coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0)::int AS n "
-                        "FROM pg_stat_xact_user_tables").fetchone()["n"]
+    return conn.execute(
+        "SELECT coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0)::int AS n FROM pg_stat_xact_user_tables"
+    ).fetchone()["n"]
 
 
 @pytest.fixture()
@@ -43,12 +44,28 @@ def add_seed_file(conn, name: str, folder: str = "05_MoRTH_Gazette_Notifications
     from regtrack.storage import store_file
 
     sha, path, _ = store_file(FX / name)
-    fid, _ = store_document(conn, conn.execute("SELECT id FROM regions WHERE code='IN'").fetchone()["id"], sha,
-                            str(path), name, None, "pdf", "application/pdf", path.stat().st_size)
-    conn.execute("INSERT INTO raw_ingestion_records (source_id, document_id, external_ref, listing_title, payload, "
-                 "processing_status) VALUES (%s,%s,%s,%s,%s,'downloaded')",
-                 (source_id(conn, "LOCAL_SEED"), fid, f"test-log.csv:{name}", name,
-                  Jsonb({"folder": folder, "file_name": name})))
+    fid, _ = store_document(
+        conn,
+        conn.execute("SELECT id FROM regions WHERE code='IN'").fetchone()["id"],
+        sha,
+        str(path),
+        name,
+        None,
+        "pdf",
+        "application/pdf",
+        path.stat().st_size,
+    )
+    conn.execute(
+        "INSERT INTO raw_ingestion_records (source_id, document_id, external_ref, listing_title, payload, "
+        "processing_status) VALUES (%s,%s,%s,%s,%s,'downloaded')",
+        (
+            source_id(conn, "LOCAL_SEED"),
+            fid,
+            f"test-log.csv:{name}",
+            name,
+            Jsonb({"folder": folder, "file_name": name}),
+        ),
+    )
     return fid
 
 
@@ -78,28 +95,43 @@ def test_notification_goes_through_text_classify_extract(v4):
     assert doc["doc_date"] and doc["doc_date"].year == 2021 and doc["issuer"] == "MoRTH"
     assert doc["vehicle_categories"] and doc["extraction"]["llm_pending"] is True
     # the linked rows behind the legacy view
-    g = conn.execute("SELECT g.external_code, a.code FROM regulations g JOIN regulatory_authorities a "
-                     "ON a.id=g.authority_id WHERE g.id=%s", (doc["id"],)).fetchone()
+    g = conn.execute(
+        "SELECT g.external_code, a.code FROM regulations g JOIN regulatory_authorities a "
+        "ON a.id=g.authority_id WHERE g.id=%s",
+        (doc["id"],),
+    ).fetchone()
     assert g["code"] == "MORTH"
-    assert conn.execute("SELECT count(*) AS n FROM regulation_authorities WHERE regulation_id=%s AND role='primary'",
-                        (doc["id"],)).fetchone()["n"] == 1
-    n_cat = conn.execute("SELECT count(*) AS n FROM regulation_vehicle_categories WHERE regulation_id=%s",
-                         (doc["id"],)).fetchone()["n"]
+    assert (
+        conn.execute(
+            "SELECT count(*) AS n FROM regulation_authorities WHERE regulation_id=%s AND role='primary'", (doc["id"],)
+        ).fetchone()["n"]
+        == 1
+    )
+    n_cat = conn.execute(
+        "SELECT count(*) AS n FROM regulation_vehicle_categories WHERE regulation_id=%s", (doc["id"],)
+    ).fetchone()["n"]
     assert n_cat == len(doc["vehicle_categories"])
     if doc["domains"]:
-        prim = conn.execute("SELECT lower(d.code) AS c FROM regulation_domains l JOIN domains d ON d.id=l.domain_id "
-                            "WHERE l.regulation_id=%s AND l.is_primary", (doc["id"],)).fetchall()
+        prim = conn.execute(
+            "SELECT lower(d.code) AS c FROM regulation_domains l JOIN domains d ON d.id=l.domain_id "
+            "WHERE l.regulation_id=%s AND l.is_primary",
+            (doc["id"],),
+        ).fetchall()
         assert [r["c"] for r in prim] == doc["domains"][:1]
     # the listing records the verdict and the regulation it led to
-    rec = conn.execute("SELECT processing_status, classification_verdict, regulation_id FROM raw_ingestion_records "
-                       "WHERE document_id=%s", (fid,)).fetchone()
+    rec = conn.execute(
+        "SELECT processing_status, classification_verdict, regulation_id FROM raw_ingestion_records "
+        "WHERE document_id=%s",
+        (fid,),
+    ).fetchone()
     assert rec["processing_status"] == "processed" and rec["classification_verdict"] is True
     assert rec["regulation_id"] == doc["id"]
     # derived fields (migration 0008), and a second call has nothing to do
     assert conn.execute("SELECT refresh_regulation_fields('IN') AS n").fetchone()["n"] >= 1
     assert conn.execute("SELECT refresh_regulation_fields('IN') AS n").fetchone()["n"] == 0
-    g = conn.execute("SELECT doc_type, doc_role, legal_force, local_type FROM regulations WHERE id=%s",
-                     (doc["id"],)).fetchone()
+    g = conn.execute(
+        "SELECT doc_type, doc_role, legal_force, local_type FROM regulations WHERE id=%s", (doc["id"],)
+    ).fetchone()
     assert g["doc_type"] == "REGULATION" and g["legal_force"] == "MANDATORY" and g["local_type"] == "S.O."
 
 
@@ -140,18 +172,39 @@ def test_repo_round_trip_and_links(v4):
     from regtrack.pipeline import repo
 
     conn = v4
-    did = repo.insert_document(conn, "TEST-REPO-1", {"doc_class": "CIRCULAR_OM", "status": "final",
-                                                     "issuer": "MoPNG", "vehicle_categories": ["M1", "N1"],
-                                                     "domains": ["emission", "fuel_efficiency"], "data": {"x": 1}})
+    did = repo.insert_document(
+        conn,
+        "TEST-REPO-1",
+        {
+            "doc_class": "CIRCULAR_OM",
+            "status": "final",
+            "issuer": "MoPNG",
+            "vehicle_categories": ["M1", "N1"],
+            "domains": ["emission", "fuel_efficiency"],
+            "data": {"x": 1},
+        },
+    )
     d = repo.get_document(conn, did)
     assert d["issuer"] == "MoPNG" and d["vehicle_categories"] == ["M1", "N1"] and d["domains"][0] == "emission"
-    assert not repo.update_document(conn, did, {"vehicle_categories": ["N1", "M1"], "domains": ["emission", "fuel_efficiency"],
-                                                "issuer": "MoPNG", "data": {"x": 1}})  # same values: no write
-    assert repo.update_document(conn, did, {"domains": ["fuel_efficiency", "emission"], "issuer": "BIS", "vehicle_categories": []})
+    assert not repo.update_document(
+        conn,
+        did,
+        {
+            "vehicle_categories": ["N1", "M1"],
+            "domains": ["emission", "fuel_efficiency"],
+            "issuer": "MoPNG",
+            "data": {"x": 1},
+        },
+    )  # same values: no write
+    assert repo.update_document(
+        conn, did, {"domains": ["fuel_efficiency", "emission"], "issuer": "BIS", "vehicle_categories": []}
+    )
     d = repo.get_document(conn, did)
     assert d["domains"] == ["fuel_efficiency", "emission"] and d["issuer"] == "BIS" and d["vehicle_categories"] == []
-    assert conn.execute("SELECT count(*) AS n FROM regulation_authorities WHERE regulation_id=%s",
-                        (did,)).fetchone()["n"] == 1
+    assert (
+        conn.execute("SELECT count(*) AS n FROM regulation_authorities WHERE regulation_id=%s", (did,)).fetchone()["n"]
+        == 1
+    )
 
 
 def test_flags_use_v4b_entity_names(v4):
@@ -174,7 +227,11 @@ def test_stage_files_are_copies_not_moves(tmp_path):
 
 
 # ====================================================================== phase 4: link
-WHEEL_RIM = ["so_1406_2021_wheel_rim.pdf", "so_359_2022_wheel_rim_extension.pdf", "so_3896_2022_wheel_rim_extension.pdf"]
+WHEEL_RIM = [
+    "so_1406_2021_wheel_rim.pdf",
+    "so_359_2022_wheel_rim_extension.pdf",
+    "so_3896_2022_wheel_rim_extension.pdf",
+]
 
 
 def link_chain(conn) -> list[int]:
@@ -196,8 +253,11 @@ def test_wheel_rim_chain_links_and_versions(v4):
     fids = link_chain(conn)
     assert {repo.get_file(conn, f)["stage"] for f in fids} == {"linked"}
     ids = {repo.find_document(conn, c)["id"]: c for c in ("SO-1406(E)-2021", "SO-359(E)-2022", "SO-3896(E)-2022")}
-    rels = conn.execute("SELECT from_regulation_id, type, to_regulation_id, to_ref FROM regulation_relations "
-                        "WHERE from_regulation_id = ANY(%s)", (list(ids),)).fetchall()
+    rels = conn.execute(
+        "SELECT from_regulation_id, type, to_regulation_id, to_ref FROM regulation_relations "
+        "WHERE from_regulation_id = ANY(%s)",
+        (list(ids),),
+    ).fetchall()
     # the extensions change the 2004 master table, which is not stored: the link keeps its code
     ext = [r for r in rels if r["type"] == "extends_date"]
     assert ext and all(r["to_regulation_id"] is None and r["to_ref"] == "SO-1365(E)-2004" for r in ext)
@@ -208,7 +268,9 @@ def test_wheel_rim_chain_links_and_versions(v4):
     assert [ids[v["source_regulation_id"]] for v in vers] == ["SO-1406(E)-2021", "SO-359(E)-2022", "SO-3896(E)-2022"]
     assert sum(v["valid_to"] is None for v in vers) == 1
     # the master-table family: newest notification is current
-    cur = conn.execute("SELECT external_code FROM regulations WHERE family_key='SO-1365-MASTER' AND is_current").fetchall()
+    cur = conn.execute(
+        "SELECT external_code FROM regulations WHERE family_key='SO-1365-MASTER' AND is_current"
+    ).fetchall()
     assert [r["external_code"] for r in cur] == ["SO-3896(E)-2022"]
 
 
@@ -238,10 +300,16 @@ def test_reference_resolves_when_target_arrives(v4):
     add_flag(conn, "regulation", final, "unresolved_reference", {"draft": "GSR-8001(E)-2029"})
     draft = repo.insert_document(conn, "GSR-8001(E)-2029", {"doc_class": "NOTIFICATION_DRAFT", "status": "draft"})
     assert L.resolve_refs(conn) >= 1
-    r = conn.execute("SELECT to_regulation_id FROM regulation_relations WHERE from_regulation_id=%s", (final,)).fetchone()
+    r = conn.execute(
+        "SELECT to_regulation_id FROM regulation_relations WHERE from_regulation_id=%s", (final,)
+    ).fetchone()
     assert r["to_regulation_id"] == draft
-    assert conn.execute("SELECT resolved_at FROM quality_flags WHERE entity='regulation' AND entity_id=%s",
-                        (final,)).fetchone()["resolved_at"] is not None
+    assert (
+        conn.execute(
+            "SELECT resolved_at FROM quality_flags WHERE entity='regulation' AND entity_id=%s", (final,)
+        ).fetchone()["resolved_at"]
+        is not None
+    )
 
 
 def test_ais_family_current_and_superseded(v4):
@@ -249,13 +317,19 @@ def test_ais_family_current_and_superseded(v4):
     from regtrack.pipeline import repo
 
     conn = v4
-    r1 = repo.insert_document(conn, "AIS-990(Rev.1)", {"doc_class": "AIS_STANDARD", "status": "final",
-                                                       "family_key": "AIS-990", "revision": 1})
-    r2 = repo.insert_document(conn, "AIS-990(Rev.2)", {"doc_class": "AIS_STANDARD", "status": "final",
-                                                       "family_key": "AIS-990", "revision": 2})
+    r1 = repo.insert_document(
+        conn, "AIS-990(Rev.1)", {"doc_class": "AIS_STANDARD", "status": "final", "family_key": "AIS-990", "revision": 1}
+    )
+    r2 = repo.insert_document(
+        conn, "AIS-990(Rev.2)", {"doc_class": "AIS_STANDARD", "status": "final", "family_key": "AIS-990", "revision": 2}
+    )
     L.recompute_family(conn, "AIS-990")
-    g = {r["id"]: r for r in conn.execute("SELECT id, is_current, legal_status, version_seq FROM regulations "
-                                          "WHERE family_key='AIS-990'")}
+    g = {
+        r["id"]: r
+        for r in conn.execute(
+            "SELECT id, is_current, legal_status, version_seq FROM regulations WHERE family_key='AIS-990'"
+        )
+    }
     assert g[r2]["is_current"] and not g[r1]["is_current"]
     assert g[r1]["legal_status"] == "superseded" and g[r2]["legal_status"] == "final"
     assert (g[r1]["version_seq"], g[r2]["version_seq"]) == (1, 2)
@@ -273,8 +347,14 @@ def test_final_closes_its_drafts_versions(v4):
     conn = v4
     draft = repo.insert_document(conn, "GSR-8002(E)-2029", {"doc_class": "NOTIFICATION_DRAFT", "status": "draft"})
     final = repo.insert_document(conn, "GSR-9002(E)-2030", {"doc_class": "NOTIFICATION_FINAL", "status": "final"})
-    base = {"legal_basis": "CMVR Rule 999", "subject": "test", "source_doc_id": draft, "vehicle_categories": ["M1"],
-            "conditions": {}, "model_scope": "all"}
+    base = {
+        "legal_basis": "CMVR Rule 999",
+        "subject": "test",
+        "source_doc_id": draft,
+        "vehicle_categories": ["M1"],
+        "conditions": {},
+        "model_scope": "all",
+    }
     d_id, _ = M.supersede(conn, "CMVR Rule 999 :: test", base, date(2029, 1, 1), True)
     f_id, _ = M.supersede(conn, "CMVR Rule 999 :: test", {**base, "source_doc_id": final}, date(2030, 1, 1), False)
     assert M.finalise_drafts(conn, final, draft, date(2030, 1, 1)) == 1
@@ -307,10 +387,17 @@ def test_chunks_carry_the_regulation_filters(v4):
     assert repo.get_file(conn, fid)["stage"] == "chunked"
     rows = conn.execute("SELECT * FROM document_chunks WHERE regulation_id=%s ORDER BY chunk_index", (rid,)).fetchall()
     assert rows and [r["chunk_index"] for r in rows] == list(range(len(rows)))
-    g = conn.execute("SELECT region_id, doc_type, legal_status, extract(year FROM published_date)::int AS y "
-                     "FROM regulations WHERE id=%s", (rid,)).fetchone()
-    cats = [r["vehicle_category_id"] for r in conn.execute(
-        "SELECT vehicle_category_id FROM regulation_vehicle_categories WHERE regulation_id=%s ORDER BY 1", (rid,))]
+    g = conn.execute(
+        "SELECT region_id, doc_type, legal_status, extract(year FROM published_date)::int AS y "
+        "FROM regulations WHERE id=%s",
+        (rid,),
+    ).fetchone()
+    cats = [
+        r["vehicle_category_id"]
+        for r in conn.execute(
+            "SELECT vehicle_category_id FROM regulation_vehicle_categories WHERE regulation_id=%s ORDER BY 1", (rid,)
+        )
+    ]
     for r in rows:
         assert r["document_id"] == fid and r["region_id"] == g["region_id"] and r["year"] == g["y"] == 2021
         assert r["doc_type"] == g["doc_type"] == "REGULATION" and r["legal_status"] == "final"
@@ -345,8 +432,11 @@ def test_search_keyword_and_vector(v4, monkeypatch):
     assert top["canonical_id"] == "SO-1406(E)-2021" and top["regulation_id"] == rid and top["doc_date"].year == 2021
     # it applies to ALL vehicles, so any category finds it; without ALL (and without L1) an L1 search does not
     assert any(h["regulation_id"] == rid for h in search(conn, "wheel rims", category="L1", in_scope=None)["results"])
-    conn.execute("DELETE FROM regulation_vehicle_categories l USING vehicle_categories vc WHERE vc.id=l.vehicle_category_id "
-                 "AND l.regulation_id=%s AND vc.code IN ('ALL','L1')", (rid,))
+    conn.execute(
+        "DELETE FROM regulation_vehicle_categories l USING vehicle_categories vc WHERE vc.id=l.vehicle_category_id "
+        "AND l.regulation_id=%s AND vc.code IN ('ALL','L1')",
+        (rid,),
+    )
     assert C.sync_chunk_filters(conn) > 0
     assert all(h["regulation_id"] != rid for h in search(conn, "wheel rims", category="L1", in_scope=None)["results"])
     assert any(h["regulation_id"] == rid for h in search(conn, "wheel rims", category="N3", in_scope=None)["results"])
@@ -371,7 +461,9 @@ def test_assistant_history(v4):
     assert record_exchange(conn, "new", "x", [], conversation_id=-1) != cid  # unknown id: a new conversation
     msgs = conversation(conn, cid)
     assert [m["role"] for m in msgs] == ["user", "assistant", "user", "assistant"]
-    assert msgs[1]["citations"][0]["canonical_id"] == "SO-1406(E)-2021" and float(msgs[1]["citations"][0]["score"]) == 0.42
+    assert (
+        msgs[1]["citations"][0]["canonical_id"] == "SO-1406(E)-2021" and float(msgs[1]["citations"][0]["score"]) == 0.42
+    )
 
 
 # ====================================================================== phase 6: changes, flags, impact, alerts
@@ -380,11 +472,15 @@ def make_live(conn, fid: int) -> None:
     from regtrack.sources.common import source_id
 
     sid = source_id(conn, "MORTH_API")
-    run = conn.execute("INSERT INTO ingestion_runs (source_id, status) VALUES (%s,'success') RETURNING id",
-                       (sid,)).fetchone()["id"]
+    run = conn.execute(
+        "INSERT INTO ingestion_runs (source_id, status) VALUES (%s,'success') RETURNING id", (sid,)
+    ).fetchone()["id"]
     conn.execute("DELETE FROM raw_ingestion_records WHERE document_id=%s", (fid,))
-    conn.execute("INSERT INTO raw_ingestion_records (source_id, ingestion_run_id, document_id, external_ref, "
-                 "processing_status) VALUES (%s,%s,%s,%s,'processed')", (sid, run, fid, f"test-live-{fid}"))
+    conn.execute(
+        "INSERT INTO raw_ingestion_records (source_id, ingestion_run_id, document_id, external_ref, "
+        "processing_status) VALUES (%s,%s,%s,%s,'processed')",
+        (sid, run, fid, f"test-live-{fid}"),
+    )
 
 
 def live_chain(conn) -> list[int]:
@@ -410,13 +506,18 @@ def test_changes_from_live_files(v4):
     rows = conn.execute("""SELECT e.*, g.external_code FROM regulation_changes e LEFT JOIN regulations g ON g.id=e.regulation_id
                            ORDER BY e.id""").fetchall()
     assert n == len(rows) and rows
-    assert {r["external_code"] for r in rows if r["change_type"] == "new_document"} == \
-        {"SO-1406(E)-2021", "SO-359(E)-2022", "SO-3896(E)-2022"}
+    assert {r["external_code"] for r in rows if r["change_type"] == "new_document"} == {
+        "SO-1406(E)-2021",
+        "SO-359(E)-2022",
+        "SO-3896(E)-2022",
+    }
     dates = [r for r in rows if r["change_type"] == "implementation_date_changed"]
     assert dates and all(r["requirement_version_id"] for r in dates)
     sr8d = [r for r in dates if r["details"]["key"] == "SO-1365(E)-2004 Table Sr.8(d)"]
-    assert {(r["details"]["old"], r["details"]["new"]) for r in sr8d} == {("2021-09-21", "2022-09-21"),
-                                                                       ("2022-09-21", "2023-06-22")}
+    assert {(r["details"]["old"], r["details"]["new"]) for r in sr8d} == {
+        ("2021-09-21", "2022-09-21"),
+        ("2022-09-21", "2023-06-22"),
+    }
     for r in rows:
         assert r["review_status"] == "pending" and r["details"]["summary_by"] == "template" and r["region_id"]
         assert (r["sla_due_at"] - r["detected_at"]).days in (1, 2)
@@ -434,8 +535,12 @@ def test_seed_only_files_emit_no_changes(v4):
 def test_rule_based_impact_and_team_value(v4):
     conn = v4
     fids = link_chain(conn)
-    imp = lambda c: conn.execute("SELECT impact_level, impact_basis FROM regulations WHERE external_code=%s",  # noqa: E731
-                                 (c,)).fetchone()
+
+    def imp(c: str) -> dict:
+        return conn.execute(
+            "SELECT impact_level, impact_basis FROM regulations WHERE external_code=%s", (c,)
+        ).fetchone()
+
     conn.execute("SELECT refresh_regulation_fields('IN')")
     # technical, published years ago, all dates in the past, no re-approval: medium
     assert dict(imp("SO-1406(E)-2021")) == {"impact_level": "medium", "impact_basis": "rules"}
@@ -457,10 +562,16 @@ def test_alerts_stored_once_and_closed(v4):
     E.emit_events(conn)
     team = conn.execute("SELECT id FROM teams ORDER BY id LIMIT 1").fetchone()["id"]
     conn.execute("UPDATE alert_rules SET is_enabled=false")
-    new_doc = conn.execute("INSERT INTO alert_rules (name, condition, notify_team_id) VALUES "
-                           "('test new documents', '{\"type\": \"new_document\"}', %s) RETURNING id", (team,)).fetchone()["id"]
-    due = conn.execute("INSERT INTO alert_rules (name, condition, notify_team_id) VALUES "
-                       "('test due', '{\"type\": \"due_within\", \"param\": \"30\"}', %s) RETURNING id", (team,)).fetchone()["id"]
+    new_doc = conn.execute(
+        "INSERT INTO alert_rules (name, condition, notify_team_id) VALUES "
+        "('test new documents', '{\"type\": \"new_document\"}', %s) RETURNING id",
+        (team,),
+    ).fetchone()["id"]
+    due = conn.execute(
+        "INSERT INTO alert_rules (name, condition, notify_team_id) VALUES "
+        '(\'test due\', \'{"type": "due_within", "param": "30"}\', %s) RETURNING id',
+        (team,),
+    ).fetchone()["id"]
     # an open rule version due in 10 days
     v = conn.execute("""SELECT v.id FROM requirement_versions v WHERE v.valid_to IS NULL AND NOT v.is_draft
                         AND v.vehicle_category_ids <> '{}' LIMIT 1""").fetchone()["id"]
@@ -475,8 +586,9 @@ def test_alerts_stored_once_and_closed(v4):
     conn.execute("UPDATE regulation_changes SET review_status='reviewed' WHERE id=%s", (ev[0]["regulation_change_id"],))
     conn.execute("UPDATE requirement_versions SET implementation_date=current_date - 1 WHERE id=%s", (v,))
     assert A.close_settled(conn) == 2
-    assert conn.execute("SELECT is_resolved FROM alert_events WHERE requirement_version_id=%s AND rule_id=%s",
-                        (v, due)).fetchone()["is_resolved"]
+    assert conn.execute(
+        "SELECT is_resolved FROM alert_events WHERE requirement_version_id=%s AND rule_id=%s", (v, due)
+    ).fetchone()["is_resolved"]
 
 
 def test_flags_resolved_on_v4b(v4):
@@ -488,8 +600,11 @@ def test_flags_resolved_on_v4b(v4):
     add_flag(conn, "document", fid, "placeholder_listing_date", {"date": "2021-01-01"})
     out = RS.resolve_all(conn)
     assert out["placeholder_listing_date"] >= 1
-    q = conn.execute("SELECT resolved_at, details FROM quality_flags WHERE entity='document' AND entity_id=%s "
-                     "AND rule='placeholder_listing_date'", (fid,)).fetchone()
+    q = conn.execute(
+        "SELECT resolved_at, details FROM quality_flags WHERE entity='document' AND entity_id=%s "
+        "AND rule='placeholder_listing_date'",
+        (fid,),
+    ).fetchone()
     assert q["resolved_at"] and q["details"]["evidence"]["content_date"] == "2021-03-22"
 
 
@@ -499,9 +614,11 @@ def test_extracted_data_matches_its_model(v4):
     from regtrack.validators import validate_data
 
     conn = v4
-    for name, folder in (("so_1406_2021_wheel_rim.pdf", "05_MoRTH_Gazette_Notifications"),
-                         ("draft_notification.pdf", "05_MoRTH_Gazette_Notifications"),
-                         ("ais_with_amendment.pdf", "07_AIS_Published_Standards")):
+    for name, folder in (
+        ("so_1406_2021_wheel_rim.pdf", "05_MoRTH_Gazette_Notifications"),
+        ("draft_notification.pdf", "05_MoRTH_Gazette_Notifications"),
+        ("ais_with_amendment.pdf", "07_AIS_Published_Standards"),
+    ):
         run_all(conn, add_seed_file(conn, name, folder))
     rows = conn.execute("SELECT external_code, local_class, data FROM regulations").fetchall()
     assert rows
@@ -510,10 +627,13 @@ def test_extracted_data_matches_its_model(v4):
         assert not validate_data(r["local_class"], r["data"]), r["external_code"]
     assert conn.execute("SELECT count(*) AS n FROM quality_flags WHERE rule='schema_violation'").fetchone()["n"] == 0
     # the provenance is kept where it belongs when a listing supplied the subject
-    conn.execute("UPDATE regulations SET data = data || '{\"subject_source\": \"listing\"}' WHERE id = "
-                 "(SELECT min(id) FROM regulations)")
+    conn.execute(
+        'UPDATE regulations SET data = data || \'{"subject_source": "listing"}\' WHERE id = '
+        "(SELECT min(id) FROM regulations)"
+    )
     from regtrack.pipeline import extract as X
     from regtrack.pipeline import repo
+
     fid = conn.execute("SELECT min(document_id) AS f FROM document_parts").fetchone()["f"]
     X.stage_extract(conn, repo.get_file(conn, fid), use_llm=False)
     assert conn.execute("SELECT count(*) AS n FROM regulations WHERE data ? 'subject_source'").fetchone()["n"] == 0

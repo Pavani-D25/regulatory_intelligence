@@ -82,8 +82,11 @@ def read_pdf(path: Path) -> tuple[list[str], dict]:
     import pymupdf
 
     with pymupdf.open(path) as d:
-        meta = {k: v for k, v in (d.metadata or {}).items()
-                if v and k in ("title", "producer", "creator", "creationDate", "modDate", "author")}
+        meta = {
+            k: v
+            for k, v in (d.metadata or {}).items()
+            if v and k in ("title", "producer", "creator", "creationDate", "modDate", "author")
+        }
         meta["encrypted"] = bool(d.is_encrypted)
         return [pg.get_text() for pg in d], meta
 
@@ -198,12 +201,37 @@ def extract(path: Path, ext: str) -> TextResult:
 
 # Thai PDF fonts map shifted tone marks / vowels to private-use glyphs (U+F700-F71A, the Windows/Adobe Thai PUA);
 # applied only to pages with Thai text, so no other script's text changes
-THAI_PUA = str.maketrans({0xF700: "ฐ", 0xF701: "ิ", 0xF702: "ี", 0xF703: "ึ", 0xF704: "ื",
-                          0xF705: "่", 0xF706: "้", 0xF707: "๊", 0xF708: "๋", 0xF709: "์",
-                          0xF70A: "่", 0xF70B: "้", 0xF70C: "๊", 0xF70D: "๋", 0xF70E: "์",
-                          0xF70F: "ญ", 0xF710: "ั", 0xF711: "ํ", 0xF712: "็", 0xF713: "่",
-                          0xF714: "้", 0xF715: "๊", 0xF716: "๋", 0xF717: "์", 0xF718: "ุ",
-                          0xF719: "ู", 0xF71A: "ฺ"})
+THAI_PUA = str.maketrans(
+    {
+        0xF700: "ฐ",
+        0xF701: "ิ",
+        0xF702: "ี",
+        0xF703: "ึ",
+        0xF704: "ื",
+        0xF705: "่",
+        0xF706: "้",
+        0xF707: "๊",
+        0xF708: "๋",
+        0xF709: "์",
+        0xF70A: "่",
+        0xF70B: "้",
+        0xF70C: "๊",
+        0xF70D: "๋",
+        0xF70E: "์",
+        0xF70F: "ญ",
+        0xF710: "ั",
+        0xF711: "ํ",
+        0xF712: "็",
+        0xF713: "่",
+        0xF714: "้",
+        0xF715: "๊",
+        0xF716: "๋",
+        0xF717: "์",
+        0xF718: "ุ",
+        0xF719: "ู",
+        0xF71A: "ฺ",
+    }
+)
 THAI_CHAR = re.compile("[ก-๛]")
 
 
@@ -219,8 +247,16 @@ def build_result(texts: list[str], meta: dict, is_paged: bool, error: str | None
     # a file "has a text layer" when it averages >= 100 chars/page (the profile's definition of a scan)
     text_layer = (total / max(n, 1) >= SCAN_CHARS) if is_paged else total > 0
     eng_pages = [p.page for p in pages if p.is_english]
-    return TextResult(pages=pages, page_count=n, text_layer=text_layer, scanned_pages=scanned,
-                      language_mix=language_mix(pages), pdf_meta=meta, english_pages=eng_pages, error=error)
+    return TextResult(
+        pages=pages,
+        page_count=n,
+        text_layer=text_layer,
+        scanned_pages=scanned,
+        language_mix=language_mix(pages),
+        pdf_meta=meta,
+        english_pages=eng_pages,
+        error=error,
+    )
 
 
 def language_mix(pages: list[PageText]) -> dict:
@@ -290,8 +326,9 @@ def load_pages(sha: str) -> list[PageText]:
     return out
 
 
-def english_text(pages: list[PageText], page_from: int | None = None, page_to: int | None = None,
-                 max_chars: int | None = None) -> str:
+def english_text(
+    pages: list[PageText], page_from: int | None = None, page_to: int | None = None, max_chars: int | None = None
+) -> str:
     """English pages (in order) inside an optional page range, with page markers."""
     sel = [p for p in pages if (page_from is None or p.page >= page_from) and (page_to is None or p.page <= page_to)]
     eng = [p for p in sel if p.is_english] or [p for p in sel if p.lang not in ("hi", "hi_legacy")]
@@ -300,8 +337,11 @@ def english_text(pages: list[PageText], page_from: int | None = None, page_to: i
 
 
 def full_text(pages: list[PageText], page_from: int | None = None, page_to: int | None = None) -> str:
-    return "".join(f"\n<<<PAGE {p.page}>>>\n{p.text}" for p in pages
-                   if (page_from is None or p.page >= page_from) and (page_to is None or p.page <= page_to))
+    return "".join(
+        f"\n<<<PAGE {p.page}>>>\n{p.text}"
+        for p in pages
+        if (page_from is None or p.page >= page_from) and (page_to is None or p.page <= page_to)
+    )
 
 
 # ------------------------------------------------------------------ cache (extraction can run before the DB is up)
@@ -310,9 +350,16 @@ def meta_path(sha: str) -> Path:
 
 
 def result_meta(r: TextResult) -> dict:
-    return {"page_count": r.page_count, "text_layer": r.text_layer, "scanned_pages": r.scanned_pages,
-            "language_mix": r.language_mix, "pdf_meta": r.pdf_meta, "english_pages": r.english_pages,
-            "error": r.error, "version": TEXT_VERSION}
+    return {
+        "page_count": r.page_count,
+        "text_layer": r.text_layer,
+        "scanned_pages": r.scanned_pages,
+        "language_mix": r.language_mix,
+        "pdf_meta": r.pdf_meta,
+        "english_pages": r.english_pages,
+        "error": r.error,
+        "version": TEXT_VERSION,
+    }
 
 
 TEXT_VERSION = 1

@@ -42,7 +42,7 @@ MAX_LLM_CHARS = 24000
 def operative_text(eng: str) -> str:
     """English notification text from the 'NOTIFICATION' heading on (skips the Gazette masthead)."""
     m = re.search(r"\n\s*(NOTIFICATION|ORDER|CORRIGENDUM)\s*\n", eng)
-    return eng[m.start():] if m else eng
+    return eng[m.start() :] if m else eng
 
 
 def categories_of(text: str) -> list[str]:
@@ -52,22 +52,48 @@ def categories_of(text: str) -> list[str]:
     need = 1 if len(text) < 3000 else 2
     keep = [c for c, n in allc.items() if c in codes or n >= need or c == "ALL"]
     cats = P.expand_letters(keep)
-    order = ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "QUADRICYCLE", "M1", "M2", "M3", "N1", "N2", "N3", "O", "T",
-             "CEV", "E_RICKSHAW", "E_CART", "ALL"]
+    order = [
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
+        "L6",
+        "L7",
+        "QUADRICYCLE",
+        "M1",
+        "M2",
+        "M3",
+        "N1",
+        "N2",
+        "N3",
+        "O",
+        "T",
+        "CEV",
+        "E_RICKSHAW",
+        "E_CART",
+        "ALL",
+    ]
     return [c for c in order if c in cats]
 
 
 def scope_section(eng: str) -> str | None:
-    m = re.search(r"\n\s*1\.?0?\s*\.?\s*\n?\s*SCOPE\b[^\n]*\n(.{20,2500}?)(?=\n\s*2\.?0?\s*\.?\s*\n?\s*[A-Z][A-Za-z ]{3,40}\n|\Z)",
-                  eng[:60000], re.I | re.S)
+    m = re.search(
+        r"\n\s*1\.?0?\s*\.?\s*\n?\s*SCOPE\b[^\n]*\n(.{20,2500}?)(?=\n\s*2\.?0?\s*\.?\s*\n?\s*[A-Z][A-Za-z ]{3,40}\n|\Z)",
+        eng[:60000],
+        re.I | re.S,
+    )
     if not m:
         m = re.search(r"\bSCOPE\b\s*[:\-]?\s*\n(.{20,1500}?)(?=\n\s*\d\.\s|\Z)", eng[:60000], re.S)
     return clean(m.group(1))[:1500] if m else None
 
 
 def transitional_section(eng: str) -> str | None:
-    m = re.search(r"TRANSITIONAL\s+PROVISIONS?\s*\n(.{20,2500}?)(?=\n\s*\d{1,2}\.?0?\s+[A-Z][A-Za-z ]{3,40}\n|\n\s*ANNEX|\Z)",
-                  eng, re.I | re.S)
+    m = re.search(
+        r"TRANSITIONAL\s+PROVISIONS?\s*\n(.{20,2500}?)(?=\n\s*\d{1,2}\.?0?\s+[A-Z][A-Za-z ]{3,40}\n|\n\s*ANNEX|\Z)",
+        eng,
+        re.I | re.S,
+    )
     return clean(m.group(1))[:1500] if m else None
 
 
@@ -77,13 +103,39 @@ def clean(s: str) -> str:
 
 
 # lines on AIS / notification covers that are never a title
-JUNK_TITLE = re.compile(r"^\W*(date\s+of\s+hosting|last\s+date|page\s*(no\.?\s*)?\d|\d+\s*\|\s*p\s*a\s*g\s*e|registered\s+no|"
-                        r"government\s+of\s+india|the\s+gazette|ministry\s+of|extraordinary|finalised\s+draft\s*$|check\s*list|"
-                        r"duration|comments|printed\s+by|status\s+chart|\(\d+\)|replace\s+clause|substitute|c\s+o\s+n\s+t|"
-                        r"\d+(\.\d+)?\s|\w+\s+highlighted|automotive\s+industry\s+standards?\s*$|s?\s*committee\b|the\s+government\s+of\s+india\s+felt|"
-                        r"\d{1,2}(st|nd|rd|th)?\s+\w+,?\s+\d{4}\s*$|amends\s+cmvr\s*$)", re.I)
-ID_WORDS = {"draft", "part", "revision", "rev", "amendment", "amendments", "amd", "corrigendum", "corri", "and", "with",
-            "jan", "feb", "march", "april", "may", "june", "july", "aug", "sept", "oct", "nov", "dec"}
+JUNK_TITLE = re.compile(
+    r"^\W*(date\s+of\s+hosting|last\s+date|page\s*(no\.?\s*)?\d|\d+\s*\|\s*p\s*a\s*g\s*e|registered\s+no|"
+    r"government\s+of\s+india|the\s+gazette|ministry\s+of|extraordinary|finalised\s+draft\s*$|check\s*list|"
+    r"duration|comments|printed\s+by|status\s+chart|\(\d+\)|replace\s+clause|substitute|c\s+o\s+n\s+t|"
+    r"\d+(\.\d+)?\s|\w+\s+highlighted|automotive\s+industry\s+standards?\s*$|s?\s*committee\b|the\s+government\s+of\s+india\s+felt|"
+    r"\d{1,2}(st|nd|rd|th)?\s+\w+,?\s+\d{4}\s*$|amends\s+cmvr\s*$)",
+    re.I,
+)
+ID_WORDS = {
+    "draft",
+    "part",
+    "revision",
+    "rev",
+    "amendment",
+    "amendments",
+    "amd",
+    "corrigendum",
+    "corri",
+    "and",
+    "with",
+    "jan",
+    "feb",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "aug",
+    "sept",
+    "oct",
+    "nov",
+    "dec",
+}
 
 
 def is_junk_title(t: str | None) -> bool:
@@ -94,16 +146,21 @@ def is_junk_title(t: str | None) -> bool:
     if PLACEHOLDER.search(t):  # a draft's unfilled blanks: "(………Amendment) Rules"
         return True
     garbage = sum(not (c.isascii() and (c.isalnum() or c in " .,:;()[]-–/&'\"%+")) for c in t)
-    if re.match(r"^\W*(draft\W*)?ais\W*\d{3}", t, re.I):  # "AIS-137 (Part 5)", "Draft AIS-221/D0/Dec. 2025": an id, not a title
+    if re.match(
+        r"^\W*(draft\W*)?ais\W*\d{3}", t, re.I
+    ):  # "AIS-137 (Part 5)", "Draft AIS-221/D0/Dec. 2025": an id, not a title
         words = [w for w in re.findall(r"[A-Za-z]{3,}", t) if w.lower() not in ID_WORDS and w.upper() != "AIS"]
         if len(words) < 2:
             return True
     return bool(JUNK_TITLE.match(t)) or garbage > 0.25 * len(t) or "hosting on" in t.lower()
 
 
-AIS_DRAFT_COVER = re.compile(r"((?:Revised\s+)?Draft\s+(?:Amendment|Corrigendum)\s+No\.?\s*\d+)[^A-Za-z]{0,30}?\bto\s+"
-                             r"(AIS[\s\-:]*\d{3}(?:\s*\((?:Part|PART)\s*\d+\))?(?:\s*\(Rev\.?\s*\d+\))?)\s*[:\-–]?\s*"
-                             r"(.{10,200}?)(?=\s+(?:Part\s+[A-Z]\b|\d{1,2}\.\d?\s|Page\b|SR\.|1/\d|Sr\.|$))", re.I)
+AIS_DRAFT_COVER = re.compile(
+    r"((?:Revised\s+)?Draft\s+(?:Amendment|Corrigendum)\s+No\.?\s*\d+)[^A-Za-z]{0,30}?\bto\s+"
+    r"(AIS[\s\-:]*\d{3}(?:\s*\((?:Part|PART)\s*\d+\))?(?:\s*\(Rev\.?\s*\d+\))?)\s*[:\-–]?\s*"
+    r"(.{10,200}?)(?=\s+(?:Part\s+[A-Z]\b|\d{1,2}\.\d?\s|Page\b|SR\.|1/\d|Sr\.|$))",
+    re.I,
+)
 
 
 AIS_DRAFT_COVER_TITLE = re.compile(r"(?:Revised\s+)?Draft\s+(?:Amendment|Corrigendum)\s+No", re.I)
@@ -115,12 +172,18 @@ def ais_title(eng: str) -> str | None:
     if m:  # "Draft Corrigendum No. 1 (…) To AIS-185 Approval of vehicles ..." -> "Draft Corrigendum No. 1 to AIS-185: Approval ..."
         std = re.sub(r"[\s:]+", "-", m.group(2).strip(), count=1)
         return f"{m.group(1)} to {std}: {m.group(3).strip(' :-')}"[:250]
-    m = re.search(r"AUTOMOTIVE\s+INDUSTRY\s+STANDARD(?!S)\s*(?:\(AIS\))?\s*[–\-]?\s*(?:\d{3}\s*)?(?:\(\s*AIS\s*[–\-]\s*\d{3}\s*\)\s*)?"
-                  r"(?:regarding\s+)?(.{10,250}?)\s+(?:AIS[\s\-:]*\d{3}|PRINTED\s+BY|Comments|Duration|"
-                  r"Date\s+of\s+hosting|Last\s+date|(?:January|February|March|April|May|June|July|August|September|"
-                  r"October|November|December)\s+\d{4})", head, re.I)
+    m = re.search(
+        r"AUTOMOTIVE\s+INDUSTRY\s+STANDARD(?!S)\s*(?:\(AIS\))?\s*[–\-]?\s*(?:\d{3}\s*)?(?:\(\s*AIS\s*[–\-]\s*\d{3}\s*\)\s*)?"
+        r"(?:regarding\s+)?(.{10,250}?)\s+(?:AIS[\s\-:]*\d{3}|PRINTED\s+BY|Comments|Duration|"
+        r"Date\s+of\s+hosting|Last\s+date|(?:January|February|March|April|May|June|July|August|September|"
+        r"October|November|December)\s+\d{4})",
+        head,
+        re.I,
+    )
     if m and not is_junk_title(m.group(1)):
-        return re.sub(r"^\(?AIS[\s\-]*\d{3}[^:]{0,25}:\s*(?:\d{4}\s+)?", "", m.group(1).strip(" :-.")).strip(" ()")[:250]
+        return re.sub(r"^\(?AIS[\s\-]*\d{3}[^:]{0,25}:\s*(?:\d{4}\s+)?", "", m.group(1).strip(" :-.")).strip(" ()")[
+            :250
+        ]
     return None
 
 
@@ -128,14 +191,20 @@ def own_ais_title(eng: str, number: int | None) -> str | None:
     """'TO AIS 123(PART 1): CMVR Type Approval of ...' - the standard's own title as quoted by its amendment pages."""
     if not number:
         return None
-    m = re.search(rf"AIS[\s\-]*0*{number}\b(?:\s*\((?:PART|Part)\s*\d+\))?(?:\s*\(Rev\.?\s*\d+\))?\s*:\s*(?!\d{{4}})"
-                  r"(.{15,180}?)(?=\s+(?:\d{1,2}\.\d|Page|Part\s+[A-Z]\b|PRINTED|$))", clean(eng[:80000]))
+    m = re.search(
+        rf"AIS[\s\-]*0*{number}\b(?:\s*\((?:PART|Part)\s*\d+\))?(?:\s*\(Rev\.?\s*\d+\))?\s*:\s*(?!\d{{4}})"
+        r"(.{15,180}?)(?=\s+(?:\d{1,2}\.\d|Page|Part\s+[A-Z]\b|PRINTED|$))",
+        clean(eng[:80000]),
+    )
     return m.group(1).strip(" :-.") if m and not is_junk_title(m.group(1)) else None
 
 
 # "These rules may be called the Motor Vehicles (Driving) Regulations, 2017."
-CALLED = re.compile(r"(?:rules|regulations|order|scheme|notification)\s*,?\s*may\s+be\s+called\s+(?:as\s+)?the\s+"
-                    r"([A-Z][^.;:]{8,170}?,?\s*(?:19|20)\d\d)", re.I)
+CALLED = re.compile(
+    r"(?:rules|regulations|order|scheme|notification)\s*,?\s*may\s+be\s+called\s+(?:as\s+)?the\s+"
+    r"([A-Z][^.;:]{8,170}?,?\s*(?:19|20)\d\d)",
+    re.I,
+)
 ACT_TITLE = re.compile(r"\b(THE\s+[A-Z][A-Za-z\s\(\)\-']{4,90}?\s+ACT,?\s*(?:19|20)\d\d)")
 
 
@@ -152,17 +221,26 @@ def called_title(text: str) -> str | None:
 
 
 def signatory(eng: str) -> str | None:
-    m = re.search(r"\n\s*\(?([A-Z][A-Z\.\s]{4,40}?)\)?\s*,?\s*\n?\s*(?:Jt\.|Joint|Addl\.|Additional|Under|Deputy|Dy\.)\s*Secy|"
-                  r"\n\s*\(?([A-Z][A-Z\.\s]{4,40}?)\)?\s*,?\s*\n?\s*(?:Joint|Additional|Under|Deputy)\s+Secretary", eng)
+    m = re.search(
+        r"\n\s*\(?([A-Z][A-Z\.\s]{4,40}?)\)?\s*,?\s*\n?\s*(?:Jt\.|Joint|Addl\.|Additional|Under|Deputy|Dy\.)\s*Secy|"
+        r"\n\s*\(?([A-Z][A-Z\.\s]{4,40}?)\)?\s*,?\s*\n?\s*(?:Joint|Additional|Under|Deputy)\s+Secretary",
+        eng,
+    )
     if not m:
         return None
     name = (m.group(1) or m.group(2) or "").strip(" ,.")
     return name.title() if 4 < len(name) < 45 else None
 
 
-POWERS = re.compile(r"(?:section|sections)\s+(\d{1,3}[A-Z]?)(?:\s*(?:,|and)\s*(\d{1,3}[A-Z]?))*\s+of\s+the\s+Motor\s+Vehicles\s+Act", re.I)
-COMMENCE = re.compile(r"shall\s+come\s+into\s+(?:force|effect)\s+(on\s+the\s+date\s+of\s+(?:their|its)\s+(?:final\s+)?publication|"
-                      r"on\s+(?:and\s+from\s+)?(?:the\s+)?[^.;]{4,60}?\d{4})", re.I)
+POWERS = re.compile(
+    r"(?:section|sections)\s+(\d{1,3}[A-Z]?)(?:\s*(?:,|and)\s*(\d{1,3}[A-Z]?))*\s+of\s+the\s+Motor\s+Vehicles\s+Act",
+    re.I,
+)
+COMMENCE = re.compile(
+    r"shall\s+come\s+into\s+(?:force|effect)\s+(on\s+the\s+date\s+of\s+(?:their|its)\s+(?:final\s+)?publication|"
+    r"on\s+(?:and\s+from\s+)?(?:the\s+)?[^.;]{4,60}?\d{4})",
+    re.I,
+)
 DAYS_WORDS = {"seven": 7, "fifteen": 15, "thirty": 30, "forty-five": 45, "forty five": 45, "sixty": 60, "ninety": 90}
 
 
@@ -177,15 +255,21 @@ def comment_days(eng: str) -> int | None:
 def amends_targets(op: str) -> tuple[list[str], list[str]]:
     targets, notifs = [], []
     if re.search(r"Central\s+Motor\s+Vehicles\s+Rules", op[:4000], re.I):
-        for m in re.finditer(r"in\s+rule\s+(\d{1,3}[A-Z]{0,2})(?:\s*,\s*(?:in\s+)?sub-rule\s*\((\w+)\))?", op[:20000], re.I):
+        for m in re.finditer(
+            r"in\s+rule\s+(\d{1,3}[A-Z]{0,2})(?:\s*,\s*(?:in\s+)?sub-rule\s*\((\w+)\))?", op[:20000], re.I
+        ):
             t = f"CMVR Rule {m.group(1)}" + (f"({m.group(2)})" if m.group(2) else "")
             if t not in targets:
                 targets.append(t)
         if not targets:
             targets.append("CMVR")
-    for m in re.finditer(r"(?:amendments?|corrections?|corrigendum)\s+(?:in|to)\s+the\s+(?:said\s+)?notification[^.]{0,250}?"
-                         + P.SERIES_RE + r"\s*(\d{1,5})\s*\(?\s*E\s*\)?[,\s]*(?:dated\s+(?:the\s+)?)?([^;]{0,40}?\d{4})?",
-                         op[:8000], re.I):
+    for m in re.finditer(
+        r"(?:amendments?|corrections?|corrigendum)\s+(?:in|to)\s+the\s+(?:said\s+)?notification[^.]{0,250}?"
+        + P.SERIES_RE
+        + r"\s*(\d{1,5})\s*\(?\s*E\s*\)?[,\s]*(?:dated\s+(?:the\s+)?)?([^;]{0,40}?\d{4})?",
+        op[:8000],
+        re.I,
+    ):
         d = P.parse_date(m.group(3) or "")
         y = d.year if d else (int(re.search(r"\d{4}", m.group(3)).group(0)) if m.group(3) else None)
         cid = P.notification_canonical(P.series_code(m.group(1)), m.group(2), y)
@@ -212,11 +296,19 @@ def ais_annexes(eng: str) -> list[dict]:
 
 def amendment_instructions(seg: str) -> list[dict]:
     out = []
-    for m in re.finditer(r"(Add|Insert)\s+(?:the\s+following\s+)?(?:new\s+)?(?:clauses?|para(?:graph)?s?)\s+([\d\.,\sand]+?)\s+after\s+"
-                         r"(?:clause|para(?:graph)?)\s+([\d\.]+)", seg, re.I):
+    for m in re.finditer(
+        r"(Add|Insert)\s+(?:the\s+following\s+)?(?:new\s+)?(?:clauses?|para(?:graph)?s?)\s+([\d\.,\sand]+?)\s+after\s+"
+        r"(?:clause|para(?:graph)?)\s+([\d\.]+)",
+        seg,
+        re.I,
+    ):
         cl = [c for c in re.split(r"[,\s]+(?:and\s+)?", m.group(2).strip()) if re.match(r"\d", c)]
         out.append({"action": "add", "clauses": cl, "after": m.group(3).rstrip(".")})
-    for m in re.finditer(r"(?:clause|para(?:graph)?)\s+([\d\.]+)[^\n]{0,60}?\n?[^\n]{0,30}?(substitut\w+|delet\w+|omit\w+|correct\w+)", seg, re.I):
+    for m in re.finditer(
+        r"(?:clause|para(?:graph)?)\s+([\d\.]+)[^\n]{0,60}?\n?[^\n]{0,30}?(substitut\w+|delet\w+|omit\w+|correct\w+)",
+        seg,
+        re.I,
+    ):
         act = m.group(2).lower()
         action = "substitute" if act.startswith("substitut") else "delete" if act[:4] in ("dele", "omit") else "correct"
         out.append({"action": action, "clause": m.group(1).rstrip(".")})
@@ -225,20 +317,32 @@ def amendment_instructions(seg: str) -> list[dict]:
 
 def circular_fields(eng: str) -> dict:
     head = eng[:5000]
-    ref = re.search(r"\bNo\.?\s*[:\-]?\s*((?:RT|R\.T\.|NT|RW|H|S|T|A|Q|G)[\w\-/\.\(\) ]{4,50}?\d{2,4}(?:-[A-Z\(\)]+)?)", head)
+    ref = re.search(
+        r"\bNo\.?\s*[:\-]?\s*((?:RT|R\.T\.|NT|RW|H|S|T|A|Q|G)[\w\-/\.\(\) ]{4,50}?\d{2,4}(?:-[A-Z\(\)]+)?)", head
+    )
     subj = re.search(r"Sub(?:ject)?\s*[:\-–.]\s*(.{5,300}?)(?:\n\s*\n|Sir|Madam|\n\s*\d\.)", head, re.I | re.S)
     d = P.parse_date(head)
     to = re.search(r"\nTo,?\s*\n(.{5,500}?)\n\s*(?:Sub|Subject)", head, re.I | re.S)
     addressees = [clean(x) for x in to.group(1).split("\n") if len(x.strip()) > 3][:10] if to else []
-    return {"ref_no": clean(ref.group(1)) if ref else None, "date": d.isoformat() if d else None,
-            "subject": clean(subj.group(1))[:300] if subj else None, "addressees": addressees}
+    return {
+        "ref_no": clean(ref.group(1)) if ref else None,
+        "date": d.isoformat() if d else None,
+        "subject": clean(subj.group(1))[:300] if subj else None,
+        "addressees": addressees,
+    }
 
 
 def generic_fields(eng: str, name: str) -> dict:
-    lines = [ln.strip() for ln in eng[:3000].splitlines() if 12 < len(ln.strip()) < 200 and not ln.strip().startswith("<<<")]
+    lines = [
+        ln.strip() for ln in eng[:3000].splitlines() if 12 < len(ln.strip()) < 200 and not ln.strip().startswith("<<<")
+    ]
     d = P.parse_date(eng[:4000])
-    return {"title": lines[0] if lines else None, "date": d.isoformat() if d else None,
-            "references": P.find_references(eng[:60000], ("AIS", "IS", "UN_R"))[:40], "file_name": name or None}
+    return {
+        "title": lines[0] if lines else None,
+        "date": d.isoformat() if d else None,
+        "references": P.find_references(eng[:60000], ("AIS", "IS", "UN_R"))[:40],
+        "file_name": name or None,
+    }
 
 
 def bis_catalogue_rows(path: str) -> list[dict]:
@@ -257,7 +361,9 @@ def bis_catalogue_rows(path: str) -> list[dict]:
 # Motor vehicle law. Titles are often OCR-damaged ("MOTOR VEHIC ES", "VEHICIJES", "Noor Vehicles"), so the opening
 # lines are checked too. The 1914 and 1939 Acts were repealed by the Motor Vehicles Act, 1988; Acts amending them
 # are history (superseded), the 1988 Act, its amendments and the CMVR 1989 are in force.
-MV_TITLE = re.compile(r"motor\W{0,3}vehi\w{0,5}\W{0,3}e?s?\s*(\(\s*amendment\s*\)\s*)?act|central\s+motor\s+vehicles\s+rules", re.I)
+MV_TITLE = re.compile(
+    r"motor\W{0,3}vehi\w{0,5}\W{0,3}e?s?\s*(\(\s*amendment\s*\)\s*)?act|central\s+motor\s+vehicles\s+rules", re.I
+)
 MV_AMENDS = re.compile(r"(amend|menl)\w*\s+the\s+(indian\s+)?[\w~]{2,7}\s+vehicles\s+act,?\s*(\d{4})", re.I)
 MV_AMENDMENT_ACT = re.compile(r"motor\s+vehicles\s*\(\s*amendment\s*\)\s*act", re.I)
 
@@ -276,7 +382,9 @@ def motor_vehicle_law(title: str, head: str) -> str | None:
 
 
 # ====================================================================== deterministic extraction per document
-def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, names: list[str]) -> tuple[dict, dict, dict]:
+def deterministic(
+    doc: dict, pages: list[PageText], df: dict, file_row: dict, names: list[str]
+) -> tuple[dict, dict, dict]:
     """Returns (columns, data, confidence)."""
     dc = DocClass(doc["doc_class"])
     a, b = df["page_from"] or 1, df["page_to"] or (pages[-1].page if pages else 1)
@@ -289,13 +397,27 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         targets, notifs = amends_targets(op)
         powers = [f"MV Act s.{m.group(1)}" for m in POWERS.finditer(op[:3000])]
         cm = COMMENCE.search(op)
-        data.update({k: v for k, v in {
-            "signatory": signatory(op), "powers": list(dict.fromkeys(powers)),
-            "commencement": ("date of publication" if cm and "publication" in cm.group(1).lower() else clean(cm.group(1)) if cm else None),
-            "comment_period_days": comment_days(op) if doc["status"] == "draft" else None,
-            "amends_targets": targets, "amends_notification": notifs,
-            "references": notification_references(op, doc["canonical_id"]),
-        }.items() if v not in (None, [], {})})
+        data.update(
+            {
+                k: v
+                for k, v in {
+                    "signatory": signatory(op),
+                    "powers": list(dict.fromkeys(powers)),
+                    "commencement": (
+                        "date of publication"
+                        if cm and "publication" in cm.group(1).lower()
+                        else clean(cm.group(1))
+                        if cm
+                        else None
+                    ),
+                    "comment_period_days": comment_days(op) if doc["status"] == "draft" else None,
+                    "amends_targets": targets,
+                    "amends_notification": notifs,
+                    "references": notification_references(op, doc["canonical_id"]),
+                }.items()
+                if v not in (None, [], {})
+            }
+        )
         cats = categories_of(op[:30000])
         named = called_title(op) or called_title(eng)
         subj = subject_line(op, targets)
@@ -308,22 +430,40 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
     elif dc in (DocClass.AIS_STANDARD, DocClass.SAFETY_STANDARD_LEGACY):
         scope = scope_section(eng)
         trans = transitional_section(eng)
-        deemed = [P.ais_canonical_from_text(m.group(1)) for m in
-                  re.finditer(r"deemed\s+to\s+(?:comply|be\s+in\s+compliance)\s+with\s+(?:the\s+(?:requirements\s+of\s+)?)?(AIS[\s\-:]*\d{3}[^,;.\n]{0,25})", eng, re.I)]
+        deemed = [
+            P.ais_canonical_from_text(m.group(1))
+            for m in re.finditer(
+                r"deemed\s+to\s+(?:comply|be\s+in\s+compliance)\s+with\s+(?:the\s+(?:requirements\s+of\s+)?)?(AIS[\s\-:]*\d{3}[^,;.\n]{0,25})",
+                eng,
+                re.I,
+            )
+        ]
         unr = sorted({f"UN R{int(m.group(1))}" for m in P.REF_PATTERNS["UN_R"].finditer(eng[:20000])})
         title = ais_title(eng)
         if is_junk_title(title):
             title = own_ais_title(eng, doc.get("number")) or title
         cats = categories_of(scope) if scope else categories_of(eng[:8000])
-        data.update({k: v for k, v in {
-            "title": title, "scope_text": scope, "transitional_text": trans,
-            "applicability": {"categories": cats, "raw": scope[:400]} if scope else None,
-            "deemed_compliance": [d for d in dict.fromkeys(deemed) if d and d != doc["canonical_id"]],
-            "based_on": unr[:10], "annexes": ais_annexes(eng),
-            "references": [r for r in P.find_references(eng[:120000], ("AIS", "IS", "UN_R", "ISO", "IEC"))
-                           if r != doc["canonical_id"]][:80],
-            "cover_month": doc["doc_date"].strftime("%Y-%m") if doc.get("doc_date") else None,
-        }.items() if v not in (None, [], {})})
+        data.update(
+            {
+                k: v
+                for k, v in {
+                    "title": title,
+                    "scope_text": scope,
+                    "transitional_text": trans,
+                    "applicability": {"categories": cats, "raw": scope[:400]} if scope else None,
+                    "deemed_compliance": [d for d in dict.fromkeys(deemed) if d and d != doc["canonical_id"]],
+                    "based_on": unr[:10],
+                    "annexes": ais_annexes(eng),
+                    "references": [
+                        r
+                        for r in P.find_references(eng[:120000], ("AIS", "IS", "UN_R", "ISO", "IEC"))
+                        if r != doc["canonical_id"]
+                    ][:80],
+                    "cover_month": doc["doc_date"].strftime("%Y-%m") if doc.get("doc_date") else None,
+                }.items()
+                if v not in (None, [], {})
+            }
+        )
         cols["official_title"] = title if is_junk_title(doc.get("official_title")) else doc["official_title"]
         cols["subject"] = title
         conf.update({"scope_text": 0.8 if scope else 0.0, "title": 0.7 if title else 0.0})
@@ -331,8 +471,10 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
     elif dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM):
         data["instructions"] = amendment_instructions(eng) or data.get("instructions", [])
         base = doc["data"].get("amends") if doc.get("data") else None
-        cols["subject"] = f"{'Amendment' if dc == DocClass.AIS_AMENDMENT else 'Corrigendum'} "\
-                          f"{doc.get('amendment_no') or doc.get('corrigendum_no') or ''} to {base}".strip()
+        cols["subject"] = (
+            f"{'Amendment' if dc == DocClass.AIS_AMENDMENT else 'Corrigendum'} "
+            f"{doc.get('amendment_no') or doc.get('corrigendum_no') or ''} to {base}".strip()
+        )
         cats = []
         text_for_tags = eng[:15000]
     elif dc == DocClass.AIS_DRAFT:
@@ -354,7 +496,9 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         cats, text_for_tags = [], ""
     elif dc == DocClass.TAP_DOCUMENT:
         data.update({"doc_no": "MoRTH/CMVR/TAP-115/116", "issue": 4})
-        cols["subject"] = "Document on test method, testing equipment and related procedures for type approval (CMVR-TAP-115/116)"
+        cols["subject"] = (
+            "Document on test method, testing equipment and related procedures for type approval (CMVR-TAP-115/116)"
+        )
         cols["official_title"] = "MoRTH/CMVR/TAP-115/116 Issue 4"
         cats = categories_of(eng[:20000])
         text_for_tags = eng[:20000]
@@ -389,9 +533,18 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         # LLM is not asked (its category codes are India's)
         allt = full_text(pages, a, b)
         n = thai.law_identity(allt, dc.value) or {}
-        data.update({k: v for k, v in {"title": n.get("title"), "ref_no": n.get("canonical_id"),
-                                       "date": n["date"].isoformat() if n.get("date") else None,
-                                       "file_name": names[0] if names else None}.items() if v})
+        data.update(
+            {
+                k: v
+                for k, v in {
+                    "title": n.get("title"),
+                    "ref_no": n.get("canonical_id"),
+                    "date": n["date"].isoformat() if n.get("date") else None,
+                    "file_name": names[0] if names else None,
+                }.items()
+                if v
+            }
+        )
         cols["subject"] = n.get("title")
         head = thai.thai_digits(allt[:8000])
         cats = thai.categories_from(n.get("title"), head)
@@ -404,12 +557,23 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
         # own first page (malaysia.legal_identity); the Malay cover is not an "English" page, so the full text
         allt = full_text(pages, a, b)
         leg = malaysia.legal_identity(allt) or {}
-        data.update({k: v for k, v in {"title": leg.get("title"), "ref_no": leg.get("ref_no"),
-                                       "date": leg["published"].isoformat() if leg.get("published") else None,
-                                       "file_name": names[0] if names else None}.items() if v})
+        data.update(
+            {
+                k: v
+                for k, v in {
+                    "title": leg.get("title"),
+                    "ref_no": leg.get("ref_no"),
+                    "date": leg["published"].isoformat() if leg.get("published") else None,
+                    "file_name": names[0] if names else None,
+                }.items()
+                if v
+            }
+        )
         # official Malay title kept; the official English name (fixed legal wording, no LLM) is what the portal shows
         cols["official_title"] = leg.get("title")
-        cols["subject"] = malaysia.english_legal_title(leg.get("kind", ""), leg.get("number"), leg.get("title")) or leg.get("title")
+        cols["subject"] = malaysia.english_legal_title(
+            leg.get("kind", ""), leg.get("number"), leg.get("title")
+        ) or leg.get("title")
         if leg.get("in_force"):
             cols["effective_date"] = leg["in_force"]
         cats = malaysia.categories_of(allt[:20000])
@@ -424,8 +588,13 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
             title, malay = malaysia.document_title(full_text(pages, a, b))
             title = title or g.get("title")
         refs = [f"{c['component']}: {', '.join(c['refs'])}" for c in malaysia.cta_components(eng)]
-        data.update({k: v for k, v in {"title": title, "references": refs, "file_name": names[0] if names else None}.items()
-                     if v not in (None, [], {})})
+        data.update(
+            {
+                k: v
+                for k, v in {"title": title, "references": refs, "file_name": names[0] if names else None}.items()
+                if v not in (None, [], {})
+            }
+        )
         cols["subject"] = title
         if malay:
             cols["official_title"] = malay
@@ -446,25 +615,37 @@ def deterministic(doc: dict, pages: list[PageText], df: dict, file_row: dict, na
                 cols["subject"] = re.sub(r"\s+", " ", m.group(1)).title()
         cats = categories_of(eng[:20000]) if dc != DocClass.OFF_TOPIC else []
         text_for_tags = eng[:30000]
-    if dc not in (DocClass.OFF_TOPIC, DocClass.TIS_STANDARD) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE):
+    if dc not in (DocClass.OFF_TOPIC, DocClass.TIS_STANDARD) + (
+        DocClass.MINISTERIAL_REGULATION,
+        DocClass.DLT_NOTIFICATION,
+        DocClass.TH_ACT,
+        DocClass.GAZETTE_NOTICE,
+    ):
         cols["usage"] = P.find_usage(text_for_tags[:30000])
         cols["powertrains"] = P.find_powertrains(text_for_tags[:30000], min_hits=2)
         cols["domains"] = find_domains(text_for_tags)
     if dc in (DocClass.ACT, DocClass.CONSOLIDATED_RULES):
-        law = motor_vehicle_law(f"{cols.get('subject') or ''} {(names[0] if names else '').replace('_', ' ')}", eng[:2000])
+        law = motor_vehicle_law(
+            f"{cols.get('subject') or ''} {(names[0] if names else '').replace('_', ' ')}", eng[:2000]
+        )
         if law:
             # the Motor Vehicles Act / CMVR govern all motor vehicles; category words inside them are only mentions
             cats = ["ALL"]
             if law == "repealed":
                 cols["status"] = Status.SUPERSEDED.value
     cols["vehicle_categories"] = cats
-    cols["in_scope"] = in_scope(cats, file_row.get("country")) if cats else (None if dc == DocClass.OFF_TOPIC else False)
+    cols["in_scope"] = (
+        in_scope(cats, file_row.get("country")) if cats else (None if dc == DocClass.OFF_TOPIC else False)
+    )
     conf["vehicle_categories"] = 0.7 if cats else 0.0
     return cols, data, conf
 
 
-HEREBY = re.compile(r"hereby\s+(specifies|notifies|exempts|directs|appoints|extends|declares|prescribes|"
-                    r"authori[sz]es|constitutes|rescinds|amends|corrects)\s+(.{15,220}?)(?:[;:]|,\s*namely|\.\s|$)", re.I)
+HEREBY = re.compile(
+    r"hereby\s+(specifies|notifies|exempts|directs|appoints|extends|declares|prescribes|"
+    r"authori[sz]es|constitutes|rescinds|amends|corrects)\s+(.{15,220}?)(?:[;:]|,\s*namely|\.\s|$)",
+    re.I,
+)
 
 
 def subject_line(op: str, targets: list[str] | None = None) -> str | None:
@@ -493,16 +674,24 @@ def llm_model_for(dc: DocClass) -> type[BaseModel]:
         f"{base.__name__}Extraction",
         data=(base, ...),
         subject=(str | None, Field(None, description="One-line plain English summary of what the document does")),
-        vehicle_categories=(list[str], Field(default_factory=list, description="Codes from: L1 L2 L3 L4 L5 L6 L7 M1 M2 M3 "
-                                                                                "N1 N2 N3 O T CEV QUADRICYCLE E_RICKSHAW E_CART ALL. "
-                                                                                "ALL only when it applies to all motor vehicles.")),
+        vehicle_categories=(
+            list[str],
+            Field(
+                default_factory=list,
+                description="Codes from: L1 L2 L3 L4 L5 L6 L7 M1 M2 M3 "
+                "N1 N2 N3 O T CEV QUADRICYCLE E_RICKSHAW E_CART ALL. "
+                "ALL only when it applies to all motor vehicles.",
+            ),
+        ),
         field_confidence=(list[FieldConfidence], Field(default_factory=list)),
     )
 
 
-SYSTEM = ("You extract structured data from Indian vehicle-regulation documents (MoRTH Gazette notifications, AIS "
-          "standards). Use only facts present in the text. Dates as YYYY-MM-DD. Leave a field empty when the text "
-          "does not state it. Never invent standard numbers.")
+SYSTEM = (
+    "You extract structured data from Indian vehicle-regulation documents (MoRTH Gazette notifications, AIS "
+    "standards). Use only facts present in the text. Dates as YYYY-MM-DD. Leave a field empty when the text "
+    "does not state it. Never invent standard numbers."
+)
 
 
 def llm_text(dc: DocClass, eng: str) -> str:
@@ -515,7 +704,9 @@ def llm_text(dc: DocClass, eng: str) -> str:
 def llm_extract(doc: dict, eng: str):
     dc = DocClass(doc["doc_class"])
     model = llm_model_for(dc)
-    return llm.structured(model, SYSTEM, f"doc_class={dc.value} canonical_id={doc['canonical_id']}\n\n{llm_text(dc, eng)}")
+    return llm.structured(
+        model, SYSTEM, f"doc_class={dc.value} canonical_id={doc['canonical_id']}\n\n{llm_text(dc, eng)}"
+    )
 
 
 class IdentityCheck(BaseModel):
@@ -571,12 +762,17 @@ def stage_extract(conn: psycopg.Connection, f: dict, use_llm: bool = True) -> st
 
 
 LISTING_NOISE = re.compile(r"^\d{4}-\d{2}-\d{2}_|\.pdf$|_[0-9a-f]{8}$|_\d$", re.I)
-LISTING_PREFIX = re.compile(r"^\s*(?:G\.?\s*S\.?\s*R\.?|S\.?\s*O\.?)\s*\d{1,5}\s*\(?\s*E?\s*\)?\s*"
-                            r"(?:dated\s+)?(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\s*)?(?:regarding|-|–|:)?\s*", re.I)
+LISTING_PREFIX = re.compile(
+    r"^\s*(?:G\.?\s*S\.?\s*R\.?|S\.?\s*O\.?)\s*\d{1,5}\s*\(?\s*E?\s*\)?\s*"
+    r"(?:dated\s+)?(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\s*)?(?:regarding|-|–|:)?\s*",
+    re.I,
+)
 
 
 def clean_listing(raw: str) -> str:
-    t = LISTING_NOISE.sub("", raw.strip())  # dates / extension / hash suffix first, while the underscores are still there
+    t = LISTING_NOISE.sub(
+        "", raw.strip()
+    )  # dates / extension / hash suffix first, while the underscores are still there
     t = LISTING_NOISE.sub("", t).replace("_", " ").strip()
     t = re.sub(r"\s*\((?:Last\s+date|Date\s+of\s+hosting)[^)]*\)", "", t, flags=re.I)
     t = re.sub(r"^\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+,?\s+\d{4}\s*(?:regarding\s+)?", "", t, flags=re.I)
@@ -591,7 +787,9 @@ def ais_listing_matches(doc: dict, lr: dict) -> bool:
     part = re.search(r"Part\s*(\d+)", code, re.I)
     if (str(doc.get("part") or "") or None) != (part.group(1) if part else None):
         return False
-    return (lr.get("tab") == "Draft" or "draft" in code.lower()) == (doc.get("doc_class") == "AIS_DRAFT" or doc.get("status") == "draft")
+    return (lr.get("tab") == "Draft" or "draft" in code.lower()) == (
+        doc.get("doc_class") == "AIS_DRAFT" or doc.get("status") == "draft"
+    )
 
 
 def listing_subject(conn: psycopg.Connection, doc: dict, file_id: int) -> str | None:
@@ -619,18 +817,33 @@ def listing_subject(conn: psycopg.Connection, doc: dict, file_id: int) -> str | 
                 if raw is r["listing_title"]:
                     continue  # ARAI's listing_title is the code; the description is in listing_raw.title
             t = clean_listing(raw)
-            if not is_junk_title(t) and not re.fullmatch(r"[\w.\-() ]{0,20}", t) and (best is None or len(t) > len(best)):
+            if (
+                not is_junk_title(t)
+                and not re.fullmatch(r"[\w.\-() ]{0,20}", t)
+                and (best is None or len(t) > len(best))
+            ):
                 best = t
     return best[:240] if best else None
 
 
-def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pages: list[PageText], names: list[str],
-                     use_llm: bool = True) -> None:
+def extract_document(
+    conn: psycopg.Connection,
+    doc: dict,
+    df: dict,
+    f: dict,
+    pages: list[PageText],
+    names: list[str],
+    use_llm: bool = True,
+) -> None:
     dc = DocClass(doc["doc_class"])
     cols, data, conf = deterministic(doc, pages, df, f, names)
     data.pop("subject_source", None)  # provenance belongs in extraction (an older version wrote it into data)
     subject_source = None
-    if dc in (DocClass.AIS_STANDARD, DocClass.AIS_DRAFT, DocClass.SAFETY_STANDARD_LEGACY) and not AIS_DRAFT_COVER_TITLE.match(cols.get("subject") or ""):
+    if dc in (
+        DocClass.AIS_STANDARD,
+        DocClass.AIS_DRAFT,
+        DocClass.SAFETY_STANDARD_LEGACY,
+    ) and not AIS_DRAFT_COVER_TITLE.match(cols.get("subject") or ""):
         alt = listing_subject(conn, doc, f["id"])
         if alt:
             cols["subject"] = alt
@@ -639,22 +852,41 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
             conf["subject"] = 0.8
             if dc != DocClass.AIS_DRAFT and is_junk_title(doc.get("official_title")):
                 cols["official_title"] = alt
-    if dc not in (DocClass.OFF_TOPIC, DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM, DocClass.TIS_STANDARD) \
-            and is_junk_title(cols.get("subject")):
+    if dc not in (
+        DocClass.OFF_TOPIC,
+        DocClass.AIS_AMENDMENT,
+        DocClass.AIS_CORRIGENDUM,
+        DocClass.TIS_STANDARD,
+    ) and is_junk_title(cols.get("subject")):
         alt = listing_subject(conn, doc, f["id"])
         if alt:
             cols["subject"] = alt
             subject_source = "listing"
             conf["subject"] = 0.4
-    if dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM) and not cols.get("vehicle_categories") and data.get("amends"):
+    if (
+        dc in (DocClass.AIS_AMENDMENT, DocClass.AIS_CORRIGENDUM)
+        and not cols.get("vehicle_categories")
+        and data.get("amends")
+    ):
         # an amendment applies to the vehicles of the standard it amends (same rule as link.link_ais)
         base = R.find_document(conn, data["amends"])
         if base and base["vehicle_categories"]:
-            cols.update(vehicle_categories=base["vehicle_categories"], in_scope=base["in_scope"],
-                        domains=cols.get("domains") or base["domains"], powertrains=cols.get("powertrains") or base["powertrains"])
+            cols.update(
+                vehicle_categories=base["vehicle_categories"],
+                in_scope=base["in_scope"],
+                domains=cols.get("domains") or base["domains"],
+                powertrains=cols.get("powertrains") or base["powertrains"],
+            )
             conf["vehicle_categories"] = 0.6
-    extraction = {"model": "rules", "rules": RULES_VERSION, "prompt": None, "confidence": conf, "needs_check": [],
-                  "source_file": f["sha256"], "pages": [df["page_from"], df["page_to"]]}
+    extraction = {
+        "model": "rules",
+        "rules": RULES_VERSION,
+        "prompt": None,
+        "confidence": conf,
+        "needs_check": [],
+        "source_file": f["sha256"],
+        "pages": [df["page_from"], df["page_to"]],
+    }
     if subject_source:  # where the subject line came from when the content gave none
         extraction["subject_source"] = subject_source
     old = doc["extraction"] or {}
@@ -662,9 +894,17 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
         extraction.update({k: old[k] for k in ("model", "prompt", "agreement") if k in old})
         data = {**data, **{k: v for k, v in (doc["data"] or {}).items() if k in ("provisions", "instructions")}}
     # TIS_STANDARD: a one-page TISI summary in Thai, read completely by the rules (thai.py)
-    needs_llm = dc not in (DocClass.OFF_TOPIC, DocClass.FORM_TEMPLATE, DocClass.BIS_CATALOGUE, DocClass.AIS_FORM_TABLE,
-                           DocClass.REPORT, DocClass.TAP_DOCUMENT, DocClass.TIS_STANDARD, DocClass.MY_ACT,
-                           DocClass.MY_SUBSIDIARY_LEGISLATION) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE)
+    needs_llm = dc not in (
+        DocClass.OFF_TOPIC,
+        DocClass.FORM_TEMPLATE,
+        DocClass.BIS_CATALOGUE,
+        DocClass.AIS_FORM_TABLE,
+        DocClass.REPORT,
+        DocClass.TAP_DOCUMENT,
+        DocClass.TIS_STANDARD,
+        DocClass.MY_ACT,
+        DocClass.MY_SUBSIDIARY_LEGISLATION,
+    ) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE)
     if needs_llm and old.get("model") in (None, "rules"):
         ok = use_llm and llm.reachable()[0]
         if ok:
@@ -693,8 +933,11 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
     extraction["needs_check"] = sorted(set(extraction["needs_check"]))
     if f.get("ext") in ("html", "htm") and dc in (DocClass.MY_GUIDELINE, DocClass.MY_FORM):
         data.pop("date", None)  # a web page has no publication date: "Updated Date" / copyright stamps are not one
-    values = {**{k: v for k, v in cols.items() if v is not None or k == "in_scope"}, "data": Jsonb(data),
-              "extraction": Jsonb(extraction)}
+    values = {
+        **{k: v for k, v in cols.items() if v is not None or k == "in_scope"},
+        "data": Jsonb(data),
+        "extraction": Jsonb(extraction),
+    }
     if doc["doc_date"] is None and data.get("date") and re.fullmatch(P.ISO_DATE_RE, str(data["date"])):
         d = date.fromisoformat(data["date"])
         if d <= date.today():  # a later date in the text is a validity/implementation date, not the document's
@@ -710,9 +953,17 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
         listed = R.listings_of_document(conn, doc["id"])
         srcs = {r["code"] for r in listed}
         folders = {((r["listing_raw"] or {}).get("folder") or "")[:2] or None for r in listed}
-        issuer = ("AISC/ARAI" if srcs & {"ARAI_AIS", "ARAI_TAP"} or folders & {"07", "17", "18"} else
-                  "BIS" if "21" in folders else "MoPNG" if "29" in folders else
-                  "MoRTH" if srcs & {"MORTH_API", "EGAZETTE"} or folders & {"05", "06", "11", "27", "28"} else None)
+        issuer = (
+            "AISC/ARAI"
+            if srcs & {"ARAI_AIS", "ARAI_TAP"} or folders & {"07", "17", "18"}
+            else "BIS"
+            if "21" in folders
+            else "MoPNG"
+            if "29" in folders
+            else "MoRTH"
+            if srcs & {"MORTH_API", "EGAZETTE"} or folders & {"05", "06", "11", "27", "28"}
+            else None
+        )
         if issuer:
             values["issuer"] = issuer
             extraction["confidence"]["issuer"] = 0.5
@@ -725,12 +976,19 @@ def extract_document(conn: psycopg.Connection, doc: dict, df: dict, f: dict, pag
 
 def double_check(doc: dict, eng: str, data: dict) -> dict:
     """Second, independent prompt for identity/status/date on a 10% sample; agreement per field."""
-    r = llm.structured(IdentityCheck, "Read the document header and answer precisely.",
-                       f"What is the number, date and status (draft/final) of this document?\n\n{eng[:6000]}")
+    r = llm.structured(
+        IdentityCheck,
+        "Read the document header and answer precisely.",
+        f"What is the number, date and status (draft/final) of this document?\n\n{eng[:6000]}",
+    )
     norm = lambda s: re.sub(r"[^0-9a-z]", "", (s or "").lower())  # noqa: E731
-    return {"number": norm(r.number) in norm(doc["canonical_id"]) if r.number else None,
-            "date": (r.date == (data.get("date") or (doc["doc_date"].isoformat() if doc["doc_date"] else None))) if r.date else None,
-            "status": (r.status or "").lower().startswith(doc["status"][:5]) if r.status else None}
+    return {
+        "number": norm(r.number) in norm(doc["canonical_id"]) if r.number else None,
+        "date": (r.date == (data.get("date") or (doc["doc_date"].isoformat() if doc["doc_date"] else None)))
+        if r.date
+        else None,
+        "status": (r.status or "").lower().startswith(doc["status"][:5]) if r.status else None,
+    }
 
 
 def enrich_pending(conn: psycopg.Connection, limit: int = 200, workers: int | None = None) -> int:
@@ -748,9 +1006,12 @@ def enrich_pending(conn: psycopg.Connection, limit: int = 200, workers: int | No
     rows = conn.execute(
         """SELECT p.regulation_id, p.document_id AS file_id, p.page_from, p.page_to FROM regulations g
            JOIN document_parts p ON p.regulation_id=g.id AND p.is_best_copy
-           WHERE (g.extraction->>'llm_pending')::boolean AND """ + country.region_sql("g") + """
+           WHERE (g.extraction->>'llm_pending')::boolean AND """
+        + country.region_sql("g")
+        + """
            ORDER BY g.in_scope DESC, g.is_current DESC, g.extraction ? 'llm_error', g.updated_at LIMIT %s""",
-        (limit,)).fetchall()
+        (limit,),
+    ).fetchall()
     conn.commit()
     stop = False
 

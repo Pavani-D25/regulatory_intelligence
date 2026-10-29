@@ -24,8 +24,16 @@ MATCHED_BY = "rules:v1"
 def _record(conn: psycopg.Connection, key: str, doc: dict, values: dict, valid_from: date | None) -> int:
     if M.already_recorded(conn, key, doc["id"]):
         return 0
-    v = {"source_doc_id": doc["id"], "usage": doc.get("usage") or [], "powertrains": doc.get("powertrains") or [],
-         "conditions": {}, "model_scope": "all", "standard_refs": [], "standard_doc_ids": [], **values}
+    v = {
+        "source_doc_id": doc["id"],
+        "usage": doc.get("usage") or [],
+        "powertrains": doc.get("powertrains") or [],
+        "conditions": {},
+        "model_scope": "all",
+        "standard_refs": [],
+        "standard_doc_ids": [],
+        **values,
+    }
     M.supersede(conn, key, v, valid_from or date.today(), False)
     return 1
 
@@ -34,21 +42,34 @@ def tis_mandate(conn: psycopg.Connection, doc: dict) -> int:
     """TIS_STANDARD -> one rule version (key = family, e.g. TIS-721)."""
     if not doc.get("family_key"):
         return 0
-    newer = conn.execute("""SELECT 1 FROM requirement_versions v JOIN compliance_requirements r ON r.id = v.requirement_id
+    newer = conn.execute(
+        """SELECT 1 FROM requirement_versions v JOIN compliance_requirements r ON r.id = v.requirement_id
                             JOIN regulations g ON g.id = v.source_regulation_id
                             WHERE r.region_id = (SELECT region_id FROM regulations WHERE id = %s)
                               AND r.requirement_code = %s AND v.valid_to IS NULL AND g.year > %s""",
-                         (doc["id"], doc["family_key"], doc.get("year") or 0)).fetchone()
+        (doc["id"], doc["family_key"], doc.get("year") or 0),
+    ).fetchone()
     if newer:
         return 0  # an older edition processed late never replaces the newer edition's rule
     data = doc.get("data") or {}
     eff = date.fromisoformat(data["effective_date"]) if data.get("effective_date") else None
-    return _record(conn, doc["family_key"], doc, {
-        "legal_basis": f"{doc['canonical_id']} (TISI mandatory standard)", "subject": doc.get("subject"),
-        "standard_refs": [doc["canonical_id"]], "standard_doc_ids": [doc["id"]],
-        "vehicle_categories": doc.get("vehicle_categories") or [], "date_of_notification": None,
-        "effective_date": eff, "implementation_date": eff,
-        "implementation_rule": "mandatory from the TISI effective date (วันที่มีผลบังคับใช้)" if eff else None}, eff)
+    return _record(
+        conn,
+        doc["family_key"],
+        doc,
+        {
+            "legal_basis": f"{doc['canonical_id']} (TISI mandatory standard)",
+            "subject": doc.get("subject"),
+            "standard_refs": [doc["canonical_id"]],
+            "standard_doc_ids": [doc["id"]],
+            "vehicle_categories": doc.get("vehicle_categories") or [],
+            "date_of_notification": None,
+            "effective_date": eff,
+            "implementation_date": eff,
+            "implementation_rule": "mandatory from the TISI effective date (วันที่มีผลบังคับใช้)" if eff else None,
+        },
+        eff,
+    )
 
 
 def my_mandates(conn: psycopg.Connection, doc: dict, text: str) -> int:
@@ -56,17 +77,37 @@ def my_mandates(conn: psycopg.Connection, doc: dict, text: str) -> int:
     n = 0
     for c in malaysia.cta_components(text):
         key = f"MY-CTA-{malaysia.slug(c['component'])}"
-        n += _record(conn, key, doc, {
-            "legal_basis": "Customs (Prohibition of Imports) Order: JPJ Component Type Approval",
-            "subject": f"CTA: {c['component']}", "standard_refs": c["refs"],
-            "vehicle_categories": c["vehicle_categories"], "conditions": {"regulations": c["regulations"]},
-            "implementation_rule": "component must hold JPJ CTA before domestic supply and sale"}, None)
+        n += _record(
+            conn,
+            key,
+            doc,
+            {
+                "legal_basis": "Customs (Prohibition of Imports) Order: JPJ Component Type Approval",
+                "subject": f"CTA: {c['component']}",
+                "standard_refs": c["refs"],
+                "vehicle_categories": c["vehicle_categories"],
+                "conditions": {"regulations": c["regulations"]},
+                "implementation_rule": "component must hold JPJ CTA before domestic supply and sale",
+            },
+            None,
+        )
     for s in malaysia.doe_stages(text):
-        n += _record(conn, s["key"], doc, {
-            "legal_basis": s["legal_basis"], "subject": s["subject"], "vehicle_categories": ["ALL"],
-            "powertrains": [s["fuel"]], "effective_date": s["effective_date"], "implementation_date": s["effective_date"],
-            "conditions": {"text": s["text"]},
-            "implementation_rule": "new models on or after this date" if s["effective_date"] else None}, s["effective_date"])
+        n += _record(
+            conn,
+            s["key"],
+            doc,
+            {
+                "legal_basis": s["legal_basis"],
+                "subject": s["subject"],
+                "vehicle_categories": ["ALL"],
+                "powertrains": [s["fuel"]],
+                "effective_date": s["effective_date"],
+                "implementation_date": s["effective_date"],
+                "conditions": {"text": s["text"]},
+                "implementation_rule": "new models on or after this date" if s["effective_date"] else None,
+            },
+            s["effective_date"],
+        )
     return n
 
 
@@ -82,7 +123,9 @@ def _id(*prefixes: str):
 
 def _src(*codes: str, rx: str | None = None):
     pat = re.compile(rx, re.I) if rx else None
-    return lambda r: bool(r["sources"] & set(codes)) and (pat is None or bool(pat.search(r["refs"] + " " + (r["subject"] or ""))))
+    return lambda r: (
+        bool(r["sources"] & set(codes)) and (pat is None or bool(pat.search(r["refs"] + " " + (r["subject"] or ""))))
+    )
 
 
 EMISSION = _rx(r"สารมลพิษ|ท่อไอเสีย")
@@ -92,6 +135,8 @@ LAW_CLASSES = {"TH_ACT", "MINISTERIAL_REGULATION", "DLT_NOTIFICATION", "GAZETTE_
 
 def _law(r: dict) -> bool:
     return r["doc_class"] in LAW_CLASSES
+
+
 RULES: dict[str, list[tuple[str, str, object]]] = {
     "TH": [
         ("TH-01", "supporting", lambda r: r["doc_class"] == "TIS_STANDARD"),
@@ -114,12 +159,12 @@ RULES: dict[str, list[tuple[str, str, object]]] = {
     ],
     "MY": [
         ("MY-01", "primary", _src("MY_JPJ_VTA")),
-        ("MY-01", "supporting", _id("MY-ACT-333")),         # Road Transport Act 1987: registration needs approval
+        ("MY-01", "supporting", _id("MY-ACT-333")),  # Road Transport Act 1987: registration needs approval
         ("MY-16", "primary", _id("MY-ACT-333")),
-        ("MY-03", "primary", _id("PUA-543-1996")),          # EQ (Control of Emissions from Petrol Engines) 1996
+        ("MY-03", "primary", _id("PUA-543-1996")),  # EQ (Control of Emissions from Petrol Engines) 1996
         ("MY-04", "primary", _id("PUA-429-1996", "PUA-488-2000")),  # Diesel Engines 1996 + amendment 2000
         ("MY-05", "supporting", _id("PUA-429-1996", "PUA-488-2000")),
-        ("MY-06", "supporting", _id("PUA-464-2003")),       # Motorcycles 2003 (the motorcycle route)
+        ("MY-06", "supporting", _id("PUA-464-2003")),  # Motorcycles 2003 (the motorcycle route)
         ("MY-07", "supporting", _id("PUA-464-2003")),
         ("MY-16", "primary", _src("MY_JPJ_VTA")),
         ("MY-02", "primary", _src("MY_JPJ_CTA")),
@@ -161,15 +206,22 @@ def match_requirements(conn: psycopg.Connection, cc: str | None = None) -> int:
     rules = RULES.get(cc)
     if not rules:
         return 0
-    reqs = {r["code"]: r["id"] for r in conn.execute(
-        "SELECT id, code FROM client_requirements WHERE region_id=(SELECT id FROM regions WHERE code=%s)", (cc,))}
+    reqs = {
+        r["code"]: r["id"]
+        for r in conn.execute(
+            "SELECT id, code FROM client_requirements WHERE region_id=(SELECT id FROM regions WHERE code=%s)", (cc,)
+        )
+    }
     regs = conn.execute(REG_SQL.format(region=country.region_sql("g", cc))).fetchall()
     n = 0
     for r in regs:
         r = {**r, "sources": set(r["sources"] or [])}
         for code, role, pred in rules:
             if code in reqs and pred(r):
-                cur = conn.execute("""INSERT INTO client_requirement_regulations (requirement_id, regulation_id, role, matched_by)
-                                      VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING""", (reqs[code], r["id"], role, MATCHED_BY))
+                cur = conn.execute(
+                    """INSERT INTO client_requirement_regulations (requirement_id, regulation_id, role, matched_by)
+                                      VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                    (reqs[code], r["id"], role, MATCHED_BY),
+                )
                 n += cur.rowcount
     return n

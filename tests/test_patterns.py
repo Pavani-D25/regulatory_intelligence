@@ -25,8 +25,14 @@ def test_ais_codes():
     assert P.ais_canonical_from_text("AIS-137 (Part 1)") == "AIS-137(Part1)"
     assert P.ais_canonical_from_text("AIS-001 (Part 1)(Rev. 2):2023") == "AIS-001(Part1)(Rev.2)"
     assert P.ais_canonical_from_text("AIS-004 (Part III)") == "AIS-004(Part3)"
-    assert P.parse_canonical_ais("AIS-038(Rev.2)/Amd.4") == {"code": 38, "part": None, "rev": 2, "kind": "Amd",
-                                                            "no": 4, "table": None}
+    assert P.parse_canonical_ais("AIS-038(Rev.2)/Amd.4") == {
+        "code": 38,
+        "part": None,
+        "rev": 2,
+        "kind": "Amd",
+        "no": 4,
+        "table": None,
+    }
 
 
 def test_amendment_header_formats():
@@ -103,23 +109,40 @@ def test_references():
 def test_junk_titles():
     from regtrack.pipeline.extract import is_junk_title
 
-    for t in ["Date of hosting on website: 8th September 2026", "AIS-137 (Part 5)", "Draft AIS-221/D0/Dec. 2025",
-              "REGISTERED NO. DL-33004/2001", "Amends CMVR", "FINALISED DRAFT", "Page 38/52, ANNEXURE F, Clause No. 1.0",
-              "Central Motor Vehicles (……Amendment) Rules, 2026", None, ""]:
+    for t in [
+        "Date of hosting on website: 8th September 2026",
+        "AIS-137 (Part 5)",
+        "Draft AIS-221/D0/Dec. 2025",
+        "REGISTERED NO. DL-33004/2001",
+        "Amends CMVR",
+        "FINALISED DRAFT",
+        "Page 38/52, ANNEXURE F, Clause No. 1.0",
+        "Central Motor Vehicles (……Amendment) Rules, 2026",
+        None,
+        "",
+    ]:
         assert is_junk_title(t), t
-    for t in ["AIS-197: Bharat New Car Assessment Programme", "Amends CMVR Rule 102(1), CMVR Rule 104",
-              "Finalised Draft of 67 Proposed Amendments to the Motor Vehicles Act, 1988", "Electronic Stability Control Systems",
-              "Central Motor Vehicles (Tenth Amendment) Rules, 2024"]:
+    for t in [
+        "AIS-197: Bharat New Car Assessment Programme",
+        "Amends CMVR Rule 102(1), CMVR Rule 104",
+        "Finalised Draft of 67 Proposed Amendments to the Motor Vehicles Act, 1988",
+        "Electronic Stability Control Systems",
+        "Central Motor Vehicles (Tenth Amendment) Rules, 2024",
+    ]:
         assert not is_junk_title(t), t
 
 
 def test_ais_title_from_draft_cover():
     from regtrack.pipeline.extract import ais_title
 
-    cover = ("Date of hosting on website: 8th September 2026\nLast date for comments: 22nd September 2026\n"
-             "Draft Corrigendum No. 1  (…../2026)\nTo\nAIS-185 Approval of vehicles with regard to the Advanced\n"
-             "Emergency Braking System (AEBS) for M1 and N1 vehicles\n1. Page 18/39, Clause 7.5.1, third paragraph\n")
-    assert ais_title(cover).startswith("Draft Corrigendum No. 1 to AIS-185: Approval of vehicles with regard to the Advanced")
+    cover = (
+        "Date of hosting on website: 8th September 2026\nLast date for comments: 22nd September 2026\n"
+        "Draft Corrigendum No. 1  (…../2026)\nTo\nAIS-185 Approval of vehicles with regard to the Advanced\n"
+        "Emergency Braking System (AEBS) for M1 and N1 vehicles\n1. Page 18/39, Clause 7.5.1, third paragraph\n"
+    )
+    assert ais_title(cover).startswith(
+        "Draft Corrigendum No. 1 to AIS-185: Approval of vehicles with regard to the Advanced"
+    )
     std = "AUTOMOTIVE INDUSTRY STANDARD – 164\n(AIS – 164)\nConstructional and Functional Requirements\nfor Insulated Vehicles\nDate of Hosting on website"
     assert ais_title(std) == "Constructional and Functional Requirements for Insulated Vehicles"
     back = "PRINTED BY THE ARAI ON BEHALF OF AUTOMOTIVE INDUSTRY STANDARDS COMMITTEE UNDER CENTRAL MOTOR VEHICLE RULES"
@@ -129,10 +152,17 @@ def test_ais_title_from_draft_cover():
 def test_called_title():
     from regtrack.pipeline.extract import called_title
 
-    assert called_title("(1) These rules may be called as the Motor Vehicles (Third Party Insurance Base Premium and "
-                        "Liability) Rules, 2022.") == "Motor Vehicles (Third Party Insurance Base Premium and Liability) Rules, 2022"
-    assert called_title("These rules may be called the Central Motor Vehicles (………Amendment) Rules, 2021.") == \
-        "Central Motor Vehicles (Amendment) Rules, 2021"
+    assert (
+        called_title(
+            "(1) These rules may be called as the Motor Vehicles (Third Party Insurance Base Premium and "
+            "Liability) Rules, 2022."
+        )
+        == "Motor Vehicles (Third Party Insurance Base Premium and Liability) Rules, 2022"
+    )
+    assert (
+        called_title("These rules may be called the Central Motor Vehicles (………Amendment) Rules, 2021.")
+        == "Central Motor Vehicles (Amendment) Rules, 2021"
+    )
 
 
 def test_ais_listing_match():

@@ -51,9 +51,13 @@ def start() -> str:
     # visible console window for the server, and closing that window (or Ctrl+C in it) stops the database.
     # No inherited handles either: the server outlives this terminal, and the caller does not hang.
     flags = (subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP) if os.name == "nt" else 0
-    r = subprocess.run([tool("pg_ctl"), "-D", str(_data()), "-l", str(LOG), "-w", "-t", "60", "start"],
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       creationflags=flags)
+    r = subprocess.run(
+        [tool("pg_ctl"), "-D", str(_data()), "-l", str(LOG), "-w", "-t", "60", "start"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=flags,
+    )
     if r.returncode != 0 or not status():
         raise RuntimeError(f"the database did not start; see {LOG}")
     return f"started ({_data()}), log {LOG}"

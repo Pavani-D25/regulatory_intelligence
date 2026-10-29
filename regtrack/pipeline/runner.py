@@ -38,8 +38,10 @@ def waiting_for_ocr(conn) -> list[dict]:
     engine can read their script now: the text stage runs again and OCRs them."""
     from regtrack.pipeline import ocr
 
-    rows = conn.execute(repo.FILE_SQL + " WHERE d.stage='text' AND d.file_ext='pdf' AND d.text_layer IS FALSE "
-                        "AND d.ocr_engine IS NULL AND " + country.region_sql("d")).fetchall()
+    rows = conn.execute(
+        repo.FILE_SQL + " WHERE d.stage='text' AND d.file_ext='pdf' AND d.text_layer IS FALSE "
+        "AND d.ocr_engine IS NULL AND " + country.region_sql("d")
+    ).fetchall()
     if not rows:
         return []
     return [r for r in rows if ocr.can_ocr(ocr.pick_engine(r["country"]), r["country"])]
@@ -73,8 +75,11 @@ def run_stage(stage: str, limit: int | None = None, workers: int = 1) -> dict:
             # notifications in date order so mandate replays are chronological
             files = conn.execute(
                 """SELECT f.id FROM documents f LEFT JOIN document_parts p ON p.document_id=f.id
-                   LEFT JOIN regulations g ON g.id=p.regulation_id WHERE f.stage='parsed' AND """ + country.region_sql("f") + """
-                   GROUP BY f.id ORDER BY min(g.published_date) NULLS LAST, f.id""" + (f" LIMIT {int(limit)}" if limit else "")
+                   LEFT JOIN regulations g ON g.id=p.regulation_id WHERE f.stage='parsed' AND """
+                + country.region_sql("f")
+                + """
+                   GROUP BY f.id ORDER BY min(g.published_date) NULLS LAST, f.id"""
+                + (f" LIMIT {int(limit)}" if limit else "")
             ).fetchall()
         else:
             files = _files(conn, SOURCE_STAGE[stage], limit)
@@ -85,8 +90,13 @@ def run_stage(stage: str, limit: int | None = None, workers: int = 1) -> dict:
             skipped = len(files) - len(ready)
             files = ready
     ids = [f["id"] for f in files]
-    fn = {"text": S.stage_text, "classify": S.stage_classify, "extract": X.stage_extract, "link": L.stage_link,
-          "chunk": C.stage_chunk}[stage]
+    fn = {
+        "text": S.stage_text,
+        "classify": S.stage_classify,
+        "extract": X.stage_extract,
+        "link": L.stage_link,
+        "chunk": C.stage_chunk,
+    }[stage]
     if stage == "text" and workers > 1 and len(ids) > 1:
         with ProcessPoolExecutor(workers) as ex:
             for fu in as_completed([ex.submit(_text_worker, i) for i in ids]):
@@ -98,8 +108,14 @@ def run_stage(stage: str, limit: int | None = None, workers: int = 1) -> dict:
             ok, err = ok + (e is None), err + (e is not None)
             if (i + 1) % 200 == 0:
                 log.info("%s: %d/%d", stage, i + 1, len(ids))
-    return {"stage": stage, "files": len(ids), "ok": ok, "errors": err, "waiting": skipped,
-            "seconds": round(time.time() - t0, 1)}
+    return {
+        "stage": stage,
+        "files": len(ids),
+        "ok": ok,
+        "errors": err,
+        "waiting": skipped,
+        "seconds": round(time.time() - t0, 1),
+    }
 
 
 def post_run() -> dict:
@@ -110,8 +126,9 @@ def post_run() -> dict:
         # rule-based impact: one SQL definition in the database (migrations 0008, 0010); before the chunk sync, which
         # copies doc_type to the chunks
         out["requirement_links"] = CM.match_requirements(conn)  # the client register (TH / MY) -> regulations
-        out["regulation_fields"] = conn.execute("SELECT refresh_regulation_fields(%s) AS n",
-                                                (country.code(),)).fetchone()["n"]
+        out["regulation_fields"] = conn.execute(
+            "SELECT refresh_regulation_fields(%s) AS n", (country.code(),)
+        ).fetchone()["n"]
         out["chunk_filters_synced"] = C.sync_chunk_filters(conn)
         out["flags_resolved"] = R.resolve_all(conn)
         conn.commit()

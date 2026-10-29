@@ -27,8 +27,9 @@ def pages_of(name: str) -> list[PageText]:
 
 def ctx_for(name: str, folder: str = "05_MoRTH_Gazette_Notifications", listings=None) -> FileCtx:
     r = extract(FX / name, "pdf")
-    return FileCtx(None, "0" * 64, "pdf", [folder], [name], r.pages, r.page_count, r.text_layer, r.scanned_pages,
-                   listings or [])
+    return FileCtx(
+        None, "0" * 64, "pdf", [folder], [name], r.pages, r.page_count, r.text_layer, r.scanned_pages, listings or []
+    )
 
 
 # ---------------------------------------------------------------- models / vocab
@@ -64,8 +65,11 @@ def test_scan_detection_and_kruti():
     assert r.scanned_pages == [1, 2] and r.text_layer is True  # 505/3 >= 100 chars average
     r = build_result(["", "tiny"], {}, is_paged=True)
     assert r.text_layer is False
-    r = build_result(["Hkkjr dk jkti=k % vlk/kkj.k " * 5, "The Central Government hereby makes the following rules " * 5],
-                     {}, is_paged=True)
+    r = build_result(
+        ["Hkkjr dk jkti=k % vlk/kkj.k " * 5, "The Central Government hereby makes the following rules " * 5],
+        {},
+        is_paged=True,
+    )
     assert r.language_mix["hi_legacy_font"] is True and r.english_pages == [2]
 
 
@@ -94,28 +98,39 @@ def test_extension_order_class():
 
 
 def test_title_mismatch_flagged():
-    fa = identify(ctx_for("so_359_2022_wheel_rim_extension.pdf",
-                          listings=[{"source": "MORTH_API", "title": "S.O. 395(E) regarding Wheel Rim", "date": None}]))
+    fa = identify(
+        ctx_for(
+            "so_359_2022_wheel_rim_extension.pdf",
+            listings=[{"source": "MORTH_API", "title": "S.O. 395(E) regarding Wheel Rim", "date": None}],
+        )
+    )
     assert fa.title_mismatch and fa.title_mismatch[0]["content"] == "SO-359(E)-2022"
 
 
 def test_state_level_is_off_topic():
-    text = ("GOVERNMENT OF RAJASTHAN\nTRANSPORT DEPARTMENT\nNOTIFICATION\nIn exercise of the powers conferred by the "
-            "Rajasthan Motor Vehicles Taxation Act, 1951 the State Government hereby specifies the rate of tax payable on "
-            "motor vehicles " * 8)
-    ctx = FileCtx(None, "1" * 64, "pdf", ["02_CMVR_Amendments_Notifications"], ["2.pdf"],
-                  [PageText(1, text).analyse()], 1, True)
+    text = (
+        "GOVERNMENT OF RAJASTHAN\nTRANSPORT DEPARTMENT\nNOTIFICATION\nIn exercise of the powers conferred by the "
+        "Rajasthan Motor Vehicles Taxation Act, 1951 the State Government hereby specifies the rate of tax payable on "
+        "motor vehicles " * 8
+    )
+    ctx = FileCtx(
+        None, "1" * 64, "pdf", ["02_CMVR_Amendments_Notifications"], ["2.pdf"], [PageText(1, text).analyse()], 1, True
+    )
     assert relevance(ctx)["state"] == "Rajasthan"
     assert classify(ctx).doc_class == DocClass.OFF_TOPIC
 
 
 def test_draft_reference_regex():
-    t = ("Whereas the draft rules further to amend the Central Motor Vehicles Rules, 1989 were published, as required "
-         "under sub-section (1) of section 212 of the Motor Vehicles Act, 1988, vide notification number G.S.R. 117 (E), "
-         "dated the 14th February, 2019 in the Gazette of India")
+    t = (
+        "Whereas the draft rules further to amend the Central Motor Vehicles Rules, 1989 were published, as required "
+        "under sub-section (1) of section 212 of the Motor Vehicles Act, 1988, vide notification number G.S.R. 117 (E), "
+        "dated the 14th February, 2019 in the Gazette of India"
+    )
     assert draft_reference(t) == {"canonical_id": "GSR-117(E)-2019", "date": "2019-02-14"}
-    draft_self = ("The following draft of certain rules ... is hereby published ... Note: The principal rules were "
-                  "published vide notification number G.S.R. 590(E), dated the 2nd June, 1989")
+    draft_self = (
+        "The following draft of certain rules ... is hereby published ... Note: The principal rules were "
+        "published vide notification number G.S.R. 590(E), dated the 2nd June, 1989"
+    )
     assert draft_reference(draft_self) is None
 
 
@@ -123,12 +138,17 @@ def test_draft_reference_regex():
 def test_split_consolidated_ais():
     pages = [PageText(1, "AUTOMOTIVE INDUSTRY STANDARD\nAIS-038 (Rev.2)\nSeptember 2020\n").analyse()]
     pages += [PageText(i, f"clause text page {i} " * 20).analyse() for i in range(2, 6)]
-    pages += [PageText(6, "AMENDMENT NO. 1 (05/2021)\nTO\nAIS-038 (Rev.2)\nClause 6.1 substitute").analyse(),
-              PageText(7, "more amendment 1 text " * 10).analyse(),
-              PageText(8, "Amendment No. 2 (08/2022) To AIS-038 (Rev.2)\nAdd new clause 6.12 after clause 6.11").analyse()]
+    pages += [
+        PageText(6, "AMENDMENT NO. 1 (05/2021)\nTO\nAIS-038 (Rev.2)\nClause 6.1 substitute").analyse(),
+        PageText(7, "more amendment 1 text " * 10).analyse(),
+        PageText(8, "Amendment No. 2 (08/2022) To AIS-038 (Rev.2)\nAdd new clause 6.12 after clause 6.11").analyse(),
+    ]
     segs = split_ais(pages)
     assert [(s.kind, s.page_from, s.page_to, s.number) for s in segs] == [
-        ("base", 1, 5, None), ("amendment", 6, 7, 1), ("amendment", 8, 8, 2)]
+        ("base", 1, 5, None),
+        ("amendment", 6, 7, 1),
+        ("amendment", 8, 8, 2),
+    ]
     assert segs[1].issued == "2021-05" and segs[1].header_format == "month_year"
     assert amendment_gaps([1, 2, 4]) == [3]
     assert ais_identity(pages[0].text).canonical_id == "AIS-038(Rev.2)"
@@ -153,14 +173,18 @@ def test_so1365_date_substitutions():
     main = [d for d in dsubs if d.table == "SO-1365(E)-2004 Table"][0]
     assert main.serials == ["8", "43"] and main.old == date(2022, 3, 21) and main.new == date(2022, 9, 21)
     _, dsubs, _ = M.parse_table_amendments(_op("so_3896_2022_wheel_rim_extension.pdf"))
-    assert {(tuple(d.serials), d.new) for d in dsubs if d.table.endswith("Table")} == {(("8",), date(2023, 6, 22)),
-                                                                                    (("43",), date(2023, 6, 22))}
+    assert {(tuple(d.serials), d.new) for d in dsubs if d.table.endswith("Table")} == {
+        (("8",), date(2023, 6, 22)),
+        (("43",), date(2023, 6, 22)),
+    }
 
 
 def test_rule_obligation_parser():
-    op = ("In rule 96, after sub-rule (4), the following sub-rule shall be inserted, namely:- (4A) All motor cycles of "
-          "category L2 manufactured on or after the 1st January, 2026 shall be fitted with anti-lock braking system "
-          "conforming to IS 14664:2010, as amended from time to time.")
+    op = (
+        "In rule 96, after sub-rule (4), the following sub-rule shall be inserted, namely:- (4A) All motor cycles of "
+        "category L2 manufactured on or after the 1st January, 2026 shall be fitted with anti-lock braking system "
+        "conforming to IS 14664:2010, as amended from time to time."
+    )
     obs = M.parse_rule_obligations(op)
     assert obs and obs[0].implementation_date == date(2026, 1, 1) and "IS 14664:2010" in obs[0].standards
     assert "L2" in obs[0].categories and obs[0].rule.startswith("CMVR Rule 96")
@@ -169,39 +193,56 @@ def test_rule_obligation_parser():
 def test_rule_obligation_clauses_and_all_other_proviso():
     """G.S.R. 310(E) 2016: L2 <= 125 cc (ABS or CBS) for new / existing models, and the 'all other two wheeled
     vehicles' proviso (ABS) - four mandates with their limits, none superseding another."""
-    op = ("2. In the Central Motor Vehicle Rules, 1989, in rule 96, after sub-rule (4), the following sub-rule shall be "
-          "inserted, namely:- “(4 A). Notwithstanding anything contained in clause (i) of sub-rule (4),— "
-          "(a) New vehicle models of category L2 with; (i) engine capacity ≤ 125 cc; (ii) maximum continuous rated or "
-          "net power ≤ 11kw; and (iii) power/weight ratio ≤ 0.1 kw/kg, manufactured on and after the 1st April, "
-          "2018 shall be fitted with anti-lock braking system or combined braking system conforming to IS: 14664: 2010; "
-          "(b) Existing vehicle models of category L2 with : (i) engine capacity ≤ 125 cc; (ii) maximum continuous "
-          "rated or net power ≤ 11kw; and (iii) power/weight ratio ≤ 0.1 kw/kg, manufactured on and after the 1st "
-          "April, 2019 shall be fitted with anti-lock braking system or combined braking system conforming to IS: 14664: "
-          "2010: Provided that all other category of two wheeled vehicles which does not fall in the criteria as mentioned "
-          "above in clause (a) and (b) shall be fitted with anti-lock braking system conforming to IS: 14664: 2010 on and "
-          "after the 1st April, 2018 for new vehicle models and on and after the 1st April, 2019 for existing vehicle "
-          "models.”.")
+    op = (
+        "2. In the Central Motor Vehicle Rules, 1989, in rule 96, after sub-rule (4), the following sub-rule shall be "
+        "inserted, namely:- “(4 A). Notwithstanding anything contained in clause (i) of sub-rule (4),— "
+        "(a) New vehicle models of category L2 with; (i) engine capacity ≤ 125 cc; (ii) maximum continuous rated or "
+        "net power ≤ 11kw; and (iii) power/weight ratio ≤ 0.1 kw/kg, manufactured on and after the 1st April, "
+        "2018 shall be fitted with anti-lock braking system or combined braking system conforming to IS: 14664: 2010; "
+        "(b) Existing vehicle models of category L2 with : (i) engine capacity ≤ 125 cc; (ii) maximum continuous "
+        "rated or net power ≤ 11kw; and (iii) power/weight ratio ≤ 0.1 kw/kg, manufactured on and after the 1st "
+        "April, 2019 shall be fitted with anti-lock braking system or combined braking system conforming to IS: 14664: "
+        "2010: Provided that all other category of two wheeled vehicles which does not fall in the criteria as mentioned "
+        "above in clause (a) and (b) shall be fitted with anti-lock braking system conforming to IS: 14664: 2010 on and "
+        "after the 1st April, 2018 for new vehicle models and on and after the 1st April, 2019 for existing vehicle "
+        "models.”."
+    )
     got = {(o.implementation_date.year, o.model_scope, M._cond_tag(o.conditions)) for o in M.parse_rule_obligations(op)}
-    assert got == {(2018, "new_models", "engine_cclte125,power_kwlte11"), (2019, "existing_models", "engine_cclte125,power_kwlte11"),
-                   (2018, "new_models", "engine_ccgt125"), (2019, "existing_models", "engine_ccgt125")}
+    assert got == {
+        (2018, "new_models", "engine_cclte125,power_kwlte11"),
+        (2019, "existing_models", "engine_cclte125,power_kwlte11"),
+        (2018, "new_models", "engine_ccgt125"),
+        (2019, "existing_models", "engine_ccgt125"),
+    }
     obs = M.parse_rule_obligations(op)
     assert len({o.key for o in obs}) == 4 and all(o.categories == ["L2"] for o in obs)
 
 
 # ---------------------------------------------------------------- chunks / categories
 def test_clause_chunks_and_boilerplate():
-    text = ("1. SCOPE\n" + "This standard applies to vehicles of category L. " * 6 + "\n2. DEFINITIONS\n"
-            + "2.1 Vehicle means a motor vehicle. " * 6 + "\nCOMPOSITION OF AISC PANEL\nConvener Representing ARAI\n" * 3)
+    text = (
+        "1. SCOPE\n"
+        + "This standard applies to vehicles of category L. " * 6
+        + "\n2. DEFINITIONS\n"
+        + "2.1 Vehicle means a motor vehicle. " * 6
+        + "\nCOMPOSITION OF AISC PANEL\nConvener Representing ARAI\n" * 3
+    )
     ch = chunk_pages([PageText(1, text).analyse()])
     assert [c.clause_no for c in ch][:2] == ["1", "2"]
     assert ch[0].heading.startswith("SCOPE")
 
 
 def test_categories_from_text():
-    assert categories_of("applicable to vehicles of category M1 and N1 and to all motor vehicles") == ["M1", "N1", "ALL"]
+    assert categories_of("applicable to vehicles of category M1 and N1 and to all motor vehicles") == [
+        "M1",
+        "N1",
+        "ALL",
+    ]
     # a table item pointing back at its own row is not 'every vehicle' (S.O. 6108(E) 2018, Sr. 32(i))
-    assert M.categories_from("lighting devices for L5 category of vehicles (three wheeled vehicles) and their trailers "
-                             "For all motor vehicles covered under Sr. No 32(i): 1st October, 2019") == ["L5", "O"]
+    assert M.categories_from(
+        "lighting devices for L5 category of vehicles (three wheeled vehicles) and their trailers "
+        "For all motor vehicles covered under Sr. No 32(i): 1st October, 2019"
+    ) == ["L5", "O"]
     assert M.categories_from("Wheel rims fitted in all motor vehicles") == ["ALL"]
 
 
@@ -213,13 +254,24 @@ def test_fixtures_extract(name):
 
 def test_split_header_followed_by_contents_instruction():
     """'Contents' inside an amendment's own instructions must not hide its header (AIS-186 Amd 1, AIS-025 Amd 4)."""
-    pages = [PageText(1, "AMENDMENT NO. 2 (06/2026)\nTo\nAIS-186 Approval of Motor Vehicles\n1. Clause 5 substitute").analyse(),
-             PageText(2, "1/ 9\n\nAMENDMENT NO. 1 (05/2026)\nTo\nAIS-186 Approval of Motor Vehicles\n"
-                         "1. Page II, Contents, Annexes\nRenumber existing Annexes").analyse(),
-             PageText(3, "Amendment No 10 (11/2021)\nTo\nAIS-37: Standard Procedure for Type Approval").analyse(),
-             PageText(4, "STATUS CHART OF THE STANDARD\nAmendment No. 1 to AIS-186 dated May 2026").analyse()]
+    pages = [
+        PageText(
+            1, "AMENDMENT NO. 2 (06/2026)\nTo\nAIS-186 Approval of Motor Vehicles\n1. Clause 5 substitute"
+        ).analyse(),
+        PageText(
+            2,
+            "1/ 9\n\nAMENDMENT NO. 1 (05/2026)\nTo\nAIS-186 Approval of Motor Vehicles\n"
+            "1. Page II, Contents, Annexes\nRenumber existing Annexes",
+        ).analyse(),
+        PageText(3, "Amendment No 10 (11/2021)\nTo\nAIS-37: Standard Procedure for Type Approval").analyse(),
+        PageText(4, "STATUS CHART OF THE STANDARD\nAmendment No. 1 to AIS-186 dated May 2026").analyse(),
+    ]
     segs = split_ais(pages)
-    assert [(s.kind, s.number, s.page_from) for s in segs] == [("amendment", 2, 1), ("amendment", 1, 2), ("amendment", 10, 3)]
+    assert [(s.kind, s.number, s.page_from) for s in segs] == [
+        ("amendment", 2, 1),
+        ("amendment", 1, 2),
+        ("amendment", 10, 3),
+    ]
 
 
 def test_year_from_short_title_then_file_no():
@@ -228,8 +280,14 @@ def test_year_from_short_title_then_file_no():
     from regtrack.pipeline.identity import Identity
 
     def fa(title, file_no, year):
-        ident = Identity(kind="notification", canonical_id=f"GSR-212(E)-{year}", series="G.S.R.", number="212(E)",
-                         year=year, doc_date=None)
+        ident = Identity(
+            kind="notification",
+            canonical_id=f"GSR-212(E)-{year}",
+            series="G.S.R.",
+            number="212(E)",
+            year=year,
+            doc_date=None,
+        )
         f = FileAnalysis(ctx=None, cls=ClassResult(DocClass.NOTIFICATION_FINAL), identity=ident)
         f.official_title, f.file_no = title, file_no
         fix_year_from_file_no(f)
@@ -251,8 +309,11 @@ def test_identity_from_amendment_headers():
     from regtrack.pipeline.stages import identity_from_headers
 
     cover = Identity(kind="ais", canonical_id="AIS-007", number="007", family_key="AIS-007")
-    segs = [Segment("amendment", 1, 2, 2, target_raw="AIS-071(Part 2):2009"), Segment("base", 3, 3),
-            Segment("amendment", 4, 21, 1, target_raw="AIS-071(Part 2):2009")]
+    segs = [
+        Segment("amendment", 1, 2, 2, target_raw="AIS-071(Part 2):2009"),
+        Segment("base", 3, 3),
+        Segment("amendment", 4, 21, 1, target_raw="AIS-071(Part 2):2009"),
+    ]
     i = identity_from_headers(cover, segs)
     assert i.canonical_id == "AIS-071(Part2)" and i.family_key == "AIS-071(Part2)"
     same = [Segment("amendment", 1, 1, 1, target_raw="AIS-007 (Rev.5)")]
@@ -262,24 +323,47 @@ def test_identity_from_amendment_headers():
 def test_notification_heading_tolerates_ocr():
     """The operative heading is found when OCR lowercases the opening words or turns the dash into '_'."""
     for text, want in (
-            ("MINISTRY OF ROAD TRANSPORT AND HIGHWAYS NOTIFICATION New Delhi, the 31 st May, 2002 G.s.R400(E).- whereas "
-             "the draft of certain rules", "GSR-400(E)-2002"),
-            ("NOTIFICATION New Delhi, the 3l st Augus! 2015 G.s.R.673(E)._Thefollowingdraftofcertainrules", "GSR-673(E)-2015"),
-            ("NOTIFICATION New Delhi, the 2nd September, 2022 G.S.R. 680(E).—the draft rules the Inter-Country",
-             "GSR-680(E)-2022"),
-            ("NOTIFICATION New Delhi, the 12th August, 2022 S.O. 3896(E).—In exercise of the powers", "SO-3896(E)-2022")):
+        (
+            "MINISTRY OF ROAD TRANSPORT AND HIGHWAYS NOTIFICATION New Delhi, the 31 st May, 2002 G.s.R400(E).- whereas "
+            "the draft of certain rules",
+            "GSR-400(E)-2002",
+        ),
+        (
+            "NOTIFICATION New Delhi, the 3l st Augus! 2015 G.s.R.673(E)._Thefollowingdraftofcertainrules",
+            "GSR-673(E)-2015",
+        ),
+        (
+            "NOTIFICATION New Delhi, the 2nd September, 2022 G.S.R. 680(E).—the draft rules the Inter-Country",
+            "GSR-680(E)-2022",
+        ),
+        ("NOTIFICATION New Delhi, the 12th August, 2022 S.O. 3896(E).—In exercise of the powers", "SO-3896(E)-2022"),
+    ):
         idt = notification_identity(text)
         assert idt and idt.canonical_id == want, (text[:60], idt)
     # a citation is still not a heading
-    assert notification_identity("as published vide notification number G.S.R. 31(E) dated the 15th January, 2002, "
-                                 "and the draft rules") is None
+    assert (
+        notification_identity(
+            "as published vide notification number G.S.R. 31(E) dated the 15th January, 2002, and the draft rules"
+        )
+        is None
+    )
 
 
 # ---------------------------------------------------------------- Thailand: TISI mandatory-standard pages
 def tisi_ctx(name: str, category: str, title: str) -> FileCtx:
     r = extract(FX / name, "html")
-    return FileCtx(None, "2" * 64, "html", ["05_MoRTH_Gazette_Notifications"], [], r.pages, r.page_count, r.text_layer,
-                   [], [{"source": "TH_TISI_MANDATORY", "title": title, "date": None, "category": category, "raw": {}}])
+    return FileCtx(
+        None,
+        "2" * 64,
+        "html",
+        ["05_MoRTH_Gazette_Notifications"],
+        [],
+        r.pages,
+        r.page_count,
+        r.text_layer,
+        [],
+        [{"source": "TH_TISI_MANDATORY", "title": title, "date": None, "category": category, "raw": {}}],
+    )
 
 
 def test_tisi_page_is_decoded_from_its_declared_charset():
@@ -293,8 +377,13 @@ def test_tisi_page_is_decoded_from_its_declared_charset():
 
 def test_tisi_circuit_breaker_is_off_topic():
     # มอก.60947-2 low-voltage circuit breakers (MCB): on TISI's mandatory list, but not a vehicle standard
-    fa = identify(tisi_ctx("tisi_184_circuit_breaker.html", "ไฟฟ้ากำลัง",
-                           "มอก.60947 เล่ม 2-2569 สวิตช์เกียร์และเกียร์ควบคุมไฟฟ้าแรงดันต่ำ เล่ม 2 เครื่องตัดวงจร"))
+    fa = identify(
+        tisi_ctx(
+            "tisi_184_circuit_breaker.html",
+            "ไฟฟ้ากำลัง",
+            "มอก.60947 เล่ม 2-2569 สวิตช์เกียร์และเกียร์ควบคุมไฟฟ้าแรงดันต่ำ เล่ม 2 เครื่องตัดวงจร",
+        )
+    )
     assert fa.cls.doc_class == DocClass.OFF_TOPIC
     assert fa.cls.issuer == "TISI"
 
@@ -362,7 +451,10 @@ def test_my_cta_component_table():
 
     comps = {c["component"]: c for c in malaysia.cta_components(my_text("my_jpj_cta.html"))}
     assert len(comps) == 11
-    assert comps["Protective Helmet"]["refs"][0] == "UNR-22" and comps["Protective Helmet"]["vehicle_categories"] == ["L1", "L3"]
+    assert comps["Protective Helmet"]["refs"][0] == "UNR-22" and comps["Protective Helmet"]["vehicle_categories"] == [
+        "L1",
+        "L3",
+    ]
     assert comps["Safety Seatbelts"]["refs"] == ["UNR-16"]
     assert {"UNR-54", "UNR-108", "UNR-109"} <= set(comps["New Pneumatic Tyres & New Retreaded Pneumatic Tyres"]["refs"])
 
@@ -372,15 +464,27 @@ def test_my_doe_type_approval_stages():
 
     st = {s["key"]: s for s in malaysia.doe_stages(my_text("my_doe_emission.html"))}
     assert st["MY-DOE-TA-PETROL"]["effective_date"] == date(2000, 1, 1)
-    assert st["MY-DOE-TA-DIESEL"]["effective_date"] == date(1997, 1, 1)  # "diesel vehicles" inside the text is no heading
+    assert st["MY-DOE-TA-DIESEL"]["effective_date"] == date(
+        1997, 1, 1
+    )  # "diesel vehicles" inside the text is no heading
     assert "Second Schedule" in st["MY-DOE-TA-DIESEL"]["legal_basis"]
     assert "50% opacity" in st["MY-DOE-INUSE-DIESEL-SMOKE"]["subject"]
 
 
 def test_my_classify_and_identity():
     r = extract(FX / "my_jpj_cta.html", "html")
-    ctx = FileCtx(None, "3" * 64, "html", ["05_x"], ["component-type-approval-cta.html"], r.pages, r.page_count,
-                  r.text_layer, [], [{"source": "MY_JPJ_CTA", "title": "x", "date": None, "category": "page", "raw": {}}])
+    ctx = FileCtx(
+        None,
+        "3" * 64,
+        "html",
+        ["05_x"],
+        ["component-type-approval-cta.html"],
+        r.pages,
+        r.page_count,
+        r.text_layer,
+        [],
+        [{"source": "MY_JPJ_CTA", "title": "x", "date": None, "category": "page", "raw": {}}],
+    )
     fa = identify(ctx)
     assert fa.cls.doc_class == DocClass.MY_GUIDELINE
     assert fa.canonical_id == "MY-JPJ-COMPONENT-TYPE-APPROVAL-CTA"
@@ -396,8 +500,9 @@ def test_my_page_hash_ignores_counters():
     b, _ = page_listing("MY_DOE_EMISSION", url, raw.replace(b"22 October 2026 @ 4:39 pm", b"23 October 2026 @ 9:30 am"))
     c, _ = page_listing("MY_DOE_EMISSION", url, raw.replace(b"1 January 1997", b"1 January 1998"))
     assert a.item_id == b.item_id != c.item_id  # only a change of the page's own content is a new version
-    _, files = page_listing("MY_JPJ_CTA", "https://www.jpj.gov.my/en/component-type-approval-cta/",
-                            (FX / "my_jpj_cta.html").read_bytes())
+    _, files = page_listing(
+        "MY_JPJ_CTA", "https://www.jpj.gov.my/en/component-type-approval-cta/", (FX / "my_jpj_cta.html").read_bytes()
+    )
     assert {f.file_name for f in files} == {"BORANG-PERMOHONAN-CTA-2021.rev0_.pdf", "Garis-Panduan-CTA-2020.pdf"}
 
 
@@ -431,7 +536,7 @@ def test_my_legal_identity_and_viewer_pdfs():
     assert act["canonical_id"] == "MY-ACT-333" and act["year"] == 1987
     assert malaysia.legal_identity("JPJ guideline for component type approval") is None
     fb3d = base64.b64encode(json.dumps({"posts": {"1": {"type": "pdf", "data": {"guid": "https://x/a.pdf"}}}}).encode())
-    html = f"FB3D_CLIENT_DATA.push('{fb3d.decode()}'); window.option_df_7 = {{\"source\":\"https://y/b.pdf\"}};"
+    html = f'FB3D_CLIENT_DATA.push(\'{fb3d.decode()}\'); window.option_df_7 = {{"source":"https://y/b.pdf"}};'
     assert viewer_pdfs(html) == ["https://x/a.pdf", "https://y/b.pdf"]
 
 
@@ -439,7 +544,11 @@ def test_search_fusion_prefers_both_rankings_and_rules_in_force():
     """Ask's hybrid ranking: a chunk found by meaning and by its words comes first; a draft counts half."""
     from regtrack.pipeline.search import fuse
 
-    vec = [{"id": 1, "doc_class": "AIS_DRAFT"}, {"id": 2, "doc_class": "AIS_STANDARD"}, {"id": 3, "doc_class": "REPORT"}]
+    vec = [
+        {"id": 1, "doc_class": "AIS_DRAFT"},
+        {"id": 2, "doc_class": "AIS_STANDARD"},
+        {"id": 3, "doc_class": "REPORT"},
+    ]
     kw = [{"id": 3, "doc_class": "REPORT"}, {"id": 4, "doc_class": "NOTIFICATION_FINAL"}]
     order = [r["id"] for r in fuse(vec, kw, 4)]
     assert order[0] == 3 and order.index(2) < order.index(1)

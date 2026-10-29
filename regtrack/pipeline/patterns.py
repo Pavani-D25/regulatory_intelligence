@@ -8,13 +8,31 @@ from __future__ import annotations
 import re
 from datetime import date
 
-MONTHS = {m: i + 1 for i, m in enumerate(
-    ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
-     "november", "december"])}
+MONTHS = {
+    m: i + 1
+    for i, m in enumerate(
+        [
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        ]
+    )
+}
 MONTHS.update({m[:3]: i for m, i in list(MONTHS.items())})
 MONTHS["sept"] = 9
-MONTH_RE = (r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|"
-            r"Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)")
+MONTH_RE = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|"
+    r"Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+)
 
 # ---------------------------------------------------------------- G.S.R. / S.O.
 SERIES_RE = r"(G\s?[.,]?\s?S\s?[.,]?\s?R\s?[.,]?|S\s?\.?\s?O\s?\.?)"
@@ -39,7 +57,9 @@ def notification_canonical(series: str, number: str | int, year: int | None, ext
 
 
 # ---------------------------------------------------------------- dates
-DATE_DMY = re.compile(r"\b(\d{1,2})\s*(?:st|nd|rd|th)?\s*,?\s*(?:day\s+of\s+)?(" + MONTH_RE + r")[\s.,]*,?\s*(\d{4})\b", re.I)
+DATE_DMY = re.compile(
+    r"\b(\d{1,2})\s*(?:st|nd|rd|th)?\s*,?\s*(?:day\s+of\s+)?(" + MONTH_RE + r")[\s.,]*,?\s*(\d{4})\b", re.I
+)
 DATE_MDY = re.compile(r"\b(" + MONTH_RE + r")[\s.]+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b", re.I)
 DATE_NUM = re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{4}|\d{2})\b")
 DATE_MONTH_YEAR = re.compile(r"\b(" + MONTH_RE + r")[\s.,'’]*(\d{4})\b", re.I)
@@ -105,11 +125,12 @@ def parse_month_year(s: str) -> tuple[int, int] | None:
 # ---------------------------------------------------------------- AIS codes
 AIS_CODE = re.compile(
     r"\bAIS\s*[\-:–]?\s*(\d{3})"
-    r"(?:\s*/\s*(\d{4}))?"                                          # AIS 021/2004
+    r"(?:\s*/\s*(\d{4}))?"  # AIS 021/2004
     r"(?:\s*[\(\[]?\s*Part\s*[\-:]?\s*([IVX]+|\d+)\s*[\)\]]?)?"
     r"(?:\s*[\(\[]?\s*Rev(?:ision)?\s*\.?\s*(\d{1,2})?\s*[\)\]]?)?"
     r"(?:\s*:\s*(\d{4}))?",
-    re.I)
+    re.I,
+)
 ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10}
 
 
@@ -140,8 +161,13 @@ def parse_ais_code(s: str) -> dict | None:
     rev = None
     if re.search(r"Rev", m.group(0), re.I):
         rev = int(m.group(4)) if m.group(4) else 1
-    return {"code": int(m.group(1)), "part": _part_num(m.group(3)), "rev": rev,
-            "year": int(m.group(2) or m.group(5)) if (m.group(2) or m.group(5)) else None, "raw": m.group(0)}
+    return {
+        "code": int(m.group(1)),
+        "part": _part_num(m.group(3)),
+        "rev": rev,
+        "year": int(m.group(2) or m.group(5)) if (m.group(2) or m.group(5)) else None,
+        "raw": m.group(0),
+    }
 
 
 def ais_canonical_from_text(s: str) -> str | None:
@@ -153,22 +179,29 @@ def parse_canonical_ais(cid: str) -> dict | None:
     m = re.fullmatch(r"AIS-(\d{3})(?:\(Part(\d+)\))?(?:\(Rev\.(\d+)\))?(?:/(Amd|Corr)\.(\d+))?(?:/Table-(.+))?", cid)
     if not m:
         return None
-    return {"code": int(m.group(1)), "part": int(m.group(2)) if m.group(2) else None,
-            "rev": int(m.group(3)) if m.group(3) else None, "kind": m.group(4), "no": int(m.group(5)) if m.group(5) else None,
-            "table": m.group(6)}
+    return {
+        "code": int(m.group(1)),
+        "part": int(m.group(2)) if m.group(2) else None,
+        "rev": int(m.group(3)) if m.group(3) else None,
+        "kind": m.group(4),
+        "no": int(m.group(5)) if m.group(5) else None,
+        "table": m.group(6),
+    }
 
 
 # AIS amendment / corrigendum headers (3 formats)
 AMD_HEADER = re.compile(
-    r"AMENDMENT\s*No\.?\s*(\d{1,2})\b"                       # AMENDMENT NO. 2
-    r"(?P<mid>[^\n]{0,60}?(?:\n[^\n]{0,60}?){0,2}?)"        # optional date (same / next lines)
+    r"AMENDMENT\s*No\.?\s*(\d{1,2})\b"  # AMENDMENT NO. 2
+    r"(?P<mid>[^\n]{0,60}?(?:\n[^\n]{0,60}?){0,2}?)"  # optional date (same / next lines)
     r"\s*\bTO\b\s*(?P<code>AIS\s*[\-:–]?\s*\d{2,3}\b[^\n]{0,40})",  # 'AIS-37' also occurs
-    re.I)
+    re.I,
+)
 CORR_HEADER = re.compile(
     r"CORRIGENDUM\s*(?:No\.?\s*(\d{1,2}))?\b"
     r"(?P<mid>[^\n]{0,60}?(?:\n[^\n]{0,60}?){0,2}?)"
     r"\s*\bTO\b\s*(?P<code>AIS\s*[\-:–]?\s*\d{2,3}\b[^\n]{0,40})",  # 'AIS-37' also occurs
-    re.I)
+    re.I,
+)
 AIS_COVER = re.compile(r"AUTOMOTIVE\s+INDUSTRY\s+STANDARD", re.I)
 
 
@@ -187,21 +220,39 @@ def header_date(mid: str) -> tuple[str | None, str | None, str]:
 TAP_DOC = re.compile(r"MoRTH\s*/\s*CMVR\s*/\s*TAP\s*[\-–]?\s*115\s*/\s*116", re.I)
 TAP_ISSUE = re.compile(r"Issue\s*(?:No\.?)?\s*[:\-]?\s*(\d{1,2})", re.I)
 FORM_NO = re.compile(r"\bFORM\s*(?:No\.?\s*)?[\-–]?\s*(\d{1,2}\s?[A-Z]{0,2})\b")
-FILE_NO = re.compile(r"\[?\s*F(?:ile)?\s*\.?\s*No\.?\s*[:\-]?\s*((?:RT|R\.T\.|NT|RW|H|S|T|A|Q|G)[A-Za-z0-9\-/\.\(\) ]{4,50}?\d{2,4}(?:[\-–][A-Z\(\)]+)?)\s*[\]\n,;]", re.I)
-GAZETTE_ID = re.compile(r"\b(CG\s*[\-–]\s*[A-Z]{2}\s*[\-–]\s*E\s*[\-–]\s*\d{8}\s*[\-–]\s*\d{5,7}|"
-                        r"CG\s*[\-–]\s*[A-Z]{2}\s*[\-–]\s*E\s*[\-–]\s*\d{8}|"
-                        r"DL\s*[\-–]\s*\d{8}\s*[\-–]\s*\d{5,7}|REGD\.\s*NO\.\s*D\.\s*L\.\s*[\-–]?\s*\d{5})", re.I)
-PART_SEC = re.compile(r"PART\s+II\s*[\-—–,.]*\s*Sec(?:tion|\.)?\s*(3|4|1)\s*[\-—–,.]*\s*"
-                      r"(?:Sub[\-\s]?Sec(?:tion|\.)?\s*)?\(?\s*(i{1,3}|iv)?\s*\)?", re.I)
-SHORT_TITLE = re.compile(r"(?:Central\s+)?Motor\s+Vehicles\s*\(\s*([A-Za-z\-\s]+?)\s*Amendment\s*\)\s*Rules,?\s*(\d{4})", re.I)
-SIGNATORY = re.compile(r"\n\s*([A-Z][A-Z\.\s]{4,40}),?\s*\n\s*(?:Joint|Additional|Under|Deputy)?\s*Secy|"
-                       r"\n\s*([A-Z][A-Z\.\s]{4,40}),?\s*\n?\s*(?:Jt\.|Joint|Addl\.|Additional|Under|Deputy)\s+Secretary", re.I)
+FILE_NO = re.compile(
+    r"\[?\s*F(?:ile)?\s*\.?\s*No\.?\s*[:\-]?\s*((?:RT|R\.T\.|NT|RW|H|S|T|A|Q|G)[A-Za-z0-9\-/\.\(\) ]{4,50}?\d{2,4}(?:[\-–][A-Z\(\)]+)?)\s*[\]\n,;]",
+    re.I,
+)
+GAZETTE_ID = re.compile(
+    r"\b(CG\s*[\-–]\s*[A-Z]{2}\s*[\-–]\s*E\s*[\-–]\s*\d{8}\s*[\-–]\s*\d{5,7}|"
+    r"CG\s*[\-–]\s*[A-Z]{2}\s*[\-–]\s*E\s*[\-–]\s*\d{8}|"
+    r"DL\s*[\-–]\s*\d{8}\s*[\-–]\s*\d{5,7}|REGD\.\s*NO\.\s*D\.\s*L\.\s*[\-–]?\s*\d{5})",
+    re.I,
+)
+PART_SEC = re.compile(
+    r"PART\s+II\s*[\-—–,.]*\s*Sec(?:tion|\.)?\s*(3|4|1)\s*[\-—–,.]*\s*"
+    r"(?:Sub[\-\s]?Sec(?:tion|\.)?\s*)?\(?\s*(i{1,3}|iv)?\s*\)?",
+    re.I,
+)
+SHORT_TITLE = re.compile(
+    r"(?:Central\s+)?Motor\s+Vehicles\s*\(\s*([A-Za-z\-\s]+?)\s*Amendment\s*\)\s*Rules,?\s*(\d{4})", re.I
+)
+SIGNATORY = re.compile(
+    r"\n\s*([A-Z][A-Z\.\s]{4,40}),?\s*\n\s*(?:Joint|Additional|Under|Deputy)?\s*Secy|"
+    r"\n\s*([A-Z][A-Z\.\s]{4,40}),?\s*\n?\s*(?:Jt\.|Joint|Addl\.|Additional|Under|Deputy)\s+Secretary",
+    re.I,
+)
 
 # ---------------------------------------------------------------- references
 REF_PATTERNS: dict[str, re.Pattern] = {
     "AIS": AIS_CODE,
-    "IS": re.compile(r"\bIS\s*[:\-]?\s*(\d{2,5})(?:\s*\(?\s*Part\s*[\-:]?\s*(\d+)\s*\)?)?(?:\s*[:\-]?\s*((?:19|20)\d{2}))?\b"),
-    "UN_R": re.compile(r"\b(?:UN\s*R|UN\s*ECE\s*R|ECE\s*R(?:egulation)?|UN\s*Regulation\s*No\.?)\s*[\-.]?\s*(\d{1,3})\b", re.I),
+    "IS": re.compile(
+        r"\bIS\s*[:\-]?\s*(\d{2,5})(?:\s*\(?\s*Part\s*[\-:]?\s*(\d+)\s*\)?)?(?:\s*[:\-]?\s*((?:19|20)\d{2}))?\b"
+    ),
+    "UN_R": re.compile(
+        r"\b(?:UN\s*R|UN\s*ECE\s*R|ECE\s*R(?:egulation)?|UN\s*Regulation\s*No\.?)\s*[\-.]?\s*(\d{1,3})\b", re.I
+    ),
     "ISO": re.compile(r"\bISO\s*[:\-]?\s*(\d{3,5})(?:\s*[\-:]\s*(\d{1,2}))?(?:\s*:\s*(\d{4}))?\b"),
     "IEC": re.compile(r"\bIEC\s*[:\-]?\s*(\d{4,5})(?:\s*[\-:]\s*(\d{1,2}))?\b"),
     "RULE": re.compile(r"\brule\s+(\d{1,3}[A-Z]{0,2})(?:\s*\(\s*(\d{1,2}[A-Z]?)\s*\))?", re.I),
@@ -238,17 +289,39 @@ def find_references(text: str, kinds: tuple[str, ...] = ("AIS", "IS", "UN_R", "I
 
 
 # ---------------------------------------------------------------- vehicle categories / powertrains
-CAT_CODE = re.compile(r"\b(?:categor(?:y|ies)\s+)?(L[1-7]|M[1-3]|N[1-3]|O[1-4]|T[1-5]|T\b|CEV)(?:\s*[\-]?\s*[A-Z](?![a-z]))?\b")
+CAT_CODE = re.compile(
+    r"\b(?:categor(?:y|ies)\s+)?(L[1-7]|M[1-3]|N[1-3]|O[1-4]|T[1-5]|T\b|CEV)(?:\s*[\-]?\s*[A-Z](?![a-z]))?\b"
+)
 CAT_LETTER = re.compile(r"\bcategor(?:y|ies)\s+((?:[LMNOT](?:\s*,\s*|\s+and\s+|\s+or\s+|\s*&\s*)?)+)\b")
 
 SYNONYMS: dict[str, list[str]] = {
     "L1": ["moped", "mopeds", "low speed two wheeler"],
-    "L2": ["motor cycle", "motorcycle", "motor cycles", "motorcycles", "scooter", "scooters", "two wheeler",
-           "two-wheeler", "two wheelers", "two-wheelers", "two wheeled"],
+    "L2": [
+        "motor cycle",
+        "motorcycle",
+        "motor cycles",
+        "motorcycles",
+        "scooter",
+        "scooters",
+        "two wheeler",
+        "two-wheeler",
+        "two wheelers",
+        "two-wheelers",
+        "two wheeled",
+    ],
     "L5": ["three wheeler", "three-wheeler", "three wheelers", "three-wheelers", "auto rickshaw", "auto-rickshaw"],
     "QUADRICYCLE": ["quadricycle", "quadricycles"],
-    "M1": ["passenger car", "passenger cars", "motor car", "motor cars", "four wheeler", "four-wheeler",
-           "four wheelers", "four-wheelers", r"cars?"],
+    "M1": [
+        "passenger car",
+        "passenger cars",
+        "motor car",
+        "motor cars",
+        "four wheeler",
+        "four-wheeler",
+        "four wheelers",
+        "four-wheelers",
+        r"cars?",
+    ],
     "M2": ["mini bus", "minibus"],
     "M3": ["bus", "buses", "coach", "coaches", "school bus"],
     "N1": ["light goods vehicle", "light goods vehicles", "light commercial vehicle", "LCV"],
@@ -259,11 +332,18 @@ SYNONYMS: dict[str, list[str]] = {
     "CEV": ["construction equipment vehicle", "construction equipment vehicles"],
     "E_RICKSHAW": ["e-rickshaw", "e rickshaw", "e-rickshaws", "battery operated rickshaw"],
     "E_CART": ["e-cart", "e cart", "e-carts"],
-    "ALL": ["all motor vehicles", "every motor vehicle", "all categories of motor vehicles",
-            "all categories of vehicles", "all vehicles"],
+    "ALL": [
+        "all motor vehicles",
+        "every motor vehicle",
+        "all categories of motor vehicles",
+        "all categories of vehicles",
+        "all vehicles",
+    ],
 }
-_SYN_RE = {c: re.compile(r"\b(?:" + "|".join(w if "\\" in w or "?" in w else re.escape(w) for w in ws) + r")\b", re.I)
-           for c, ws in SYNONYMS.items()}
+_SYN_RE = {
+    c: re.compile(r"\b(?:" + "|".join(w if "\\" in w or "?" in w else re.escape(w) for w in ws) + r")\b", re.I)
+    for c, ws in SYNONYMS.items()
+}
 
 
 def norm_category(code: str) -> str | None:
@@ -316,7 +396,9 @@ def find_categories(text: str, synonyms: bool = True) -> dict[str, int]:
 
 
 POWERTRAIN_RE: dict[str, re.Pattern] = {
-    "bev": re.compile(r"\b(battery operated|battery electric|electric vehicles?|BEV|EV|electric power ?train|e-vehicles?)\b", re.I),
+    "bev": re.compile(
+        r"\b(battery operated|battery electric|electric vehicles?|BEV|EV|electric power ?train|e-vehicles?)\b", re.I
+    ),
     "hybrid": re.compile(r"\b(hybrid|HEV|PHEV)\b", re.I),
     "cng": re.compile(r"\bCNG\b|compressed natural gas", re.I),
     "lpg": re.compile(r"\bLPG\b|liquefied petroleum gas", re.I),
@@ -335,7 +417,9 @@ def find_powertrains(text: str, min_hits: int = 1) -> list[str]:
 
 
 USAGE_RE = {
-    "transport": re.compile(r"\btransport vehicles?\b|\bcommercial vehicles?\b|\bstage carriage|\bcontract carriage|\bgoods carriage", re.I),
+    "transport": re.compile(
+        r"\btransport vehicles?\b|\bcommercial vehicles?\b|\bstage carriage|\bcontract carriage|\bgoods carriage", re.I
+    ),
     "private": re.compile(r"\bnon[\s\-]?transport vehicles?\b|\bprivate vehicles?\b|\bpersonal use\b", re.I),
 }
 
@@ -346,16 +430,53 @@ def find_usage(text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------- numeric conditions
-WORDNUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
-           "ten": 10, "twelve": 12, "thirteen": 13, "fifteen": 15, "twenty": 20, "twenty-two": 22, "thirty": 30}
+WORDNUM = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "twelve": 12,
+    "thirteen": 13,
+    "fifteen": 15,
+    "twenty": 20,
+    "twenty-two": 22,
+    "thirty": 30,
+}
 _OP = r"(not more than|not exceeding|up to|upto|less than or equal to|less than|below|exceeding|more than|above|over|greater than|at least|<=|>=|≤|≥|<|>)"
-OPMAP = {"not more than": "lte", "not exceeding": "lte", "up to": "lte", "upto": "lte", "less than or equal to": "lte",
-         "<=": "lte", "less than": "lt", "below": "lt", "<": "lt", "exceeding": "gt", "more than": "gt", "above": "gt",
-         "over": "gt", "greater than": "gt", ">": "gt", "at least": "gte", ">=": "gte", "≤": "lte", "≥": "gte"}
+OPMAP = {
+    "not more than": "lte",
+    "not exceeding": "lte",
+    "up to": "lte",
+    "upto": "lte",
+    "less than or equal to": "lte",
+    "<=": "lte",
+    "less than": "lt",
+    "below": "lt",
+    "<": "lt",
+    "exceeding": "gt",
+    "more than": "gt",
+    "above": "gt",
+    "over": "gt",
+    "greater than": "gt",
+    ">": "gt",
+    "at least": "gte",
+    ">=": "gte",
+    "≤": "lte",
+    "≥": "gte",
+}
 COND_RE = {
     "engine_cc": re.compile(_OP + r"\s*(\d{2,4})\s*(?:cc|cubic\s+centimet)", re.I),
     "power_kw": re.compile(_OP + r"\s*(\d+(?:\.\d+)?)\s*kW\b(?!\s*/)", re.I),  # not a power/weight ratio (kw/kg)
-    "gvw_kg": re.compile(r"(?:GVW|gross vehicle weight)[^.;]{0,40}?" + _OP + r"\s*(\d[\d,]*(?:\.\d+)?)\s*(kg|kilograms?|tonnes?|t)\b", re.I),
+    "gvw_kg": re.compile(
+        r"(?:GVW|gross vehicle weight)[^.;]{0,40}?" + _OP + r"\s*(\d[\d,]*(?:\.\d+)?)\s*(kg|kilograms?|tonnes?|t)\b",
+        re.I,
+    ),
     "seats": re.compile(_OP + r"\s*(\w+(?:-\w+)?)\s+(?:seats|passengers|persons)", re.I),
     "speed_kmh": re.compile(_OP + r"\s*(\d{2,3})\s*km\s*/?\s*h", re.I),
 }
@@ -377,5 +498,6 @@ def find_conditions(text: str) -> dict[str, dict[str, float]]:
                 out.setdefault(key, {})[op] = v
                 break
     return out
+
 
 ISO_DATE_RE = r"\d{4}-\d{2}-\d{2}"

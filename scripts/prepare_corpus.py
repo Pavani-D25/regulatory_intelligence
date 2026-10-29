@@ -32,7 +32,10 @@ def main() -> None:
     a = ap.parse_args()
     t0 = time.time()
     files = scan()
-    print(f"scanned {len(files)} files, {len({f.sha256 for f in files})} unique sha256 ({time.time()-t0:.0f}s)", flush=True)
+    print(
+        f"scanned {len(files)} files, {len({f.sha256 for f in files})} unique sha256 ({time.time() - t0:.0f}s)",
+        flush=True,
+    )
     print(f"copied {copy_to_storage(files)} new objects to {get_settings().storage_dir}", flush=True)
     uniq = {}
     for f in files:
@@ -47,8 +50,8 @@ def main() -> None:
             if err:
                 print("ERR", sha[:12], err, flush=True)
             if done % 200 == 0:
-                print(f"{done}/{len(jobs)} ({time.time()-t0:.0f}s)", flush=True)
-    print(f"text done for {done} files in {time.time()-t0:.0f}s")
+                print(f"{done}/{len(jobs)} ({time.time() - t0:.0f}s)", flush=True)
+    print(f"text done for {done} files in {time.time() - t0:.0f}s")
 
 
 if __name__ == "__main__":

@@ -20,55 +20,109 @@ from regtrack.pipeline.text import PageText, english_text, full_text
 # folder priority when the same bytes sit in several folders
 FOLDER_PRIORITY = ["07", "11", "28", "21", "17", "18", "29", "24", "25", "12", "01", "05", "02", "06", "27"]
 
-AUTO_KW = re.compile(r"motor\s+vehicles?|vehicles?|automotive|\bAIS\b|CMVR|road\s+transport|two[\s\-]wheeler|"
-                     r"type\s+approval|driving\s+licen[cs]e|registration\s+(?:mark|certificate)|\bpermit|"
-                     r"emission|Bharat\s+Stage|chassis|tyre|helmet|traffic|carriage", re.I)
+AUTO_KW = re.compile(
+    r"motor\s+vehicles?|vehicles?|automotive|\bAIS\b|CMVR|road\s+transport|two[\s\-]wheeler|"
+    r"type\s+approval|driving\s+licen[cs]e|registration\s+(?:mark|certificate)|\bpermit|"
+    r"emission|Bharat\s+Stage|chassis|tyre|helmet|traffic|carriage",
+    re.I,
+)
 CMVR_RE = re.compile(r"Central\s+Motor\s+Vehicles?\s+Rules|Motor\s+Vehicles\s+Act|C\.?M\.?V\.?R\.?\b", re.I)
 GAZETTE_RE = re.compile(r"Gazette\s+of\s+India|EXTRAORDINARY|PART\s+II\s*[\-—–,]*\s*Sec", re.I)
-DRAFT_RE = re.compile(r"draft\s+(?:of\s+)?(?:certain\s+)?(?:rules|notification|amendments?)\b.{0,300}?"
-                      r"(?:objections?|suggestions?|expiry\s+of)|objections?\s+(?:and|or)\s+suggestions?.{0,200}?"
-                      r"(?:expiry|period\s+of)|after\s+the\s+expiry\s+of\s+(?:a\s+)?period\s+of\s+(?:thirty|forty[\s\-]five|"
-                      r"sixty|fifteen|seven|\d+)\s+days", re.I | re.S)
+DRAFT_RE = re.compile(
+    r"draft\s+(?:of\s+)?(?:certain\s+)?(?:rules|notification|amendments?)\b.{0,300}?"
+    r"(?:objections?|suggestions?|expiry\s+of)|objections?\s+(?:and|or)\s+suggestions?.{0,200}?"
+    r"(?:expiry|period\s+of)|after\s+the\s+expiry\s+of\s+(?:a\s+)?period\s+of\s+(?:thirty|forty[\s\-]five|"
+    r"sixty|fifteen|seven|\d+)\s+days",
+    re.I | re.S,
+)
 # "Whereas the draft rules ... were published ... vide notification number G.S.R. 117(E), dated ..." (a final).
 # A draft itself says "the following draft ... is hereby published" and cites the principal rules (G.S.R. 590(E)),
 # so those phrases may not appear between 'draft' and the cited number.
 _NOT_DRAFT_SELF = r"(?:(?!hereby\s+published|is\s+published|principal\s+(?:rules|notification)|last\s+amended)[\s\S])"
-DRAFT_CITE = re.compile(r"draft\s+(?:of\s+)?(?:certain\s+)?(?:rules|notification|amendments?|scheme)" + _NOT_DRAFT_SELF
-                        + r"{0,400}?(?:were|was|had\s+been|have\s+been)\s+published" + _NOT_DRAFT_SELF + r"{0,600}?"
-                        + P.SERIES_RE + r"\s*(?:No\.?\s*)?(\d{1,5})\s*\.?\s*\(?\s*E\b", re.I)
+DRAFT_CITE = re.compile(
+    r"draft\s+(?:of\s+)?(?:certain\s+)?(?:rules|notification|amendments?|scheme)"
+    + _NOT_DRAFT_SELF
+    + r"{0,400}?(?:were|was|had\s+been|have\s+been)\s+published"
+    + _NOT_DRAFT_SELF
+    + r"{0,600}?"
+    + P.SERIES_RE
+    + r"\s*(?:No\.?\s*)?(\d{1,5})\s*\.?\s*\(?\s*E\b",
+    re.I,
+)
 FINAL_OF_DRAFT = re.compile(DRAFT_CITE.pattern + r"|whereas\s+the\s+(?:said\s+)?draft", re.I)
 CORRIGENDUM_RE = re.compile(r"\bCORRIGENDUM\b|\bCORRIGENDA\b", re.I)
-EXEMPT_RE = re.compile(r"hereby\s+exempts?|exempt(?:s|ed)?\s+(?:the\s+)?(?:following|all|any|such|vehicles?|from\s+the\s+(?:provisions|operation))|"
-                       r"exemption\s+(?:from|to|of)", re.I)
-EXTEND_RE = re.compile(r"extend(?:s|ed|ing)?\s+the\s+(?:date|period|time|validity)|for\s+the\s+(?:words|figures)[^.]{0,80}?"
-                       r"(?:20\d\d|19\d\d)[^.]{0,80}?(?:shall\s+be\s+substituted)|postpone", re.I)
-OM_RE = re.compile(r"Office\s+Memorandum|\bO\.\s?M\.\s|\bCIRCULAR\b|\bADVISORY\b|\bOrder\b\s*\n|"
-                   r"No\.\s*RT[\-\s]?\d", re.I)
-GUIDE_RE = re.compile(r"\bguidelines?\b|\bpolicy\b|\bstandard\s+operating\s+procedure\b|\bSOP\b|\bframework\b|\bscheme\b", re.I)
+EXEMPT_RE = re.compile(
+    r"hereby\s+exempts?|exempt(?:s|ed)?\s+(?:the\s+)?(?:following|all|any|such|vehicles?|from\s+the\s+(?:provisions|operation))|"
+    r"exemption\s+(?:from|to|of)",
+    re.I,
+)
+EXTEND_RE = re.compile(
+    r"extend(?:s|ed|ing)?\s+the\s+(?:date|period|time|validity)|for\s+the\s+(?:words|figures)[^.]{0,80}?"
+    r"(?:20\d\d|19\d\d)[^.]{0,80}?(?:shall\s+be\s+substituted)|postpone",
+    re.I,
+)
+OM_RE = re.compile(
+    r"Office\s+Memorandum|\bO\.\s?M\.\s|\bCIRCULAR\b|\bADVISORY\b|\bOrder\b\s*\n|"
+    r"No\.\s*RT[\-\s]?\d",
+    re.I,
+)
+GUIDE_RE = re.compile(
+    r"\bguidelines?\b|\bpolicy\b|\bstandard\s+operating\s+procedure\b|\bSOP\b|\bframework\b|\bscheme\b", re.I
+)
 # Act titles are printed in capitals; 'the Motor Vehicles Act, 1988' inside a notification is only a citation
-ACT_RE = re.compile(r"\bTHE\s+[A-Z][A-Z ,()]{3,80}ACT,?\s+(?:19|20)\d\d\b|(?i:\bAN\s+ACT\s+(?:further\s+)?to\b)|"
-                    r"ARRANGEMENT\s+OF\s+SECTIONS|(?i:BE\s+it\s+enacted)")
-STATES = (r"Andhra\s+Pradesh|Arunachal\s+Pradesh|Assam|Bihar|Chh?att?[ie]sgarh|Goa|Gujarat|Haryana|Himachal\s+Pradesh|"
-          r"Jharkhand|Karnataka|Kerala|Madhya\s+Pradesh|Maharashtra|Manipur|Meghalaya|Mizoram|Nagaland|Odisha|Orissa|"
-          r"Punjab|Rajasthan|Sikkim|Tamil\s+Nadu|Telangana|Tripura|Uttar\s+Pradesh|Uttarakhand|West\s+Bengal|"
-          r"Delhi|NCT\s+of\s+Delhi|Jammu\s+and\s+Kashmir|Puducherry|Chandigarh|Ladakh|Mysore|Bombay|Madras")
-STATE_HDR = re.compile(r"GOVERNMENT\s+OF\s+(?:THE\s+)?(?:NATIONAL\s+CAPITAL\s+TERRITORY\s+OF\s+)?(" + STATES + r")\b|"
-                       r"(" + STATES + r")\s+(?:GAZETTE|Government)", re.I)
-STATE_TITLE = re.compile(r"\b(" + STATES + r")\s+Motor\s+Vehicles?|\b(" + STATES + r")\s+(?:\w+\s+){0,3}(?:Tax|Taxation|GST|"
-                         r"Goods\s+and\s+Services)", re.I)
-CONSOLIDATED_RE = re.compile(r"CHAPTER\s+I\b.{0,80}?PRELIMINARY.{0,200}?Short\s+title\s+(?:and|,)\s+commencement", re.I | re.S)
-BEE_RE = re.compile(r"Bureau\s+of\s+Energy\s+Efficiency|Energy\s+Conservation\s+Act|fuel\s+consumption\s+standards|"
-                    r"Corporate\s+Average\s+Fuel", re.I)
-FUEL_RE = re.compile(r"Motor\s+Spirit\s+and\s+High\s+Speed\s+Diesel|Naphtha|Solvent,?\s+Raffinate|Slop|"
-                     r"(?:Prevention|Regulation)\s+of\s+Malpractices|adulteration", re.I)
+ACT_RE = re.compile(
+    r"\bTHE\s+[A-Z][A-Z ,()]{3,80}ACT,?\s+(?:19|20)\d\d\b|(?i:\bAN\s+ACT\s+(?:further\s+)?to\b)|"
+    r"ARRANGEMENT\s+OF\s+SECTIONS|(?i:BE\s+it\s+enacted)"
+)
+STATES = (
+    r"Andhra\s+Pradesh|Arunachal\s+Pradesh|Assam|Bihar|Chh?att?[ie]sgarh|Goa|Gujarat|Haryana|Himachal\s+Pradesh|"
+    r"Jharkhand|Karnataka|Kerala|Madhya\s+Pradesh|Maharashtra|Manipur|Meghalaya|Mizoram|Nagaland|Odisha|Orissa|"
+    r"Punjab|Rajasthan|Sikkim|Tamil\s+Nadu|Telangana|Tripura|Uttar\s+Pradesh|Uttarakhand|West\s+Bengal|"
+    r"Delhi|NCT\s+of\s+Delhi|Jammu\s+and\s+Kashmir|Puducherry|Chandigarh|Ladakh|Mysore|Bombay|Madras"
+)
+STATE_HDR = re.compile(
+    r"GOVERNMENT\s+OF\s+(?:THE\s+)?(?:NATIONAL\s+CAPITAL\s+TERRITORY\s+OF\s+)?(" + STATES + r")\b|"
+    r"(" + STATES + r")\s+(?:GAZETTE|Government)",
+    re.I,
+)
+STATE_TITLE = re.compile(
+    r"\b(" + STATES + r")\s+Motor\s+Vehicles?|\b(" + STATES + r")\s+(?:\w+\s+){0,3}(?:Tax|Taxation|GST|"
+    r"Goods\s+and\s+Services)",
+    re.I,
+)
+CONSOLIDATED_RE = re.compile(
+    r"CHAPTER\s+I\b.{0,80}?PRELIMINARY.{0,200}?Short\s+title\s+(?:and|,)\s+commencement", re.I | re.S
+)
+BEE_RE = re.compile(
+    r"Bureau\s+of\s+Energy\s+Efficiency|Energy\s+Conservation\s+Act|fuel\s+consumption\s+standards|"
+    r"Corporate\s+Average\s+Fuel",
+    re.I,
+)
+FUEL_RE = re.compile(
+    r"Motor\s+Spirit\s+and\s+High\s+Speed\s+Diesel|Naphtha|Solvent,?\s+Raffinate|Slop|"
+    r"(?:Prevention|Regulation)\s+of\s+Malpractices|adulteration",
+    re.I,
+)
 BIS_RE = re.compile(r"Bureau\s+of\s+Indian\s+Standards|Conformity\s+Assessment|BIS\s+Act", re.I)
 LEGACY_SAFETY = re.compile(r"\bIS\s*:?\s*\d{3,5}\b.{0,60}(?:safety|helmet|glass|seat\s+belt)", re.I)
 
 ISSUERS = [
-    ("MoRTH", re.compile(r"MINISTRY\s+OF\s+(?:SHIPPING,\s+)?ROAD\s+TRANSPORT|MINISTRY\s+OF\s+SURFACE\s+TRANSPORT|"
-                         r"Department\s+of\s+Road\s+Transport|MoRTH|MINISTRY\s+OF\s+TRANSPORT", re.I)),
-    ("AISC/ARAI", re.compile(r"AUTOMOTIVE\s+INDUSTRY\s+STANDARD|Automotive\s+Research\s+Association\s+of\s+India|"
-                             r"AIS\s+Committee|AISC", re.I)),
+    (
+        "MoRTH",
+        re.compile(
+            r"MINISTRY\s+OF\s+(?:SHIPPING,\s+)?ROAD\s+TRANSPORT|MINISTRY\s+OF\s+SURFACE\s+TRANSPORT|"
+            r"Department\s+of\s+Road\s+Transport|MoRTH|MINISTRY\s+OF\s+TRANSPORT",
+            re.I,
+        ),
+    ),
+    (
+        "AISC/ARAI",
+        re.compile(
+            r"AUTOMOTIVE\s+INDUSTRY\s+STANDARD|Automotive\s+Research\s+Association\s+of\s+India|"
+            r"AIS\s+Committee|AISC",
+            re.I,
+        ),
+    ),
     ("MoEFCC", re.compile(r"MINISTRY\s+OF\s+ENVIRONMENT|Central\s+Pollution\s+Control\s+Board", re.I)),
     ("MoPNG", re.compile(r"MINISTRY\s+OF\s+PETROLEUM", re.I)),
     ("MoP/BEE", re.compile(r"MINISTRY\s+OF\s+POWER|Bureau\s+of\s+Energy\s+Efficiency", re.I)),
@@ -76,7 +130,10 @@ ISSUERS = [
     ("MoHI", re.compile(r"MINISTRY\s+OF\s+HEAVY\s+INDUSTR", re.I)),
     ("Law Ministry", re.compile(r"MINISTRY\s+OF\s+LAW|Legislative\s+Department", re.I)),
     ("MoF", re.compile(r"MINISTRY\s+OF\s+FINANCE|Department\s+of\s+Revenue", re.I)),
-    ("State Government", re.compile(r"GOVERNMENT\s+OF\s+(?!INDIA)[A-Z][A-Za-z ]{3,25}\n|State\s+Government\s+of", re.I)),
+    (
+        "State Government",
+        re.compile(r"GOVERNMENT\s+OF\s+(?!INDIA)[A-Z][A-Za-z ]{3,25}\n|State\s+Government\s+of", re.I),
+    ),
 ]
 
 
@@ -91,7 +148,7 @@ class FileCtx:
     page_count: int
     text_layer: bool
     scanned_pages: list[int] = field(default_factory=list)
-    listings: list[dict] = field(default_factory=list)   # {source,title,date,category,raw}
+    listings: list[dict] = field(default_factory=list)  # {source,title,date,category,raw}
 
     @property
     def folder(self) -> str:
@@ -140,7 +197,7 @@ def state_level(text: str, names: str = "") -> str | None:
     """A State Government document (state MV rules/tax, state schemes): returns the state name."""
     head = text[:1500]
     m = STATE_HDR.search(head) or STATE_TITLE.search(head) or STATE_TITLE.search(names)
-    if m and not re.search(r"MINISTRY\s+OF\s+ROAD\s+TRANSPORT|Government\s+of\s+India", head[:m.start() + 400], re.I):
+    if m and not re.search(r"MINISTRY\s+OF\s+ROAD\s+TRANSPORT|Government\s+of\s+India", head[: m.start() + 400], re.I):
         return next(g for g in m.groups() if g).title()
     return None
 
@@ -157,13 +214,24 @@ def relevance(ctx: FileCtx) -> dict:
     enough_text = words >= 150
     state = state_level(eng, ctx.names_l())
     automotive = (not enough_text) or central or density >= 4 or (cmvr and density >= 1)
-    reason = ("too little English text to judge" if not enough_text else
-              f"{hits} automotive keywords/{words} words" + ("; cites CMVR/MV Act" if cmvr else "")
-              + (f"; issuer {issuer}" if issuer else ""))
+    reason = (
+        "too little English text to judge"
+        if not enough_text
+        else f"{hits} automotive keywords/{words} words"
+        + ("; cites CMVR/MV Act" if cmvr else "")
+        + (f"; issuer {issuer}" if issuer else "")
+    )
     if state:
         reason += f"; state-level ({state})"
-    return {"automotive": automotive, "score": round(score, 2), "reason": reason, "keyword_hits": hits,
-            "english_words": words, "cmvr": cmvr, "state": state}
+    return {
+        "automotive": automotive,
+        "score": round(score, 2),
+        "reason": reason,
+        "keyword_hits": hits,
+        "english_words": words,
+        "cmvr": cmvr,
+        "state": state,
+    }
 
 
 def notification_kind(eng: str, has_id: bool, series: str | None) -> tuple[DocClass, str]:
@@ -185,16 +253,39 @@ def notification_kind(eng: str, has_id: bool, series: str | None) -> tuple[DocCl
 def nature_of(text: str, doc_class: DocClass) -> str | None:
     if doc_class in (DocClass.OFF_TOPIC,):
         return None
-    if doc_class.is_ais or doc_class in (DocClass.TAP_DOCUMENT, DocClass.TAP_AMENDMENT, DocClass.SAFETY_STANDARD_LEGACY,
-                                         DocClass.FUEL_ORDER, DocClass.ENERGY_STANDARD):
+    if doc_class.is_ais or doc_class in (
+        DocClass.TAP_DOCUMENT,
+        DocClass.TAP_AMENDMENT,
+        DocClass.SAFETY_STANDARD_LEGACY,
+        DocClass.FUEL_ORDER,
+        DocClass.ENERGY_STANDARD,
+    ):
         return Nature.TECHNICAL
     t = text[:30000]
-    tech = len(re.findall(r"AIS[\s\-]?\d{3}|\bIS\s*:?\s*\d{3,5}|type\s+approv|emission|safety|brak|lamp|helmet|"
-                          r"seat\s+belt|airbag|speed\s+(?:governor|limit)|tyre|battery|Bharat\s+Stage|conform", t, re.I))
-    admin = len(re.findall(r"\bfees?\b|registration|licen[cs]e|permit|tax|penalt|insurance|Form\s+\d|"
-                           r"learner|driving\s+school|national\s+permit|fitness\s+certificate", t, re.I))
-    proc = len(re.findall(r"test(?:ing)?\s+agenc|accredit|conformity\s+of\s+production|\bCoP\b|procedure|"
-                          r"automated\s+testing\s+station|inspection", t, re.I))
+    tech = len(
+        re.findall(
+            r"AIS[\s\-]?\d{3}|\bIS\s*:?\s*\d{3,5}|type\s+approv|emission|safety|brak|lamp|helmet|"
+            r"seat\s+belt|airbag|speed\s+(?:governor|limit)|tyre|battery|Bharat\s+Stage|conform",
+            t,
+            re.I,
+        )
+    )
+    admin = len(
+        re.findall(
+            r"\bfees?\b|registration|licen[cs]e|permit|tax|penalt|insurance|Form\s+\d|"
+            r"learner|driving\s+school|national\s+permit|fitness\s+certificate",
+            t,
+            re.I,
+        )
+    )
+    proc = len(
+        re.findall(
+            r"test(?:ing)?\s+agenc|accredit|conformity\s+of\s+production|\bCoP\b|procedure|"
+            r"automated\s+testing\s+station|inspection",
+            t,
+            re.I,
+        )
+    )
     best = max((tech, Nature.TECHNICAL), (admin, Nature.ADMINISTRATIVE), (proc, Nature.PROCEDURAL))
     return best[1] if best[0] > 0 else None
 
@@ -215,8 +306,15 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
     if any(x.get("source") == "TH_LOCAL" for x in ctx.listings):
         k = thai.law_class(full_text(ctx.pages))
         iss = {"TIS_STANDARD": "TISI", "DLT_NOTIFICATION": "Department of Land Transport (DLT)"}.get(k or "")
-        return ClassResult(DocClass(k) if k else DocClass.OTHER, "final", iss, rel, None, "rules",
-                           f"hand-saved Thai document ({k or 'kind not recognised'})")
+        return ClassResult(
+            DocClass(k) if k else DocClass.OTHER,
+            "final",
+            iss,
+            rel,
+            None,
+            "rules",
+            f"hand-saved Thai document ({k or 'kind not recognised'})",
+        )
 
     # ---- Thailand: a TISI mandatory-standard page (every product type; only the automotive ones are TIS_STANDARD)
     tisi = [x for x in ctx.listings if x.get("source") == thai.TISI_SOURCE]
@@ -269,10 +367,14 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
             return res(DocClass.AIS_INTERPRETATION, why="interpretation manual", iss="AISC/ARAI")
         if code_raw.strip().lower() == "list" or re.search(r"list\s+of\s+(?:published\s+)?AIS", head[:600], re.I):
             return res(DocClass.OTHER, why="list of published AIS", iss="AISC/ARAI")
-        draft_marks = re.search(r"\bFinali[sz]ed\s+Draft\b|\bDRAFT\b(?!\s+(?:rules|notification))|Last\s+date\s+for\s+comments",
-                                head[:2500]) or \
-            re.search(r"\bDraft\s*/?\s*AIS[\s\-]*\d{3}[^\n]{0,40}?/\s*D(?:F\d?|\d)\b", head[:4000], re.I) or \
-            re.search(r"\bDraft\s+D(?:F\d?|\d)\s*/?\s*AIS[\s\-]*\d{3}", head[:4000], re.I)  # "Draft D0 AIS - 232"
+        draft_marks = (
+            re.search(
+                r"\bFinali[sz]ed\s+Draft\b|\bDRAFT\b(?!\s+(?:rules|notification))|Last\s+date\s+for\s+comments",
+                head[:2500],
+            )
+            or re.search(r"\bDraft\s*/?\s*AIS[\s\-]*\d{3}[^\n]{0,40}?/\s*D(?:F\d?|\d)\b", head[:4000], re.I)
+            or re.search(r"\bDraft\s+D(?:F\d?|\d)\s*/?\s*AIS[\s\-]*\d{3}", head[:4000], re.I)
+        )  # "Draft D0 AIS - 232"
         if draft_marks or re.search(r"(?<![a-z])draft(?![a-z])|\bDF[_\s]", names, re.I):  # "_Draft_AIS_232"
             return res(DocClass.AIS_DRAFT, "draft", why="draft AIS", iss="AISC/ARAI")
         if ais_identity is None and ctx.text_layer is False:
@@ -355,10 +457,19 @@ def classify_with_llm(ctx: FileCtx) -> ClassResult | None:
     text = ctx.head(6000) or full_text(ctx.pages)[:6000]
     if len(text.strip()) < 200:
         return None
-    sys_p = ("You classify Indian vehicle-regulation documents. Allowed classes: "
-             + ", ".join(c.value for c in INDIA_CLASSES)
-             + ". Use OFF_TOPIC for documents unrelated to motor vehicles or road transport.")
+    sys_p = (
+        "You classify Indian vehicle-regulation documents. Allowed classes: "
+        + ", ".join(c.value for c in INDIA_CLASSES)
+        + ". Use OFF_TOPIC for documents unrelated to motor vehicles or road transport."
+    )
     r = llm.structured(LlmClass, sys_p, f"File name: {ctx.name}\n\n{text}")
     dc = DocClass.OFF_TOPIC if not r.automotive else DocClass(r.doc_class)
-    return ClassResult(dc, "draft" if dc in (DocClass.NOTIFICATION_DRAFT, DocClass.AIS_DRAFT) else "final",
-                       detect_issuer(ctx.english), relevance(ctx), nature_of(ctx.english, dc), "qwen", r.reason)
+    return ClassResult(
+        dc,
+        "draft" if dc in (DocClass.NOTIFICATION_DRAFT, DocClass.AIS_DRAFT) else "final",
+        detect_issuer(ctx.english),
+        relevance(ctx),
+        nature_of(ctx.english, dc),
+        "qwen",
+        r.reason,
+    )

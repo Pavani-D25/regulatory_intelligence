@@ -31,7 +31,7 @@ Q_CLOSE = "”’\"‖'»"
 
 @dataclass
 class Item:
-    table: str                   # 'SO-1365(E)-2004 Table' | 'SO-1365(E)-2004 Table A' | 'CMVR Rule 124(4) Table'
+    table: str  # 'SO-1365(E)-2004 Table' | 'SO-1365(E)-2004 Table A' | 'CMVR Rule 124(4) Table'
     serial: str
     item: str | None
     subject: str | None = None
@@ -80,7 +80,9 @@ def base_table(text: str) -> str | None:
 
 def table_sections(op: str, base: str) -> list[tuple[str, str]]:
     """Split operative text into (table name, text) sections at 'in the Table', 'in Table A', ..."""
-    marks = [(m.start(), f"{base} Table" + (f" {m.group(1).upper()}" if m.group(1) else "")) for m in TABLE_HDR.finditer(op)]
+    marks = [
+        (m.start(), f"{base} Table" + (f" {m.group(1).upper()}" if m.group(1) else "")) for m in TABLE_HDR.finditer(op)
+    ]
     if not marks:
         return [(f"{base} Table", op)]
     out = []
@@ -139,13 +141,16 @@ def parse_items(block: str, table: str, default_serial: str | None) -> list[Item
                 items += make_items(table, ser, None, body)
             continue
         for k, m in enumerate(its):
-            seg = body[m.end(): its[k + 1].start() if k + 1 < len(its) else len(body)]
+            seg = body[m.end() : its[k + 1].start() if k + 1 < len(its) else len(body)]
             items += make_items(table, ser, m.group(1), seg)
     return items
 
 
-SCOPED = re.compile(r"For\s+(new|existing|all)\s+models?\s*[:\-]?\s*(\d{1,2}(?:st|nd|rd|th)?\s*(?:day\s+of\s+)?"
-                    r"[A-Z][a-z]+,?\s*\d{4})", re.I)
+SCOPED = re.compile(
+    r"For\s+(new|existing|all)\s+models?\s*[:\-]?\s*(\d{1,2}(?:st|nd|rd|th)?\s*(?:day\s+of\s+)?"
+    r"[A-Z][a-z]+,?\s*\d{4})",
+    re.I,
+)
 
 
 def make_items(table: str, ser: str, item: str | None, seg: str) -> list[Item]:
@@ -153,8 +158,15 @@ def make_items(table: str, ser: str, item: str | None, seg: str) -> list[Item]:
     seg = seg.split("”;")[0].split("”.")[0]
     stds = [r for r in P.find_references(seg, ("AIS", "IS", "UN_R")) if not r.startswith("CMVR")]
     subj = re.split(r"\s(?:IS[\s:]*\d|AIS[\s:\-]*\d)", clean(seg))[0].strip(" .;:")
-    base = {"table": table, "serial": ser, "item": item, "subject": subj[:300] or None, "standards": stds,
-            "categories": categories_from(subj), "conditions": P.find_conditions(subj)}
+    base = {
+        "table": table,
+        "serial": ser,
+        "item": item,
+        "subject": subj[:300] or None,
+        "standards": stds,
+        "categories": categories_from(subj),
+        "conditions": P.find_conditions(subj),
+    }
     scoped = [(m.group(1).lower(), P.parse_date(m.group(2)), m.group(0)) for m in SCOPED.finditer(clean(seg))]
     scoped = [x for x in scoped if x[1]]
     if scoped:
@@ -167,18 +179,29 @@ def make_items(table: str, ser: str, item: str | None, seg: str) -> list[Item]:
         return out
     dates = P.all_dates(seg)
     dt = re.search(r"(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+,?\s+\d{4}[^()]{0,120}?)(?=\(|$)", clean(seg))
-    return [Item(**base, date_text=dt.group(1).strip()[:200] if dt else None,
-                 implementation_date=dates[0] if dates else None)]
+    return [
+        Item(
+            **base, date_text=dt.group(1).strip()[:200] if dt else None, implementation_date=dates[0] if dates else None
+        )
+    ]
 
 
 def clean(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-SUBST_ROW = re.compile(r"for\s+(?:the\s+)?serial\s+numbers?\s+([\d\s,and]+?)(?:\s*,?\s*(?:and|for)\s+(?:the\s+)?entries|\s+and\s+the\s+entries|\s*,\s*for\s+item)"
-                       r"|for\s+item\s+numbers?\s+([\(\)a-z,\s and]+?)\s+and\s+the\s+entries", re.I)
-INSERT_ROW = re.compile(r"after\s+serial\s+number\s+(\d{1,3})[^.]{0,200}?(?:shall\s+be\s+inserted|following\s+serial\s+numbers?)", re.I)
-DATE_SUB = re.compile(r"for\s+the\s+(?:figures|words)[^“\"']{0,60}[“\"']([^”\"']{6,90})[”\"'][^“\"']{0,140}?[“\"']([^”\"']{6,60})[”\"']\s*shall\s+be\s+substituted", re.I)
+SUBST_ROW = re.compile(
+    r"for\s+(?:the\s+)?serial\s+numbers?\s+([\d\s,and]+?)(?:\s*,?\s*(?:and|for)\s+(?:the\s+)?entries|\s+and\s+the\s+entries|\s*,\s*for\s+item)"
+    r"|for\s+item\s+numbers?\s+([\(\)a-z,\s and]+?)\s+and\s+the\s+entries",
+    re.I,
+)
+INSERT_ROW = re.compile(
+    r"after\s+serial\s+number\s+(\d{1,3})[^.]{0,200}?(?:shall\s+be\s+inserted|following\s+serial\s+numbers?)", re.I
+)
+DATE_SUB = re.compile(
+    r"for\s+the\s+(?:figures|words)[^“\"']{0,60}[“\"']([^”\"']{6,90})[”\"'][^“\"']{0,140}?[“\"']([^”\"']{6,60})[”\"']\s*shall\s+be\s+substituted",
+    re.I,
+)
 OMIT_ROW = re.compile(r"serial\s+number\s+(\d{1,3})[^.]{0,120}?shall\s+be\s+omitted", re.I)
 
 
@@ -196,7 +219,9 @@ def parse_table_amendments(op: str) -> tuple[list[Item], list[DateSub], list[Omi
             if m:
                 old, new = P.parse_date(m.group(1)), P.parse_date(m.group(2))
                 if new:
-                    sers = _serials(" ".join(re.findall(r"(?:serial\s+numbers?|Sl\.?\s*Nos?\.?)\s+([\d\s,and]+)", clause, re.I)))
+                    sers = _serials(
+                        " ".join(re.findall(r"(?:serial\s+numbers?|Sl\.?\s*Nos?\.?)\s+([\d\s,and]+)", clause, re.I))
+                    )
                     im = re.search(r"items?\s+(?:numbers?\s+)?((?:\(\s*[a-z]\s*\)[\s,and&]*)+)", clause, re.I)
                     its = re.findall(r"\(\s*([a-z])\s*\)", im.group(1)) if im else []
                     dsubs.append(DateSub(table, sers, its, old, new, clean(clause)[:300], clean(m.group(1))))
@@ -204,7 +229,13 @@ def parse_table_amendments(op: str) -> tuple[list[Item], list[DateSub], list[Omi
             omits.append(Omit(table, m.group(1), []))
         table_cats = categories_from(sec[:160]) if re.search(r"rickshaw|cart|tractor|trailer", sec[:160], re.I) else []
         # one section can hold several clauses: "(i) In serial number 8, for item (d) ... (ii) In serial number 43, ..."
-        starts = [m.start() for m in re.finditer(r"(?:^|\n)\s*(?:\(?[ivx]{1,4}[\).]|\([a-z]\))\s*(?=(?:In|in|for|against|after)\s+(?:the\s+)?serial)", sec)]
+        starts = [
+            m.start()
+            for m in re.finditer(
+                r"(?:^|\n)\s*(?:\(?[ivx]{1,4}[\).]|\([a-z]\))\s*(?=(?:In|in|for|against|after)\s+(?:the\s+)?serial)",
+                sec,
+            )
+        ]
         clauses = [sec[a:b] for a, b in zip([0, *starts], [*starts, len(sec)], strict=True) if sec[a:b].strip()]
         for clause in clauses:
             sub = SUBST_ROW.search(clause) or INSERT_ROW.search(clause)
@@ -212,18 +243,24 @@ def parse_table_amendments(op: str) -> tuple[list[Item], list[DateSub], list[Omi
                 continue
             serials = _serials(sub.group(1) or "") if sub.re is SUBST_ROW else [sub.group(1)]
             default = None
-            ser_m = re.search(r"(?:in|against)\s+serial\s+number\s+(\d{1,3})", clause[:sub.start() + 200], re.I)
+            ser_m = re.search(r"(?:in|against)\s+serial\s+number\s+(\d{1,3})", clause[: sub.start() + 200], re.I)
             if ser_m:
                 default = ser_m.group(1)
             elif len(serials) == 1:
                 default = serials[0]
-            for it in parse_items(clause[sub.end():], table, default):
+            for it in parse_items(clause[sub.end() :], table, default):
                 if not it.categories and table_cats:
                     it.categories = table_cats
                 items.append(it)
     # drop cross-reference fragments ('(b), 43 (c) and 43 (d)') and keep one item per key
-    items = [it for it in items if (it.standards or it.implementation_date) and it.subject
-             and re.match(r"[A-Za-z]", it.subject) and not re.match(r"(?:In\s+serial|vide\s)", it.subject, re.I)]
+    items = [
+        it
+        for it in items
+        if (it.standards or it.implementation_date)
+        and it.subject
+        and re.match(r"[A-Za-z]", it.subject)
+        and not re.match(r"(?:In\s+serial|vide\s)", it.subject, re.I)
+    ]
     seen, uniq = set(), []
     for it in items:
         if it.key not in seen:
@@ -234,10 +271,17 @@ def parse_table_amendments(op: str) -> tuple[list[Item], list[DateSub], list[Omi
 
 # ---------------------------------------------------------------------- CMVR rule obligations
 _DATE = r"(\d{1,2}(?:st|nd|rd|th)?\s*(?:day\s+of\s+)?[A-Z][a-z]+,?\s+\d{4})"
-OBLIG = re.compile(r"(?:manufactured|sold|registered|fitted)\s+on\s+(?:or|and)\s+after\s+(?:the\s+)?" + _DATE
-                   + r"|on\s+and\s+from\s+(?:the\s+)?" + _DATE
-                   # a proviso's own dates: "... on and after the 1st April, 2018 for new vehicle models"
-                   + r"|on\s+and\s+after\s+(?:the\s+)?" + _DATE + r"(?=\s+for\s+(?:new|existing)\s+(?:vehicle\s+)?models?)", re.I)
+OBLIG = re.compile(
+    r"(?:manufactured|sold|registered|fitted)\s+on\s+(?:or|and)\s+after\s+(?:the\s+)?"
+    + _DATE
+    + r"|on\s+and\s+from\s+(?:the\s+)?"
+    + _DATE
+    # a proviso's own dates: "... on and after the 1st April, 2018 for new vehicle models"
+    + r"|on\s+and\s+after\s+(?:the\s+)?"
+    + _DATE
+    + r"(?=\s+for\s+(?:new|existing)\s+(?:vehicle\s+)?models?)",
+    re.I,
+)
 # clause boundaries: a sentence end (not the point of "0.1"), a lettered clause "(a) New ...", a proviso
 CLAUSE = re.compile(r"(?<!\d)\.(?=\s)|(?<![\w(])\(\s*[a-z]\s*\)\s+(?=[A-Z“\"])|\b(?i:provided\s+(?:further\s+)?that)\b")
 COND_ORDER = ("engine_cc", "power_kw", "gvw_kg", "seats", "speed_kmh")
@@ -278,9 +322,15 @@ def _clause(op: str, s: int, e: int) -> tuple[int, int]:
 
 
 def _scope(text: str) -> str:
-    return "new_models" if re.search(r"new\s+(?:vehicle\s+)?models?", text, re.I) else \
-        "existing_models" if re.search(r"existing\s+(?:vehicle\s+)?models?", text, re.I) else \
-        "registered_vehicles" if re.search(r"registered", text, re.I) else "all"
+    return (
+        "new_models"
+        if re.search(r"new\s+(?:vehicle\s+)?models?", text, re.I)
+        else "existing_models"
+        if re.search(r"existing\s+(?:vehicle\s+)?models?", text, re.I)
+        else "registered_vehicles"
+        if re.search(r"registered", text, re.I)
+        else "all"
+    )
 
 
 def _inverse(cond: dict) -> dict:
@@ -305,12 +355,14 @@ def parse_rule_obligations(op: str) -> list[RuleObligation]:
             continue
         start = max(0, op.rfind(".", 0, m.start() - 300) + 1)
         end = op.find(".", m.end() + 1)
-        sent = clean(op[start:end if end > 0 else m.end() + 400])
+        sent = clean(op[start : end if end > 0 else m.end() + 400])
         stds = [r for r in P.find_references(sent, ("AIS", "IS", "UN_R"))]
         if not stds:
             continue
-        before = op[max(0, m.start() - 3000):m.start()]
-        rules = list(re.finditer(r"(?:in\s+)?rule\s+(\d{1,3}[A-Z]{0,2})(?:\s*,\s*(?:in\s+)?sub-rule\s*\((\w+)\))?", before, re.I))
+        before = op[max(0, m.start() - 3000) : m.start()]
+        rules = list(
+            re.finditer(r"(?:in\s+)?rule\s+(\d{1,3}[A-Z]{0,2})(?:\s*,\s*(?:in\s+)?sub-rule\s*\((\w+)\))?", before, re.I)
+        )
         if not rules:
             continue
         r = rules[-1]
@@ -323,11 +375,19 @@ def parse_rule_obligations(op: str) -> list[RuleObligation]:
         if m.group(3) and not exception:
             continue  # "on and after <date> for new models" is read only in an 'all other vehicles' proviso
         cats, cond = categories_from(sent), P.find_conditions(clause) or P.find_conditions(sent)
-        scope = _scope(op[m.end():m.end() + 40]) if m.group(3) else \
-            _scope(clause) if _scope(clause) in ("new_models", "existing_models") else \
-            "new_models" if re.search(r"new\s+models?", sent, re.I) else \
-            "existing_models" if re.search(r"existing\s+models?", sent, re.I) else \
-            "registered_vehicles" if re.search(r"registered", sent, re.I) else "all"
+        scope = (
+            _scope(op[m.end() : m.end() + 40])
+            if m.group(3)
+            else _scope(clause)
+            if _scope(clause) in ("new_models", "existing_models")
+            else "new_models"
+            if re.search(r"new\s+models?", sent, re.I)
+            else "existing_models"
+            if re.search(r"existing\s+models?", sent, re.I)
+            else "registered_vehicles"
+            if re.search(r"registered", sent, re.I)
+            else "all"
+        )
         if exception and main:  # main: the clause this proviso is the exception to
             cond = P.find_conditions(clause) or _inverse(main.conditions)
             cats = categories_from(clause) or main.categories
@@ -343,7 +403,9 @@ def parse_rule_obligations(op: str) -> list[RuleObligation]:
         shapes.setdefault(o.base_key, set()).add((o.model_scope, _cond_tag(o.conditions)))
     for o in out:
         if len(shapes[o.base_key]) > 1:
-            o.variant = "/".join(x for x in (o.model_scope if o.model_scope != "all" else "", _cond_tag(o.conditions)) if x)
+            o.variant = "/".join(
+                x for x in (o.model_scope if o.model_scope != "all" else "", _cond_tag(o.conditions)) if x
+            )
     seen, uniq = set(), []
     for o in out:
         if (o.key, o.implementation_date) not in seen:
@@ -355,38 +417,55 @@ def parse_rule_obligations(op: str) -> list[RuleObligation]:
 # ---------------------------------------------------------------------- DB writes
 # A rule ("mandate" in this module) is a compliance_requirements row (requirement_code = mandate_key) per region;
 # each version of it is a requirement_versions row. Versions come back under the names this module uses.
-def version_sql(cc: str | None = None) -> str:  # built per call: the current country can change (tests, REGTRACK_COUNTRY)
+def version_sql(
+    cc: str | None = None,
+) -> str:  # built per call: the current country can change (tests, REGTRACK_COUNTRY)
     return f"""
 SELECT v.*, c.requirement_code AS mandate_key, v.source_regulation_id AS source_doc_id,
        v.standard_regulation_ids AS standard_doc_ids,
        coalesce((SELECT array_agg(vc.code ORDER BY vc.code) FROM vehicle_categories vc
                  WHERE vc.id = ANY(v.vehicle_category_ids)), '{{}}') AS vehicle_categories
 FROM requirement_versions v JOIN compliance_requirements c ON c.id = v.requirement_id
-WHERE {country.region_sql('c', cc)}"""
+WHERE {country.region_sql("c", cc)}"""
+
+
 VERSION_COLS = {"source_doc_id": "source_regulation_id", "standard_doc_ids": "standard_regulation_ids"}
 
 
 def open_versions(conn: psycopg.Connection, key: str, is_draft: bool = False) -> list[dict]:
-    return conn.execute(version_sql() + " AND c.requirement_code=%s AND v.valid_to IS NULL AND v.is_draft=%s ORDER BY v.id",
-                        (key, is_draft)).fetchall()
+    return conn.execute(
+        version_sql() + " AND c.requirement_code=%s AND v.valid_to IS NULL AND v.is_draft=%s ORDER BY v.id",
+        (key, is_draft),
+    ).fetchall()
 
 
 def already_recorded(conn: psycopg.Connection, key: str, source_doc: int) -> bool:
-    return conn.execute(version_sql() + " AND c.requirement_code=%s AND v.source_regulation_id=%s LIMIT 1",
-                        (key, source_doc)).fetchone() is not None
+    return (
+        conn.execute(
+            version_sql() + " AND c.requirement_code=%s AND v.source_regulation_id=%s LIMIT 1", (key, source_doc)
+        ).fetchone()
+        is not None
+    )
 
 
 def requirement_id(conn: psycopg.Connection, key: str, legal_basis: str | None) -> int:
     """The rule a version belongs to; created on its first version, with the stored regulation it is based on."""
     rid = conn.execute("SELECT id FROM regions WHERE code=%s", (country.code(),)).fetchone()["id"]
-    row = conn.execute("SELECT id FROM compliance_requirements WHERE region_id=%s AND requirement_code=%s",
-                       (rid, key)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM compliance_requirements WHERE region_id=%s AND requirement_code=%s", (rid, key)
+    ).fetchone()
     if row:
         return row["id"]
-    basis = conn.execute("""SELECT id FROM regulations WHERE region_id=%s AND position(external_code IN %s) = 1
-                            ORDER BY length(external_code) DESC LIMIT 1""", (rid, legal_basis or "")).fetchone()
-    return conn.execute("INSERT INTO compliance_requirements (region_id, requirement_code, regulation_id) "
-                        "VALUES (%s,%s,%s) RETURNING id", (rid, key, basis["id"] if basis else None)).fetchone()["id"]
+    basis = conn.execute(
+        """SELECT id FROM regulations WHERE region_id=%s AND position(external_code IN %s) = 1
+                            ORDER BY length(external_code) DESC LIMIT 1""",
+        (rid, legal_basis or ""),
+    ).fetchone()
+    return conn.execute(
+        "INSERT INTO compliance_requirements (region_id, requirement_code, regulation_id) "
+        "VALUES (%s,%s,%s) RETURNING id",
+        (rid, key, basis["id"] if basis else None),
+    ).fetchone()["id"]
 
 
 def insert_mandate(conn: psycopg.Connection, v: dict) -> int:
@@ -394,21 +473,32 @@ def insert_mandate(conn: psycopg.Connection, v: dict) -> int:
     key = v.pop("mandate_key")
     codes = v.pop("vehicle_categories", None) or []
     cols = {"requirement_id": requirement_id(conn, key, v.get("legal_basis"))}
-    cols["vehicle_category_ids"] = [r["id"] for r in conn.execute(
-        "SELECT id FROM vehicle_categories WHERE region_id=(SELECT id FROM regions WHERE code=%s) AND code = ANY(%s) "
-        "ORDER BY id", (country.code(), list(codes)))]
+    cols["vehicle_category_ids"] = [
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM vehicle_categories WHERE region_id=(SELECT id FROM regions WHERE code=%s) AND code = ANY(%s) "
+            "ORDER BY id",
+            (country.code(), list(codes)),
+        )
+    ]
     for k, x in v.items():
         cols[VERSION_COLS.get(k, k)] = Jsonb(x) if k == "conditions" else x
-    return conn.execute(f"INSERT INTO requirement_versions ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) "
-                        "RETURNING id", list(cols.values())).fetchone()["id"]
+    return conn.execute(
+        f"INSERT INTO requirement_versions ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING id",
+        list(cols.values()),
+    ).fetchone()["id"]
 
 
 def close(conn: psycopg.Connection, mid: int, valid_to: date, by: int | None) -> None:
-    conn.execute("UPDATE requirement_versions SET valid_to=%s, superseded_by=%s WHERE id=%s AND valid_to IS NULL",
-                 (valid_to, by, mid))
+    conn.execute(
+        "UPDATE requirement_versions SET valid_to=%s, superseded_by=%s WHERE id=%s AND valid_to IS NULL",
+        (valid_to, by, mid),
+    )
 
 
-def supersede(conn: psycopg.Connection, key: str, values: dict, notified: date, is_draft: bool) -> tuple[int, list[int]]:
+def supersede(
+    conn: psycopg.Connection, key: str, values: dict, notified: date, is_draft: bool
+) -> tuple[int, list[int]]:
     """Insert the new version and close the open ones (same key, same draft flag)."""
     olds = open_versions(conn, key, is_draft)
     new_id = insert_mandate(conn, {**values, "mandate_key": key, "is_draft": is_draft, "valid_from": notified})
@@ -421,10 +511,15 @@ def resolve_standard_ids(conn: psycopg.Connection, refs: list[str]) -> list[int]
     ids = []
     for r in refs:
         if r.startswith("AIS-"):
-            row = conn.execute(f"SELECT id FROM regulations WHERE external_code=%s AND {country.region_sql()}",
-                               (r,)).fetchone() or conn.execute(
-                f"SELECT id FROM regulations WHERE family_key=%s AND is_current AND {country.region_sql()}",
-                (r.split("(Rev")[0],)).fetchone()
+            row = (
+                conn.execute(
+                    f"SELECT id FROM regulations WHERE external_code=%s AND {country.region_sql()}", (r,)
+                ).fetchone()
+                or conn.execute(
+                    f"SELECT id FROM regulations WHERE family_key=%s AND is_current AND {country.region_sql()}",
+                    (r.split("(Rev")[0],),
+                ).fetchone()
+            )
             if row:
                 ids.append(row["id"])
     return ids
@@ -438,25 +533,42 @@ def mandates_for_document(conn: psycopg.Connection, doc: dict, op: str) -> dict:
         return stats
     is_draft = doc["status"] == "draft"
     items, dsubs, omits = parse_table_amendments(op)
-    common = {"date_of_notification": notified, "effective_date": notified, "source_doc_id": doc["id"],
-              "usage": doc.get("usage") or [], "powertrains": doc.get("powertrains") or []}
+    common = {
+        "date_of_notification": notified,
+        "effective_date": notified,
+        "source_doc_id": doc["id"],
+        "usage": doc.get("usage") or [],
+        "powertrains": doc.get("powertrains") or [],
+    }
     for it in items:
         if already_recorded(conn, it.key, doc["id"]):
             continue
-        v = {**common, "legal_basis": it.key, "subject": it.subject, "standard_refs": it.standards,
-             "standard_doc_ids": resolve_standard_ids(conn, it.standards), "vehicle_categories": it.categories,
-             "conditions": it.conditions, "model_scope": "all", "implementation_date": it.implementation_date,
-             "implementation_rule": it.date_text}
+        v = {
+            **common,
+            "legal_basis": it.key,
+            "subject": it.subject,
+            "standard_refs": it.standards,
+            "standard_doc_ids": resolve_standard_ids(conn, it.standards),
+            "vehicle_categories": it.categories,
+            "conditions": it.conditions,
+            "model_scope": "all",
+            "implementation_date": it.implementation_date,
+            "implementation_rule": it.date_text,
+        }
         _, closed = supersede(conn, it.key, v, notified, is_draft)
         stats["inserted"] += 1
         stats["closed"] += len(closed)
     for ds in dsubs:
         # rows of the named serial numbers whose date equals the old date; if none (an intermediate notification
         # is missing from the corpus), the row's latest-dated open items
-        keys = [r["mandate_key"] for r in conn.execute(
-            "SELECT DISTINCT mandate_key FROM (" + version_sql() + " AND v.valid_to IS NULL AND NOT v.is_draft) x "
-            "WHERE mandate_key = ANY(%s) OR mandate_key LIKE ANY(%s)",
-            ([f"{ds.table} Sr.{s}" for s in ds.serials], [f"{ds.table} Sr.{s}(%%" for s in ds.serials]))]
+        keys = [
+            r["mandate_key"]
+            for r in conn.execute(
+                "SELECT DISTINCT mandate_key FROM (" + version_sql() + " AND v.valid_to IS NULL AND NOT v.is_draft) x "
+                "WHERE mandate_key = ANY(%s) OR mandate_key LIKE ANY(%s)",
+                ([f"{ds.table} Sr.{s}" for s in ds.serials], [f"{ds.table} Sr.{s}(%%" for s in ds.serials]),
+            )
+        ]
         rows = [r for k in keys for r in open_versions(conn, k)]
         if ds.items:
             rows = [r for r in rows if any(r["mandate_key"].endswith(f"({i})") for i in ds.items)]
@@ -477,27 +589,63 @@ def mandates_for_document(conn: psycopg.Connection, doc: dict, op: str) -> dict:
                     key = f"{ds.table} Sr.{s_}" + (f"({it})" if it else "")
                     if already_recorded(conn, key, doc["id"]):
                         continue
-                    v = {**common, "legal_basis": key, "subject": doc.get("subject") or doc.get("official_title"),
-                         "standard_refs": [], "standard_doc_ids": [], "vehicle_categories": doc.get("vehicle_categories") or [],
-                         "conditions": {}, "model_scope": "all", "implementation_date": ds.new,
-                         "implementation_rule": f"substituted for '{ds.old_text}'" if ds.old_text else None}
+                    v = {
+                        **common,
+                        "legal_basis": key,
+                        "subject": doc.get("subject") or doc.get("official_title"),
+                        "standard_refs": [],
+                        "standard_doc_ids": [],
+                        "vehicle_categories": doc.get("vehicle_categories") or [],
+                        "conditions": {},
+                        "model_scope": "all",
+                        "implementation_date": ds.new,
+                        "implementation_rule": f"substituted for '{ds.old_text}'" if ds.old_text else None,
+                    }
                     new_id, closed = supersede(conn, key, v, notified, is_draft)
                     stats["inserted"] += 1
-                    stats["date_changes"].append({"mandate_id": new_id, "key": key, "old": ds.old_text, "new": str(ds.new),
-                                                  "stated_old": ds.old_text, "old_date_mismatch": False, "row_unknown": True})
+                    stats["date_changes"].append(
+                        {
+                            "mandate_id": new_id,
+                            "key": key,
+                            "old": ds.old_text,
+                            "new": str(ds.new),
+                            "stated_old": ds.old_text,
+                            "old_date_mismatch": False,
+                            "row_unknown": True,
+                        }
+                    )
         for r in hit:
             if already_recorded(conn, r["mandate_key"], doc["id"]):
                 continue
-            v = {k: r[k] for k in ("legal_basis", "subject", "standard_refs", "standard_doc_ids", "vehicle_categories",
-                                   "conditions", "model_scope", "usage", "powertrains")}
+            v = {
+                k: r[k]
+                for k in (
+                    "legal_basis",
+                    "subject",
+                    "standard_refs",
+                    "standard_doc_ids",
+                    "vehicle_categories",
+                    "conditions",
+                    "model_scope",
+                    "usage",
+                    "powertrains",
+                )
+            }
             v.update(common)
             v.update(implementation_date=ds.new, implementation_rule=f"extended from {r['implementation_date']}")
             new_id, closed = supersede(conn, r["mandate_key"], v, notified, is_draft)
             stats["inserted"] += 1
             stats["closed"] += len(closed)
-            stats["date_changes"].append({"mandate_id": new_id, "key": r["mandate_key"],
-                                          "old": str(r["implementation_date"]), "new": str(ds.new),
-                                          "stated_old": str(ds.old), "old_date_mismatch": mismatch})
+            stats["date_changes"].append(
+                {
+                    "mandate_id": new_id,
+                    "key": r["mandate_key"],
+                    "old": str(r["implementation_date"]),
+                    "new": str(ds.new),
+                    "stated_old": str(ds.old),
+                    "old_date_mismatch": mismatch,
+                }
+            )
     for om in omits:
         for r in open_versions(conn, f"{om.table} Sr.{om.serial}"):
             close(conn, r["id"], notified, None)
@@ -506,10 +654,18 @@ def mandates_for_document(conn: psycopg.Connection, doc: dict, op: str) -> dict:
         for ob in parse_rule_obligations(op):
             if already_recorded(conn, ob.key, doc["id"]):
                 continue
-            v = {**common, "legal_basis": ob.rule, "subject": ob.subject, "standard_refs": ob.standards,
-                 "standard_doc_ids": resolve_standard_ids(conn, ob.standards), "vehicle_categories": ob.categories,
-                 "conditions": ob.conditions, "model_scope": ob.model_scope,
-                 "implementation_date": ob.implementation_date, "implementation_rule": None}
+            v = {
+                **common,
+                "legal_basis": ob.rule,
+                "subject": ob.subject,
+                "standard_refs": ob.standards,
+                "standard_doc_ids": resolve_standard_ids(conn, ob.standards),
+                "vehicle_categories": ob.categories,
+                "conditions": ob.conditions,
+                "model_scope": ob.model_scope,
+                "implementation_date": ob.implementation_date,
+                "implementation_rule": None,
+            }
             supersede(conn, ob.key, v, notified, is_draft)
             stats["inserted"] += 1
     # Qwen provisions (when present and not already covered)
@@ -520,11 +676,18 @@ def mandates_for_document(conn: psycopg.Connection, doc: dict, op: str) -> dict:
             key = f"{prov['target']} :: {(prov.get('standards') or [prov.get('subject') or ''])[0]}"[:200]
             if already_recorded(conn, key, doc["id"]):
                 continue
-            v = {**common, "legal_basis": prov["target"], "subject": prov.get("subject"),
-                 "standard_refs": prov.get("standards") or [], "standard_doc_ids": resolve_standard_ids(conn, prov.get("standards") or []),
-                 "vehicle_categories": P.expand_letters([P.norm_category(c) or c for c in prov.get("categories") or []]),
-                 "conditions": prov.get("conditions") or {}, "model_scope": imp.get("model_scope") or "all",
-                 "implementation_date": date.fromisoformat(imp["date"]), "implementation_rule": imp.get("rule")}
+            v = {
+                **common,
+                "legal_basis": prov["target"],
+                "subject": prov.get("subject"),
+                "standard_refs": prov.get("standards") or [],
+                "standard_doc_ids": resolve_standard_ids(conn, prov.get("standards") or []),
+                "vehicle_categories": P.expand_letters([P.norm_category(c) or c for c in prov.get("categories") or []]),
+                "conditions": prov.get("conditions") or {},
+                "model_scope": imp.get("model_scope") or "all",
+                "implementation_date": date.fromisoformat(imp["date"]),
+                "implementation_rule": imp.get("rule"),
+            }
             supersede(conn, key, v, notified, is_draft)
             stats["inserted"] += 1
     return stats
@@ -533,10 +696,12 @@ def mandates_for_document(conn: psycopg.Connection, doc: dict, op: str) -> dict:
 def finalise_drafts(conn: psycopg.Connection, final_doc: int, draft_doc: int, notified: date) -> int:
     """When a final arrives, its draft's open mandates are closed (superseded by the final's version if any)."""
     n = 0
-    for r in conn.execute(version_sql() + " AND v.source_regulation_id=%s AND v.is_draft AND v.valid_to IS NULL",
-                          (draft_doc,)).fetchall():
-        rep = conn.execute(version_sql() + " AND v.source_regulation_id=%s AND c.requirement_code=%s",
-                           (final_doc, r["mandate_key"])).fetchone()
+    for r in conn.execute(
+        version_sql() + " AND v.source_regulation_id=%s AND v.is_draft AND v.valid_to IS NULL", (draft_doc,)
+    ).fetchall():
+        rep = conn.execute(
+            version_sql() + " AND v.source_regulation_id=%s AND c.requirement_code=%s", (final_doc, r["mandate_key"])
+        ).fetchone()
         close(conn, r["id"], max(notified, r["valid_from"] or notified), rep["id"] if rep else None)
         n += 1
     return n
@@ -545,9 +710,24 @@ def finalise_drafts(conn: psycopg.Connection, final_doc: int, draft_doc: int, no
 # ---------------------------------------------------------------------- corrections after a parser fix
 # A version that was read wrongly is not edited: it is closed at its own start (valid_to = valid_from, so it never
 # applied on any date) and superseded by the corrected version. Only open versions are corrected.
-COPY = ("legal_basis", "subject", "standard_refs", "standard_doc_ids", "vehicle_categories", "conditions", "model_scope",
-        "usage", "powertrains", "date_of_notification", "effective_date", "implementation_date", "implementation_rule",
-        "source_doc_id", "is_draft", "valid_from")
+COPY = (
+    "legal_basis",
+    "subject",
+    "standard_refs",
+    "standard_doc_ids",
+    "vehicle_categories",
+    "conditions",
+    "model_scope",
+    "usage",
+    "powertrains",
+    "date_of_notification",
+    "effective_date",
+    "implementation_date",
+    "implementation_rule",
+    "source_doc_id",
+    "is_draft",
+    "valid_from",
+)
 
 
 def _vocab(conn: psycopg.Connection) -> set[str]:
@@ -555,8 +735,9 @@ def _vocab(conn: psycopg.Connection) -> set[str]:
 
 
 def _replace(conn: psycopg.Connection, old: dict, **fix) -> int:
-    new_id = insert_mandate(conn, {**{k: old[k] for k in COPY}, **fix, "mandate_key": fix.pop("mandate_key", None)
-                                   or old["mandate_key"]})
+    new_id = insert_mandate(
+        conn, {**{k: old[k] for k in COPY}, **fix, "mandate_key": fix.pop("mandate_key", None) or old["mandate_key"]}
+    )
     close(conn, old["id"], _start(old), new_id)
     return new_id
 
@@ -569,9 +750,11 @@ def correct_table_categories(conn: psycopg.Connection, apply: bool) -> list[dict
     """S.O. 1365 table rows whose categories the subject no longer gives (e.g. 'all motor vehicles covered under
     Sr. No 32(i)' read as every vehicle). Rows recorded from a date change of an unknown row keep theirs."""
     vocab, out = _vocab(conn), []
-    for r in conn.execute(version_sql() + " AND v.valid_to IS NULL AND v.legal_basis LIKE %s "
-                          "AND coalesce(v.implementation_rule, '') NOT LIKE 'substituted for%%' ORDER BY v.id",
-                          ("%Table Sr.%",)).fetchall():
+    for r in conn.execute(
+        version_sql() + " AND v.valid_to IS NULL AND v.legal_basis LIKE %s "
+        "AND coalesce(v.implementation_rule, '') NOT LIKE 'substituted for%%' ORDER BY v.id",
+        ("%Table Sr.%",),
+    ).fetchall():
         want = sorted(set(categories_from(r["subject"] or "")) & vocab)
         if want and want != sorted(r["vehicle_categories"]):
             out.append({"id": r["id"], "key": r["mandate_key"], "old": sorted(r["vehicle_categories"]), "new": want})
@@ -589,32 +772,63 @@ def correct_rule_obligations(conn: psycopg.Connection, doc: dict, op: str, apply
         return []
     vocab, out = _vocab(conn), []
     obs = parse_rule_obligations(op)
-    mine = {r["mandate_key"]: dict(r) for r in conn.execute(
-        version_sql() + " AND v.source_regulation_id=%s AND v.valid_to IS NULL AND v.legal_basis LIKE 'CMVR Rule%%'",
-        (doc["id"],)).fetchall()}
+    mine = {
+        r["mandate_key"]: dict(r)
+        for r in conn.execute(
+            version_sql()
+            + " AND v.source_regulation_id=%s AND v.valid_to IS NULL AND v.legal_basis LIKE 'CMVR Rule%%'",
+            (doc["id"],),
+        ).fetchall()
+    }
     new_ids: dict[str, int] = {}
     for ob in obs:
-        want = {"vehicle_categories": sorted(set(ob.categories) & vocab), "conditions": ob.conditions,
-                "model_scope": ob.model_scope}
+        want = {
+            "vehicle_categories": sorted(set(ob.categories) & vocab),
+            "conditions": ob.conditions,
+            "model_scope": ob.model_scope,
+        }
         old = mine.get(ob.key)
         if old:
-            have = {"vehicle_categories": sorted(old["vehicle_categories"]), "conditions": old["conditions"] or {},
-                    "model_scope": old["model_scope"]}
+            have = {
+                "vehicle_categories": sorted(old["vehicle_categories"]),
+                "conditions": old["conditions"] or {},
+                "model_scope": old["model_scope"],
+            }
             if have != want or old["implementation_date"] != ob.implementation_date:
                 out.append({"doc": doc["canonical_id"], "key": ob.key, "change": "corrected", "old": have, "new": want})
                 if apply:
-                    new_ids[ob.base_key] = _replace(conn, old, subject=ob.subject, **want,
-                                                    implementation_date=ob.implementation_date)
+                    new_ids[ob.base_key] = _replace(
+                        conn, old, subject=ob.subject, **want, implementation_date=ob.implementation_date
+                    )
         elif not already_recorded(conn, ob.key, doc["id"]):
-            out.append({"doc": doc["canonical_id"], "key": ob.key, "change": "added", "new": want,
-                        "date": str(ob.implementation_date)})
+            out.append(
+                {
+                    "doc": doc["canonical_id"],
+                    "key": ob.key,
+                    "change": "added",
+                    "new": want,
+                    "date": str(ob.implementation_date),
+                }
+            )
             if apply:
-                v = {"date_of_notification": doc["doc_date"], "effective_date": doc["doc_date"], "source_doc_id": doc["id"],
-                     "usage": doc.get("usage") or [], "powertrains": doc.get("powertrains") or [],
-                     "legal_basis": ob.rule, "subject": ob.subject, "standard_refs": ob.standards,
-                     "standard_doc_ids": resolve_standard_ids(conn, ob.standards), "implementation_date": ob.implementation_date,
-                     "implementation_rule": None, **want, "vehicle_categories": ob.categories}
-                new_ids.setdefault(ob.base_key, supersede(conn, ob.key, v, doc["doc_date"], doc["status"] == "draft")[0])
+                v = {
+                    "date_of_notification": doc["doc_date"],
+                    "effective_date": doc["doc_date"],
+                    "source_doc_id": doc["id"],
+                    "usage": doc.get("usage") or [],
+                    "powertrains": doc.get("powertrains") or [],
+                    "legal_basis": ob.rule,
+                    "subject": ob.subject,
+                    "standard_refs": ob.standards,
+                    "standard_doc_ids": resolve_standard_ids(conn, ob.standards),
+                    "implementation_date": ob.implementation_date,
+                    "implementation_rule": None,
+                    **want,
+                    "vehicle_categories": ob.categories,
+                }
+                new_ids.setdefault(
+                    ob.base_key, supersede(conn, ob.key, v, doc["doc_date"], doc["status"] == "draft")[0]
+                )
     keys = {ob.key for ob in obs}
     for key, old in mine.items():
         if key not in keys:

@@ -29,8 +29,8 @@ MANIFEST_NAME = "seed_manifest.jsonl"
 
 @dataclass
 class SeedFile:
-    rel: str           # forward-slash path relative to the corpus root
-    folder: str        # top-level folder
+    rel: str  # forward-slash path relative to the corpus root
+    folder: str  # top-level folder
     name: str
     ext: str
     size: int
@@ -89,8 +89,15 @@ def scan(root: Path | None = None) -> list[SeedFile]:
             if c and c["size"] == st.st_size and abs(c["mtime"] - st.st_mtime) < 1:
                 sf = SeedFile(**c)
             else:
-                sf = SeedFile(rel=rel, folder=rel.split("/")[0], name=p.name, ext=normalise_ext(p.name),
-                              size=st.st_size, sha256=sha256_file(p), mtime=st.st_mtime)
+                sf = SeedFile(
+                    rel=rel,
+                    folder=rel.split("/")[0],
+                    name=p.name,
+                    ext=normalise_ext(p.name),
+                    size=st.st_size,
+                    sha256=sha256_file(p),
+                    mtime=st.st_mtime,
+                )
                 mf.write(json.dumps(asdict(sf), ensure_ascii=False) + "\n")
                 mf.flush()
             out.append(sf)
@@ -115,13 +122,22 @@ LOG_SOURCES = {
     "retry_failed_log.csv": None,  # source given per row
 }
 LOG_FOLDERS = {  # where each log's files landed
-    "morth_download_log.csv": ("05_MoRTH_Gazette_Notifications", "06_MoRTH_Circulars_Orders", "27_Master_Checklists_and_Indexes",
-                               "01_CMVR_Central_Motor_Vehicles_Rules"),
+    "morth_download_log.csv": (
+        "05_MoRTH_Gazette_Notifications",
+        "06_MoRTH_Circulars_Orders",
+        "27_Master_Checklists_and_Indexes",
+        "01_CMVR_Central_Motor_Vehicles_Rules",
+    ),
     "ais_download_log.csv": ("07_AIS_Published_Standards",),
     "cmvr_indiacode_log.csv": ("02_CMVR_Amendments_Notifications", "01_CMVR_Central_Motor_Vehicles_Rules"),
-    "indiacode_multi_log.csv": ("02_CMVR_Amendments_Notifications", "24_EV_Battery_Waste_Management_EPR",
-                                "25_Vehicle_Scrappage_ELV_Rules", "29_Fuel_Quality_MoPNG_Regulations",
-                                "01_CMVR_Central_Motor_Vehicles_Rules", "21_BIS_Automobile_Component_Standards_Catalogue"),
+    "indiacode_multi_log.csv": (
+        "02_CMVR_Amendments_Notifications",
+        "24_EV_Battery_Waste_Management_EPR",
+        "25_Vehicle_Scrappage_ELV_Rules",
+        "29_Fuel_Quality_MoPNG_Regulations",
+        "01_CMVR_Central_Motor_Vehicles_Rules",
+        "21_BIS_Automobile_Component_Standards_Catalogue",
+    ),
     "arai_static_log.csv": None,  # has its own subfolder column
     "retry_failed_log.csv": ("02_CMVR_Amendments_Notifications",),
 }
@@ -161,21 +177,65 @@ def read_logs(root: Path | None = None) -> list[LogRow]:
                 if not fname or status not in ("OK", "SKIP_EXISTS", "EXISTS", "DUP", "SKIP"):
                     continue
                 if name == "morth_download_log.csv":
-                    out.append(LogRow(name, "MORTH_API", fname, r.get("title"), _d(r.get("published_date")),
-                                      f"{r.get('endpoint')}|{r.get('wing')}", None, None, r))
+                    out.append(
+                        LogRow(
+                            name,
+                            "MORTH_API",
+                            fname,
+                            r.get("title"),
+                            _d(r.get("published_date")),
+                            f"{r.get('endpoint')}|{r.get('wing')}",
+                            None,
+                            None,
+                            r,
+                        )
+                    )
                 elif name == "ais_download_log.csv":
                     out.append(LogRow(name, "ARAI_AIS", fname, r.get("CODE"), None, "published", r.get("SR"), None, r))
                 elif name == "arai_static_log.csv":
-                    out.append(LogRow(name, "ARAI_TAP", fname, Path(fname).stem, None, r.get("subfolder"), r.get("url"),
-                                      r.get("url"), r))
+                    out.append(
+                        LogRow(
+                            name,
+                            "ARAI_TAP",
+                            fname,
+                            Path(fname).stem,
+                            None,
+                            r.get("subfolder"),
+                            r.get("url"),
+                            r.get("url"),
+                            r,
+                        )
+                    )
                 elif name in ("cmvr_indiacode_log.csv", "indiacode_multi_log.csv"):
-                    out.append(LogRow(name, "INDIACODE", fname, r.get("item_name"), None, r.get("query"),
-                                      r.get("item_id"), None, r))
+                    out.append(
+                        LogRow(
+                            name,
+                            "INDIACODE",
+                            fname,
+                            r.get("item_name"),
+                            None,
+                            r.get("query"),
+                            r.get("item_id"),
+                            None,
+                            r,
+                        )
+                    )
                 elif name == "retry_failed_log.csv":
                     s = (r.get("source") or "").lower()
                     code = {"indiacode": "INDIACODE", "morth": "MORTH_API", "arai": "ARAI_AIS"}.get(s, "INDIACODE")
-                    out.append(LogRow(name, code, fname, r.get("title"), None, r.get("endpoint_or_item"),
-                                      r.get("endpoint_or_item"), None, r))
+                    out.append(
+                        LogRow(
+                            name,
+                            code,
+                            fname,
+                            r.get("title"),
+                            None,
+                            r.get("endpoint_or_item"),
+                            r.get("endpoint_or_item"),
+                            None,
+                            r,
+                        )
+                    )
     return out
 
 
@@ -213,35 +273,56 @@ def import_seed(limit: int | None = None) -> dict:
     copied = copy_to_storage(files)
     rows = read_logs()
     matched = match_logs(files, rows)
-    stats = {"files": len(files), "unique_sha": len({f.sha256 for f in files}), "copied_new": copied,
-             "file_object_new": 0, "sighting_new": 0, "log_rows": len(rows), "log_rows_matched": 0}
+    stats = {
+        "files": len(files),
+        "unique_sha": len({f.sha256 for f in files}),
+        "copied_new": copied,
+        "file_object_new": 0,
+        "sighting_new": 0,
+        "log_rows": len(rows),
+        "log_rows_matched": 0,
+    }
     with transaction() as conn:
         src = {r["code"]: r["id"] for r in conn.execute("SELECT id, code FROM sources")}
         region = conn.execute("SELECT region_id FROM sources WHERE code='LOCAL_SEED'").fetchone()["region_id"]
-        run = conn.execute("INSERT INTO ingestion_runs (source_id, status) VALUES (%s,'running') RETURNING id",
-                           (src["LOCAL_SEED"],)).fetchone()["id"]
+        run = conn.execute(
+            "INSERT INTO ingestion_runs (source_id, status) VALUES (%s,'running') RETURNING id", (src["LOCAL_SEED"],)
+        ).fetchone()["id"]
         for i, sf in enumerate(files):
             spath = storage_uri(sf.sha256, sf.ext)
-            fid, new = store_document(conn, region, sf.sha256, str(spath), sf.name, None, sf.ext, mime_of(sf.name), sf.size)
+            fid, new = store_document(
+                conn, region, sf.sha256, str(spath), sf.name, None, sf.ext, mime_of(sf.name), sf.size
+            )
             stats["file_object_new"] += new
-            sightings = [("LOCAL_SEED", sf.rel, sf.name, None, sf.folder, None,
-                          {"folder": sf.folder, "path": sf.rel})]
+            sightings = [("LOCAL_SEED", sf.rel, sf.name, None, sf.folder, None, {"folder": sf.folder, "path": sf.rel})]
             for lr in matched.get(i, []):
                 stats["log_rows_matched"] += 1
-                sightings.append((lr.source, f"{lr.log}:{lr.item_id or lr.file}", lr.title, lr.listing_date,
-                                  lr.category, lr.url, {"log": lr.log, "row": lr.raw, "folder": sf.folder, "path": sf.rel}))
+                sightings.append(
+                    (
+                        lr.source,
+                        f"{lr.log}:{lr.item_id or lr.file}",
+                        lr.title,
+                        lr.listing_date,
+                        lr.category,
+                        lr.url,
+                        {"log": lr.log, "row": lr.raw, "folder": sf.folder, "path": sf.rel},
+                    )
+                )
             for code, item, title, ldate, cat, url, raw in sightings:
                 r = conn.execute(
                     """INSERT INTO raw_ingestion_records (document_id, source_id, ingestion_run_id, source_url, external_ref,
                          listing_title, listing_date, listing_category, payload, processing_status)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'downloaded')
                        ON CONFLICT (source_id, external_ref, document_id) DO NOTHING RETURNING id""",
-                    (fid, src[code], run, url, item, title, ldate, cat, Jsonb(raw))).fetchone()
+                    (fid, src[code], run, url, item, title, ldate, cat, Jsonb(raw)),
+                ).fetchone()
                 stats["sighting_new"] += bool(r)
         if stats["file_object_new"] or stats["sighting_new"]:
-            conn.execute("""UPDATE ingestion_runs SET finished_at=now(), status='success', stats=%s, documents_found=%s,
+            conn.execute(
+                """UPDATE ingestion_runs SET finished_at=now(), status='success', stats=%s, documents_found=%s,
                             changes_found=%s WHERE id=%s""",
-                         (Jsonb(stats), stats["files"], stats["file_object_new"], run))
+                (Jsonb(stats), stats["files"], stats["file_object_new"], run),
+            )
             conn.execute("UPDATE sources SET last_synced_at=now(), last_sync_status='success' WHERE code='LOCAL_SEED'")
         else:  # idempotent re-run: leave no trace
             conn.execute("DELETE FROM ingestion_runs WHERE id=%s", (run,))

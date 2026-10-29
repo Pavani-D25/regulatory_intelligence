@@ -34,12 +34,19 @@ def main() -> None:
     print("scans", sum(1 for r in rows if r["scan"]), "scan pages", sum(r["scan_pages"] for r in rows if r["scan"]))
     print("kruti notifications", sum(1 for r in rows if r["kruti"] and r["doc_class"].startswith("NOTIFICATION")))
     print("kruti any", sum(1 for r in rows if r["kruti"]))
-    print("AIS files with amendments", sum(1 for r in rows if r["amd_headers"]),
-          "with corrigenda", sum(1 for r in rows if r["corr_headers"]))
+    print(
+        "AIS files with amendments",
+        sum(1 for r in rows if r["amd_headers"]),
+        "with corrigenda",
+        sum(1 for r in rows if r["corr_headers"]),
+    )
     print("finals citing draft", sum(1 for r in rows if r["cites_draft"]))
     print("title mismatch", sum(1 for r in rows if r["title_mismatch"]))
     print("off topic in 02", byf[("02", "OFF_TOPIC")])
-    print("no identity notifications", sum(1 for r in rows if r["doc_class"].startswith("NOTIFICATION") and not r["canonical_id"]))
+    print(
+        "no identity notifications",
+        sum(1 for r in rows if r["doc_class"].startswith("NOTIFICATION") and not r["canonical_id"]),
+    )
     ids = collections.Counter(r["canonical_id"] for r in rows if r["canonical_id"])
     print("distinct canonical ids", len(ids))
     for k, v in cls.most_common():

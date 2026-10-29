@@ -35,7 +35,7 @@ class Settings:
     llm_api_key: str
     embed_model: str
     embed_dim: int
-    storage_backend: str = "local"          # local | s3 (MinIO or any S3-compatible store)
+    storage_backend: str = "local"  # local | s3 (MinIO or any S3-compatible store)
     s3_endpoint: str = "localhost:9000"
     s3_bucket: str = "regtrack-raw"
     s3_access_key: str = ""
@@ -43,15 +43,15 @@ class Settings:
     s3_secure: bool = False
     cache_dir: Path = ROOT / "data" / "cache"  # local copies of s3 objects for parsing/serving
     user_agent: str = "RegTrackIndia/0.1 (research)"
-    country: str = "IN"                     # whose rows this process sees (env REGTRACK_COUNTRY); see regtrack/country.py
-    pg_bin: Path | None = None              # local PostgreSQL programs (pg_ctl, pg_dump…); empty = database in Docker
-    pg_data: Path | None = None             # local PostgreSQL data folder (initdb -D)
+    country: str = "IN"  # whose rows this process sees (env REGTRACK_COUNTRY); see regtrack/country.py
+    pg_bin: Path | None = None  # local PostgreSQL programs (pg_ctl, pg_dump…); empty = database in Docker
+    pg_data: Path | None = None  # local PostgreSQL data folder (initdb -D)
     import_dir: Path = ROOT / "data" / "import"  # documents people saved by hand: <import_dir>/<TH|MY>/... (read-only)
-    tesseract_cmd: Path | None = None       # tesseract.exe outside PATH (README: conda-forge env D:\tesseract)
-    tessdata_prefix: Path | None = None     # its language data folder (tha, eng .traineddata)
-    embed_scope: str = "all"                # all | priority (only current, in-scope chunks: metered tunnels)
-    llm_workers: int = 1                    # documents sent to the LLM at once in the catch-up pass: >1 only with LM Studio parallel slots (queued requests time out)
-    llm_reasoning_effort: str = "none"      # sent with every chat call; "" = leave to the server (thinking models)
+    tesseract_cmd: Path | None = None  # tesseract.exe outside PATH (README: conda-forge env D:\tesseract)
+    tessdata_prefix: Path | None = None  # its language data folder (tha, eng .traineddata)
+    embed_scope: str = "all"  # all | priority (only current, in-scope chunks: metered tunnels)
+    llm_workers: int = 1  # documents sent to the LLM at once in the catch-up pass: >1 only with LM Studio parallel slots (queued requests time out)
+    llm_reasoning_effort: str = "none"  # sent with every chat call; "" = leave to the server (thinking models)
 
     @property
     def psycopg_dsn(self) -> str:
@@ -72,7 +72,8 @@ def get_settings() -> Settings:
     load_dotenv(ROOT / ".env", override=False)
     storage = Path(_clean(os.getenv("STORAGE_DIR")) or ROOT / "data" / "raw")
     return Settings(
-        database_url=_clean(os.getenv("DATABASE_URL")) or "postgresql+psycopg://regtrack:regtrack@localhost:5432/regtrack",
+        database_url=_clean(os.getenv("DATABASE_URL"))
+        or "postgresql+psycopg://regtrack:regtrack@localhost:5432/regtrack",
         storage_dir=storage,
         seed_corpus_dir=Path(_clean(os.getenv("SEED_CORPUS_DIR")) or r"D:\Regulatory_Documents"),
         text_dir=Path(_clean(os.getenv("TEXT_DIR")) or storage.parent / "text"),
@@ -96,6 +97,7 @@ def get_settings() -> Settings:
         tessdata_prefix=Path(_clean(os.getenv("TESSDATA_PREFIX"))) if _clean(os.getenv("TESSDATA_PREFIX")) else None,
         embed_scope=(_clean(os.getenv("EMBED_SCOPE")) or "all").lower(),
         llm_workers=max(1, int(_clean(os.getenv("LLM_WORKERS")) or 1)),
-        llm_reasoning_effort=(_clean(os.getenv("LLM_REASONING_EFFORT")) if os.getenv("LLM_REASONING_EFFORT") is not None
-                              else "none"),
+        llm_reasoning_effort=(
+            _clean(os.getenv("LLM_REASONING_EFFORT")) if os.getenv("LLM_REASONING_EFFORT") is not None else "none"
+        ),
     )

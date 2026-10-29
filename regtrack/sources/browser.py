@@ -14,5 +14,7 @@ def launch(p):
             return p.chromium.launch(channel=channel, headless=True) if channel else p.chromium.launch(headless=True)
         except Exception as e:  # noqa: BLE001  try the next browser
             errors.append(f"{channel or 'chromium'}: {str(e).splitlines()[0][:120]}")
-    raise RuntimeError("no browser for Playwright - install Chrome or run `python -m playwright install chromium` "
-                       f"({'; '.join(errors)})")
+    raise RuntimeError(
+        "no browser for Playwright - install Chrome or run `python -m playwright install chromium` "
+        f"({'; '.join(errors)})"
+    )

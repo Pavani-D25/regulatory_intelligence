@@ -45,11 +45,19 @@ def test_thai_law_rules_back_the_register_rows():
     from regtrack.pipeline.country_mandates import RULES
 
     def rows_for(doc_class, domains, subject=""):
-        r = {"doc_class": doc_class, "domains": domains, "subject": subject, "refs": "", "canonical_id": "x",
-             "sources": {"TH_LOCAL"}}
+        r = {
+            "doc_class": doc_class,
+            "domains": domains,
+            "subject": subject,
+            "refs": "",
+            "canonical_id": "x",
+            "sources": {"TH_LOCAL"},
+        }
         return {code for code, _, pred in RULES["TH"] if pred(r)}
 
-    assert {"TH-07", "TH-08", "TH-10"} <= rows_for("MINISTERIAL_REGULATION", ["LIGHTING", "BRAKING", "DIMENSIONS_WEIGHTS"])
+    assert {"TH-07", "TH-08", "TH-10"} <= rows_for(
+        "MINISTERIAL_REGULATION", ["LIGHTING", "BRAKING", "DIMENSIONS_WEIGHTS"]
+    )
     assert {"TH-13", "TH-14"} <= rows_for("DLT_NOTIFICATION", ["EV_ALT_FUEL"], "ความเข้ากันได้ทางแม่เหล็กไฟฟ้า")
     assert "TH-02" in rows_for("TH_ACT", [])
     assert "TH-15" in rows_for("GAZETTE_NOTICE", ["FUEL_EFFICIENCY"])
@@ -107,7 +115,10 @@ def test_thai_pages_are_chunked_with_their_language():
 
 
 def test_english_cover_titles():
-    assert thai.nice_case("LIQUEFIED  PETROLEUM  GAS  CYLINDERS ON WET SURFACES") == "Liquefied Petroleum Gas Cylinders on Wet Surfaces"
+    assert (
+        thai.nice_case("LIQUEFIED  PETROLEUM  GAS  CYLINDERS ON WET SURFACES")
+        == "Liquefied Petroleum Gas Cylinders on Wet Surfaces"
+    )
     assert thai.nice_case("UN R100 ELECTRIC VEHICLES, LEVEL 10") == "UN R100 Electric Vehicles, Level 10"
     cover = "มอก. 341\nUDC 621.43.06:629.118.6\nSTANDARD FOR MOTORCYCLE EXHAUST\nMUFFLER\n<<<PAGE 2>>>\nTHAI INDUSTRIAL STANDARD"
     assert thai.english_cover_title(cover) == "Standard for Motorcycle Exhaust Muffler"
@@ -118,10 +129,22 @@ def test_malaysian_english_names():
     from regtrack.pipeline import malaysia
 
     assert malaysia.english_legal_title("act", "334", None) == "Commercial Vehicles Licensing Board Act 1987"
-    assert (malaysia.english_legal_title("pua", None, "Peraturan-Peraturan Kualiti Alam Sekeliling (Kawalan Pelepasan Daripada "
-                                                      "Enjin Diesel) (Pindaan) 2000")
-            == "Environmental Quality (Control of Emissions from Diesel Engines) (Amendment) Regulations 2000")
-    assert malaysia.document_title("BAHAGIAN KEJURUTERAAN AUTOMOTIF\nBORANG PERMOHONAN KELULUSAN JENIS KOMPONEN (COMPONENT "
-                                   "TYPE APPROVAL)\nBUTIRAN PEMOHON :")[0] == "Component Type Approval (CTA) Application Form"
-    assert malaysia.document_title("JAS/VTA (L)\nGUIDELINES\nAPPLICATION FOR MOTORCYCLES\nTYPE APPROVAL\nJULY 2016")[0] == \
-        "Guidelines: Application for Motorcycles Type Approval"
+    assert (
+        malaysia.english_legal_title(
+            "pua",
+            None,
+            "Peraturan-Peraturan Kualiti Alam Sekeliling (Kawalan Pelepasan Daripada Enjin Diesel) (Pindaan) 2000",
+        )
+        == "Environmental Quality (Control of Emissions from Diesel Engines) (Amendment) Regulations 2000"
+    )
+    assert (
+        malaysia.document_title(
+            "BAHAGIAN KEJURUTERAAN AUTOMOTIF\nBORANG PERMOHONAN KELULUSAN JENIS KOMPONEN (COMPONENT "
+            "TYPE APPROVAL)\nBUTIRAN PEMOHON :"
+        )[0]
+        == "Component Type Approval (CTA) Application Form"
+    )
+    assert (
+        malaysia.document_title("JAS/VTA (L)\nGUIDELINES\nAPPLICATION FOR MOTORCYCLES\nTYPE APPROVAL\nJULY 2016")[0]
+        == "Guidelines: Application for Motorcycles Type Approval"
+    )

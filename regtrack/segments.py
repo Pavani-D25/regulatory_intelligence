@@ -28,18 +28,49 @@ def tree(cc: str | None, labels: dict[str, str]) -> list[dict]:
 
     private = {"key": "private", "label": "Private (personal)", "usage": "private"}
     return [
-        {"key": "2W", "label": "2-Wheeler (2W)", "children": [
-            {"key": "PV", "label": "Passenger (PV)", "children": [
-                code(c, [private, {"key": "transport", "label": "Transport (bike taxis)", "usage": "transport"}]) for c in two]},
-            {"key": "CV", "label": "Commercial (CV)", "usage": "transport", "children": [
-                code(c, [{"key": "goods", "label": "Delivery / cargo"}]) for c in two]},
-        ]},
-        {"key": "4W", "label": "4-Wheeler (4W)", "children": [
-            {"key": "PV", "label": "Passenger (PV / M)", "children": [
-                code("M1", [private, {"key": "transport", "label": "Transport (taxis / cabs)", "usage": "transport"}])]},
-            {"key": "CV", "label": "Commercial (CV / N)", "children": [
-                code("N1", [{"key": "goods", "label": "Cargo vans / light pickups"}])]},
-        ]},
+        {
+            "key": "2W",
+            "label": "2-Wheeler (2W)",
+            "children": [
+                {
+                    "key": "PV",
+                    "label": "Passenger (PV)",
+                    "children": [
+                        code(
+                            c, [private, {"key": "transport", "label": "Transport (bike taxis)", "usage": "transport"}]
+                        )
+                        for c in two
+                    ],
+                },
+                {
+                    "key": "CV",
+                    "label": "Commercial (CV)",
+                    "usage": "transport",
+                    "children": [code(c, [{"key": "goods", "label": "Delivery / cargo"}]) for c in two],
+                },
+            ],
+        },
+        {
+            "key": "4W",
+            "label": "4-Wheeler (4W)",
+            "children": [
+                {
+                    "key": "PV",
+                    "label": "Passenger (PV / M)",
+                    "children": [
+                        code(
+                            "M1",
+                            [private, {"key": "transport", "label": "Transport (taxis / cabs)", "usage": "transport"}],
+                        )
+                    ],
+                },
+                {
+                    "key": "CV",
+                    "label": "Commercial (CV / N)",
+                    "children": [code("N1", [{"key": "goods", "label": "Cargo vans / light pickups"}])],
+                },
+            ],
+        },
     ]
 
 
@@ -65,7 +96,7 @@ def resolve(cc: str | None, path: str | None) -> tuple[list[str], str | None] | 
 
 
 def label(path: str | None) -> str:
-    """"4W/PV/M1/transport" -> "4W-PV · M1 · transport" (the dashboard's segmentLabel)."""
+    """ "4W/PV/M1/transport" -> "4W-PV · M1 · transport" (the dashboard's segmentLabel)."""
     keys = [k for k in (path or "").strip("/").split("/") if k]
     return " · ".join(["-".join(keys[:2]), *keys[2:]]) if keys else ""
 

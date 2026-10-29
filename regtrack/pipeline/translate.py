@@ -20,9 +20,11 @@ from regtrack.validators import validate_data
 
 log = logging.getLogger(__name__)
 PROMPT_VERSION = "th-en-1"
-SYSTEM = ("You translate Thai Industrial Standards (TIS / มอก.) into English for automotive regulatory engineers. "
-          "Translate faithfully; keep standard numbers, UN Regulation numbers, vehicle categories (M1, N1, L3...), "
-          "units and values exactly. No commentary.")
+SYSTEM = (
+    "You translate Thai Industrial Standards (TIS / มอก.) into English for automotive regulatory engineers. "
+    "Translate faithfully; keep standard numbers, UN Regulation numbers, vehicle categories (M1, N1, L3...), "
+    "units and values exactly. No commentary."
+)
 
 
 class ThaiTranslation(BaseModel):
@@ -35,9 +37,11 @@ def translate_pending(conn: psycopg.Connection, limit: int = 40) -> int:
         return 0
     rows = conn.execute(
         f"""SELECT g.id, g.external_code AS canonical_id, g.data, g.extraction FROM regulations g
-            WHERE {country.region_sql('g')} AND g.local_class = 'TIS_STANDARD' AND g.data->>'title' IS NOT NULL
+            WHERE {country.region_sql("g")} AND g.local_class = 'TIS_STANDARD' AND g.data->>'title' IS NOT NULL
               AND (g.data->>'title_en' IS NULL OR (g.data->>'scope_text' IS NOT NULL AND g.data->>'scope_en' IS NULL))
-            ORDER BY g.id LIMIT %s""", (limit,)).fetchall()
+            ORDER BY g.id LIMIT %s""",
+        (limit,),
+    ).fetchall()
     n = 0
     for r in rows:
         data = dict(r["data"] or {})
@@ -61,8 +65,15 @@ def translate_pending(conn: psycopg.Connection, limit: int = 40) -> int:
         ext = dict(r["extraction"] or {})
         ext["machine_translation"] = sorted(set(ext.get("machine_translation", [])) | set(done))
         ext["translation"] = {"model": llm.get_settings().llm_model, "prompt": PROMPT_VERSION}
-        R.update_document(conn, r["id"], {"data": Jsonb(data), "extraction": Jsonb(ext),
-                                          **({"official_title": data["title_en"]} if data.get("title_en") else {})})
+        R.update_document(
+            conn,
+            r["id"],
+            {
+                "data": Jsonb(data),
+                "extraction": Jsonb(ext),
+                **({"official_title": data["title_en"]} if data.get("title_en") else {}),
+            },
+        )
         conn.commit()
         n += 1
     return n
