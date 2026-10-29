@@ -534,7 +534,3 @@ def tap_best_copies(conn: psycopg.Connection) -> None:
     conn.execute("""UPDATE document_parts p SET is_best_copy=true FROM regulations g
                     WHERE g.id=p.regulation_id AND g.local_class='TAP_DOCUMENT' AND NOT p.is_best_copy
                       AND """ + country.region_sql("g"))
-
-
-def jdump(v) -> str:
-    return json.dumps(v, default=str, sort_keys=True)

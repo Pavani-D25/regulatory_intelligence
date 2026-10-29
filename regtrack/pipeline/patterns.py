@@ -38,13 +38,6 @@ def notification_canonical(series: str, number: str | int, year: int | None, ext
     return f"{s}-{n}{'(E)' if extraordinary else ''}-{year if year else 'XXXX'}"
 
 
-def parse_notification_canonical(cid: str) -> tuple[str, str, int | None] | None:
-    m = re.fullmatch(r"(GSR|SO)-(\d+)(\(E\))?-(\d{4}|XXXX)", cid)
-    if not m:
-        return None
-    return m.group(1), m.group(2) + (m.group(3) or ""), (int(m.group(4)) if m.group(4).isdigit() else None)
-
-
 # ---------------------------------------------------------------- dates
 DATE_DMY = re.compile(r"\b(\d{1,2})\s*(?:st|nd|rd|th)?\s*,?\s*(?:day\s+of\s+)?(" + MONTH_RE + r")[\s.,]*,?\s*(\d{4})\b", re.I)
 DATE_MDY = re.compile(r"\b(" + MONTH_RE + r")[\s.]+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b", re.I)

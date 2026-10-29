@@ -66,12 +66,6 @@ def add_flag(conn: psycopg.Connection, entity: str, entity_id: int, rule: str, d
     return True
 
 
-def resolve_flags(conn: psycopg.Connection, entity: str, entity_id: int, rule: str) -> int:
-    cur = conn.execute("UPDATE quality_flags SET resolved_at=now() WHERE entity=%s AND entity_id=%s AND rule=%s "
-                       "AND resolved_at IS NULL", (entity, entity_id, rule))
-    return cur.rowcount
-
-
 def set_stage(conn: psycopg.Connection, file_id: int, stage: str, error: str | None = None) -> None:
     """Move a stored file (documents) to a stage; its listings follow (downloaded / processed / failed)."""
     cur = conn.execute("UPDATE documents SET stage=%s, stage_error=%s WHERE id=%s "

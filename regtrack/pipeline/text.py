@@ -76,12 +76,6 @@ class TextResult:
     english_pages: list[int] = field(default_factory=list)
     error: str | None = None
 
-    @property
-    def english_range(self) -> tuple[int | None, int | None]:
-        if not self.english_pages:
-            return None, None
-        return self.english_pages[0], self.english_pages[-1]
-
 
 # ------------------------------------------------------------------ readers
 def read_pdf(path: Path) -> tuple[list[str], dict]:
@@ -337,13 +331,5 @@ def extract_cached(sha: str, path: Path, ext: str, force: bool = False) -> dict:
     r = extract(path, ext)
     save_pages(sha, r.pages)
     m = result_meta(r)
-    mp.write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
-    return m
-
-
-def update_meta(sha: str, **changes) -> dict:
-    mp = meta_path(sha)
-    m = json.loads(mp.read_text(encoding="utf-8"))
-    m.update(changes)
     mp.write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
     return m

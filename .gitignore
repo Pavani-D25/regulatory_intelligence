@@ -10,3 +10,11 @@ __pycache__/
 dashboard/node_modules/
 dashboard/dist/
 dashboard/.env
+
+# OS / editor leftovers
+.DS_Store
+__MACOSX/
+.claude/
+# local only: client spreadsheets, lock file of a personal uv setup
+source/
+uv.lock

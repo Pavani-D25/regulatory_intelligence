@@ -61,7 +61,3 @@ def find_domains(text: str, min_hits: int = 2) -> list[str]:
     hits = {code: len(rx.findall(t)) for code, rx in _domain_res().items()}
     need = 1 if len(t) < 4000 else min_hits
     return [c for c, n in sorted(hits.items(), key=lambda kv: -kv[1]) if n >= need]
-
-
-def in_scope_codes() -> set[str]:
-    return {c for c, d in categories().items() if d["in_scope"]}

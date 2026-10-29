@@ -11,7 +11,6 @@ from datetime import UTC, date, datetime, timedelta
 import httpx
 import psycopg
 
-from regtrack.config import get_settings
 from regtrack.db import Jsonb
 from regtrack.sources import http
 from regtrack.storage import normalise_ext, put_bytes, sha256_bytes
@@ -195,10 +194,6 @@ def mark_gone(conn: psycopg.Connection, code: str, seen_ids: set[str], scope_pre
             conn.execute("UPDATE raw_ingestion_records SET gone_at=now() WHERE id=%s", (r["id"],))
             n += 1
     return n
-
-
-def storage_root():
-    return get_settings().storage_dir
 
 
 __all__ = ["Listing", "RunStats", "record_listing", "start_run", "finish_run", "mark_gone", "sha256_bytes",

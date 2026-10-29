@@ -9,7 +9,6 @@ OFF_TOPIC documents get no chunks. Hindi is never embedded.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -232,7 +231,3 @@ def advance_embedded(conn: psycopg.Connection) -> int:
            AND """ + country.region_sql("f") + """ AND NOT EXISTS (SELECT 1 FROM document_chunks c
                WHERE c.document_id=f.id AND c.embedding IS NULL AND c.language IN ('en','th'))""")
     return cur.rowcount
-
-
-def content_hash(text: str) -> str:
-    return hashlib.sha1(text.encode("utf-8")).hexdigest()
