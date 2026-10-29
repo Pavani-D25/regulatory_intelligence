@@ -213,13 +213,14 @@ function Launch($title, $command) {
     $cmd = "`$Host.UI.RawUI.WindowTitle = 'RegTrack - $title'; Set-Location '$Root'; $command"
     Start-Process powershell -ArgumentList "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $cmd -WindowStyle Minimized | Out-Null
 }
-Launch "API" "& '$Py' -m regtrack.cli api"
+# each window also appends its output to data\logs\<name>.log, so a stalled sync can be traced afterwards
+Launch "API" "& '$Py' -m regtrack.cli api *>> '$LogDir\api.log'"
 # one auto-sync per country (a scheduler serves the country in REGTRACK_COUNTRY); their pipeline runs share one
 # database advisory lock, so they never overlap
 if (-not $NoSchedule) {
-    foreach ($cc in @("IN", "TH", "MY")) { Launch "auto-sync $cc" "`$env:REGTRACK_COUNTRY='$cc'; & '$Py' -m regtrack.cli schedule" }
+    foreach ($cc in @("IN", "TH", "MY")) { Launch "auto-sync $cc" "`$env:REGTRACK_COUNTRY='$cc'; & '$Py' -m regtrack.cli schedule *>> '$LogDir\scheduler_$cc.log'" }
 }
-Launch "portal" "Set-Location dashboard; npm run dev"
+Launch "portal" "Set-Location dashboard; npm run dev *>> '$LogDir\portal.log'"
 
 $up = $false
 for ($i = 0; $i -lt 30; $i++) {

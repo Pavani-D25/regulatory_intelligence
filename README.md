@@ -34,8 +34,8 @@ The first run takes a few minutes. The script:
 | `.\start.ps1 -Stop` · `./start.sh --stop` | stop the API, auto-sync and portal (the database keeps running) |
 | `.\start.ps1 -NoSchedule` · `./start.sh --no-schedule` | start without the auto-sync |
 
-On Windows each service runs in its own minimized window titled "RegTrack - …". On macOS/Linux they run in the
-background and log to `data/logs/`. Running the script again is safe: it skips what is already done.
+On Windows each service runs in its own minimized window titled "RegTrack - …"; on macOS/Linux they run in the
+background. Either way each one logs to `data/logs/` (`api.log`, `portal.log`, `scheduler_IN.log` / `_TH` / `_MY`). Running the script again is safe: it skips what is already done.
 
 AI features (written answers, summaries, AI impact review, semantic search) stay off until `LLM_BASE_URL` and
 `EMBED_MODEL` in `.env` point at LM Studio (see "When the LM Studio URL arrives").
@@ -254,7 +254,7 @@ path, and the built page then fails with "is the API running?"):
 
 ```powershell
 python -m regtrack.cli api                                  # API on 127.0.0.1:8000
-cd dashboard; $env:VITE_API_URL = "/api"; npm run build; npx vite preview --port 4173
+cd dashboard; $env:VITE_API_URL = "/api"; npm run build; npx vite preview --port 4173 --host 127.0.0.1
 ngrok http 4173                                             # first time: ngrok config add-authtoken <token>
 ```
 
@@ -262,8 +262,21 @@ Serve the build, not `npm run dev`: the dev server's many module requests fail o
 login, so anyone with the link can edit compliance records, alerts and settings.
 
 The dashboard follows the approved design (*Regulatory Intelligence Portal v2*): dark sidebar, KPI cards, cards and
-drawer. Scope is India only, vehicle categories L1 / L2 / M1 / N1 (plus rules for all vehicles). In the design,
-"Region" is the vehicle category, "Authority" is the issuer and "Domain" is the topic.
+drawer. It covers India, Thailand and Malaysia (one country at a time), in-scope vehicle categories only (India:
+L1 / L2 / M1 / N1, plus rules for all vehicles). In the design, "Region" is the vehicle category, "Authority" is the
+issuer and "Domain" is the topic.
+
+**Filters in the header, applied on every page** (remembered in the browser, sent with every API request):
+
+| Filter | Values | API parameter |
+|---|---|---|
+| Country | India / Thailand / Malaysia | `?country=IN` |
+| Year | All years, or a publication year | `?year=2024` |
+| Powertrain | All, EV, Hybrid, ICE: the regulations *specific* to that powertrain (EV = tagged battery-electric or a traction battery / charging topic; ICE = petrol, diesel, CNG, LPG, ethanol/flex, bio-diesel, LNG, methanol). General rules for every vehicle and hydrogen are in none of the three. | `?variant=ev` |
+
+They narrow every list view (Dashboard, Regulations, Change Monitor, Compliance, Impact, Requirements, Alerts,
+Reports, Ask). Opening one regulation, its versions or its files ignores them. Each page also has its own vehicle
+segment filter (2W / 4W → PV / CV → type → use).
 
 | View | What it shows (live data) |
 |---|---|
