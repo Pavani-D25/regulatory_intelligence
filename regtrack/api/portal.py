@@ -28,7 +28,7 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import Response
 
-from regtrack import country, segments
+from regtrack import country, kpi, segments
 from regtrack.api import sql as S
 from regtrack.api.params import YEAR, CountryParam, resolve_country, variant_sql, view_label, view_sql
 from regtrack.db import Jsonb, connect
@@ -257,8 +257,23 @@ def regulations(
             "AND d.vehicle_categories && %s",
             "AND (d.vehicle_categories && %s OR cardinality(d.vehicle_categories) = 0)",
         )
-    rows = _rows(conn, sql, (cats, *args))
-    return [classify_row(r, vocab) for r in rows]
+    rows = [classify_row(r, vocab) for r in _rows(conn, sql, (cats, *args))]
+    add_kpi(conn, rows, vocab["scope"])
+    return rows
+
+
+def add_kpi(conn, rows: list[dict], scope: list[str]) -> None:
+    """The impact KPIs (regtrack/kpi.py) of each row: kpi_score 0-100, kpi_band, kpi (the eight criteria)."""
+    team: dict[int, dict[str, dict]] = {}
+    if rows:
+        for t in conn.execute(
+            "SELECT regulation_id, criterion, score, note FROM regulation_kpi_scores WHERE regulation_id = ANY(%s)",
+            ([r["id"] for r in rows],),
+        ).fetchall():
+            team.setdefault(t["regulation_id"], {})[t["criterion"]] = t
+    for r in rows:
+        k = kpi.combine(kpi.auto_scores(r, scope), team.get(r["id"]))
+        r["kpi_score"], r["kpi_band"], r["kpi"] = k["score"], k["band"], k["criteria"]
 
 
 def follow_up(r: dict, vocab: dict) -> str:
@@ -499,6 +514,8 @@ def _reg_out(r: dict) -> dict:
         "family_key",
         "doc_status",
         "subtitle",
+        "kpi_score",
+        "kpi_band",
     )
     return {k: r.get(k) for k in keys}
 
@@ -605,8 +622,39 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
             # reached through a link but outside L1/L2/M1/N1 (trailers, tractors, heavy trucks...): labelled
             in_scope=bool(r.get("in_scope")),
             all_categories=r.get("vehicle_categories") or [],
+            kpi=r["kpi"],
+            kpi_bands=kpi.BANDS,
         )
     return out
+
+
+@router.post("/regulations/{canonical_id:path}/kpi")
+def set_kpi(canonical_id: str, body: dict = Body(...)) -> dict:
+    """A team score for one impact KPI: {criterion, score 0-5, note}; score null returns it to the computed one."""
+    crit, score = body.get("criterion"), body.get("score")
+    if crit not in kpi.KEYS:
+        raise HTTPException(400, "criterion is one of " + ", ".join(kpi.KEYS))
+    if score is not None and (not isinstance(score, int) or not 0 <= score <= 5):
+        raise HTTPException(400, "score is a whole number 0-5, or null")
+    cc = resolve_country(body.get("country"))
+    with connect() as conn:
+        d = conn.execute(
+            f"SELECT id FROM regulations g WHERE external_code=%s AND {country.region_sql('g', cc)}", (canonical_id,)
+        ).fetchone()
+        if not d:
+            raise HTTPException(404, "unknown document")
+        if score is None:
+            conn.execute("DELETE FROM regulation_kpi_scores WHERE regulation_id=%s AND criterion=%s", (d["id"], crit))
+        else:
+            conn.execute(
+                """INSERT INTO regulation_kpi_scores (regulation_id, criterion, score, note, team_id)
+                   VALUES (%s,%s,%s,%s,%s)
+                   ON CONFLICT (regulation_id, criterion) DO UPDATE
+                   SET score=EXCLUDED.score, note=EXCLUDED.note, team_id=EXCLUDED.team_id, updated_at=now()""",
+                (d["id"], crit, score, body.get("note") or None, team_id(conn, body.get("owner"))),
+            )
+        conn.commit()
+    return regulation_detail(canonical_id, cc)
 
 
 @router.put("/regulations/{canonical_id:path}/review")

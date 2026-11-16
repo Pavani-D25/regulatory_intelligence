@@ -10,13 +10,13 @@ const IMPACT_RANK = { High: 0, Medium: 1, Low: 2 };
 const STATUS_RANK = { "Action Required": 0, "Under Review": 1, "Impact Analysis": 2, Tracked: 3 };
 const COLS = [
   ["canonical_id", "ID"], ["name", "Regulation"], ["region", "Category"], ["authority", "Authority"],
-  ["domain", "Domain"], ["effective", "Effective"], ["impact", "Impact"], ["status", "Status"],
+  ["domain", "Domain"], ["effective", "Effective"], ["impact", "Impact"], ["kpi_score", "KPI score"], ["status", "Status"],
 ];
 
 function csv(rows, cc) {
-  const head = ["ID", "Regulation", "Category", "Authority", "Domain", "Effective", "Impact", "Status", "Document status"];
+  const head = ["ID", "Regulation", "Category", "Authority", "Domain", "Effective", "Impact", "KPI score", "KPI band", "Status", "Document status"];
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const body = rows.map((r) => [r.canonical_id, r.name, r.region, r.authority, r.domain, r.effective, r.impact, r.status, r.doc_status].map(esc).join(","));
+  const body = rows.map((r) => [r.canonical_id, r.name, r.region, r.authority, r.domain, r.effective, r.impact, r.kpi_score, r.kpi_band, r.status, r.doc_status].map(esc).join(","));
   const blob = new Blob(["﻿" + [head.join(","), ...body].join("\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -27,6 +27,7 @@ function csv(rows, cc) {
 function sortValue(r, key) {
   if (key === "impact") return IMPACT_RANK[r.impact] ?? 9;
   if (key === "status") return STATUS_RANK[r.status] ?? 9;
+  if (key === "kpi_score") return -(r.kpi_score ?? 0);  // highest first
   return (r[key] ?? "").toString().toLowerCase();
 }
 
@@ -111,9 +112,11 @@ export default function Regulations() {
                 {r.subtitle && <span className="sub" style={{ display: "block", margin: "2px 0 0" }}>{r.subtitle}</span>}
                 {r.doc_status === "superseded" && <Badge v="Superseded" tone="blue" />}</td>
               <td>{r.region || "—"}</td><td>{r.authority}</td><td className="wrap" style={{ minWidth: 120 }}>{r.domain}</td><td>{fmt(r.effective)}</td>
-              <td><Badge v={r.impact} /></td><td><Badge v={r.status} /></td>
+              <td><Badge v={r.impact} /></td>
+              <td style={{ whiteSpace: "nowrap" }} title="Impact KPI score (0-100): weighted criteria, open the row for the breakdown"><b>{r.kpi_score ?? "—"}</b> <Badge v={r.kpi_band} /></td>
+              <td><Badge v={r.status} /></td>
             </tr>))}
-            {!rows.length && <tr><td colSpan={8} className="empty">No regulations match these filters.</td></tr>}
+            {!rows.length && <tr><td colSpan={9} className="empty">No regulations match these filters.</td></tr>}
           </tbody>
         </table></div>
         {pages > 1 && (

@@ -87,6 +87,7 @@ export const portal = {
   regulations: (p) => get("/portal/regulations", p),
   detail: (id) => get(`/portal/regulations/${enc(id)}/detail`),
   review: (id, body) => send("PUT", `/portal/regulations/${enc(id)}/review`, body),
+  setKpi: (id, body) => send("POST", `/portal/regulations/${enc(id)}/kpi`, body),
   changes: (days, segment) => get("/portal/changes", { days, segment }),
   markReviewed: (ids) => send("POST", "/portal/changes/review", { ids }),
   compliance: (category, segment) => get("/portal/compliance", { category, segment }),

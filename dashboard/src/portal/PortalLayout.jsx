@@ -76,6 +76,45 @@ function Watchers({ id, teams, toast }) {
   );
 }
 
+// impact KPIs (regtrack/kpi.py): eight weighted criteria 0-5; a team score replaces the computed one
+const BASIS = { data: ["from data", "#16a34a"], estimate: ["estimate", "#d97706"], team: ["team", "#2563eb"] };
+
+function KpiSection({ d, onChange }) {
+  const [busy, setBusy] = useState("");
+  if (!d.kpi) return null;
+  const set = async (key, value) => {
+    setBusy(key);
+    try { await onChange(key, value === "" ? null : Number(value)); } finally { setBusy(""); }
+  };
+  const b = d.kpi_bands || {};
+  return (
+    <DrawerSection title={`Impact KPIs: ${d.kpi_score} / 100 (${d.kpi_band})`}>
+      <p className="note" style={{ fontSize: 11, margin: "0 0 6px" }}>
+        Each criterion is scored 0–5 (0 = not applicable) and weighted; High ≥ {b.High}, Medium ≥ {b.Medium}.
+        "Estimate" criteria depend on the product: set the team's score where it differs.
+      </p>
+      <table className="kpi" style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <colgroup><col /><col style={{ width: 92 }} /></colgroup>
+        <tbody>{d.kpi.map((c) => (
+          <tr key={c.key} style={{ borderTop: "1px solid #e5e7eb" }}>
+            <td style={{ padding: "5px 6px 5px 0", overflowWrap: "anywhere" }} title={c.what}>
+              <b style={{ fontWeight: 600 }}>{c.label}</b> <span style={{ color: "#6b7280" }}>· {c.weight}%</span>
+              <div style={{ fontSize: 11, color: "#6b7280" }}>
+                <span style={{ color: BASIS[c.basis]?.[1] }}>{BASIS[c.basis]?.[0] || c.basis}</span> · {c.reason} · <b>{c.points}</b> pts</div></td>
+            <td style={{ textAlign: "right", verticalAlign: "top", paddingTop: 5 }}>
+              <select className="select" style={{ padding: "2px 4px", width: 86 }} disabled={busy === c.key}
+                value={c.basis === "team" ? c.score : ""} onChange={(e) => set(c.key, e.target.value)}
+                aria-label={`${c.label} score`}>
+                <option value="">auto: {c.basis === "team" ? "reset" : c.score}</option>
+                {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select></td>
+          </tr>))}
+        </tbody>
+      </table>
+    </DrawerSection>
+  );
+}
+
 function Drawer({ id, onClose, toast, openReg, teams }) {
   const nav = useNavigate();
   const [d, setD] = useState(null);
@@ -137,6 +176,10 @@ function Drawer({ id, onClose, toast, openReg, teams }) {
               <DrawerSection title="Summary">
                 <p className="note" style={{ fontSize: 12 }}>{d.summary}{d.ai_pending && <span className="aitag"> · ✦ AI summary pending</span>}</p>
               </DrawerSection>
+              <KpiSection d={d} onChange={async (criterion, score) => {
+                try { setD(await portal.setKpi(d.canonical_id, { criterion, score, owner: form.owner || undefined })); toast(score === null ? "KPI back to computed score" : "KPI score saved"); }
+                catch (e) { toast(`Could not save: ${e.message}`); }
+              }} />
               <DrawerSection title="Detected Change"><p className="note" style={{ fontSize: 12 }}>{d.change}</p></DrawerSection>
               <DrawerSection title="Recommended Follow-up"><p className="note" style={{ fontSize: 12 }}>{d.action}</p></DrawerSection>
 

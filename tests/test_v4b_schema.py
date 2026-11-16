@@ -48,6 +48,7 @@ V4B_TABLES = {
     "assistant_message_citations",
     "client_requirements",
     "client_requirement_regulations",
+    "regulation_kpi_scores",  # 0025: team scores of the impact KPIs
 }
 
 

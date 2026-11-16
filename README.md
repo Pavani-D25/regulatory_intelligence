@@ -302,6 +302,24 @@ follow-up; review status and owner can be changed there and are saved.
   - Tracked = the rest.
   - A status set by the team always wins.
 
+**Impact KPI score** (`regtrack/kpi.py`, shown next to the rule-based impact): eight weighted criteria, each scored
+0–5 (0 = not applicable), combined into 0–100 = Σ weight × score / 5; High ≥ 60, Medium ≥ 30, otherwise Low.
+
+| Criterion | Weight | Computed from |
+|---|---|---|
+| Regulatory / compliance impact | 20% | data: draft or final, obligations to come, re-approval, type approval |
+| Functional safety impact | 20% | estimate: topics (braking, safety equipment, lighting, electronics) |
+| Cybersecurity impact | 15% | estimate: topics (cybersecurity, tracking / ITS, charging) |
+| Protocol / interface compatibility | 15% | estimate: topics (tracking / ITS, charging, cybersecurity, OBD) |
+| Architecture / implementation effort | 10% | estimate: electronic vs mechanical topics |
+| Verification and validation effort | 10% | estimate: re-approval, new obligation, technical |
+| Product / platform exposure | 5% | data: in-scope vehicle categories covered |
+| Schedule / deployment urgency | 5% | data: time to the next obligation |
+
+"Estimate" criteria depend on the product, not on the regulation text: in the detail drawer the team sets its own
+score per criterion (stored in `regulation_kpi_scores`, migration 0025), which replaces the computed one; "auto"
+returns to it. The Regulations table and its CSV export show the score and band.
+
 **No static data.** Every number, list and label comes from the database:
 - category and topic names come from `vehicle_category` and `domain`;
 - suggested AI questions come from the most-regulated topics and the latest high-impact items;
