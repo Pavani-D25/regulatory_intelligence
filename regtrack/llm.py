@@ -136,6 +136,8 @@ def embed(texts: list[str]) -> list[list[float]]:
     try:
         return embedder().embed_documents(texts)
     except Exception as e:
-        if _offline(e):
+        # 404: the server is up but EMBED_MODEL is not loaded there (another LM Studio / Ollama setup): the same as
+        # embeddings being down, so search falls back to full text instead of failing
+        if _offline(e) or getattr(e, "status_code", None) == 404:
             raise LLMUnavailable(str(e)) from e
         raise
