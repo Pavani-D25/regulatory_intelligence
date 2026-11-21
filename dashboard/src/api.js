@@ -43,7 +43,8 @@ export function setApiVariant(v) {
 function qs(params = {}) {
   const p = new URLSearchParams();
   Object.entries({ country: currentCountry, year: currentYear, variant: currentVariant, ...params }).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "" && v !== false) p.set(k, v);
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x)); // ?ids=A&ids=B
+    else if (v !== undefined && v !== null && v !== "" && v !== false) p.set(k, v);
   });
   const s = p.toString();
   return s ? `?${s}` : "";
@@ -99,6 +100,7 @@ export const portal = {
   regulations: (p) => get("/portal/regulations", p),
   detail: (id) => get(`/portal/regulations/${enc(id)}/detail`),
   regSummary: (id) => get(`/portal/regulations/${enc(id)}/summary`),
+  regSummaries: (ids) => get("/portal/regulation-summaries", { ids }),
   // f = { year, variant }: the report builder's own filters, over the header's ("" = all)
   groupSummary: (kind, code, f = {}) => get(`/portal/${kind === "topic" ? "topics" : "categories"}/${enc(code)}/summary`, f),
   review: (id, body) => send("PUT", `/portal/regulations/${enc(id)}/review`, body),
@@ -138,6 +140,7 @@ export const portal = {
 // summary PDFs: inline = shown in the Reports preview, otherwise downloaded; f = { year, variant } as groupSummary
 export const groupSummaryPdfUrl = (kind, code, f = {}, inline = false) =>
   `${API}/portal/${kind === "topic" ? "topics" : "categories"}/${enc(code)}/summary${qs({ ...f, fmt: "pdf", inline })}`;
+export const regSummariesPdfUrl = (ids, inline = false) => `${API}/portal/regulation-summaries${qs({ ids, fmt: "pdf", inline })}`;
 export const regSummaryPdfUrl = (id, inline = false) => `${API}/portal/regulations/${enc(id)}/summary${qs({ fmt: "pdf", inline })}`;
 export const reportUrl = (kind, fmt = "html", segment = "") => `${API}/portal/reports/${kind}${qs({ fmt, segment })}`;
 

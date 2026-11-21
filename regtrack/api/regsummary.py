@@ -185,16 +185,58 @@ def build(canonical_id: str, cc: str) -> dict:
 
 # ---------------------------------------------------------------- PDF
 def pdf(s: dict) -> bytes:
-    from reportlab.platypus import Spacer
+    from regtrack.api.pdfkit import Kit
+
+    k = Kit()
+    return k.build(
+        story(k, s), f"{s['canonical_id']} – regulation summary", f"RegTrack · {s['canonical_id']} · regulation summary"
+    )
+
+
+def pdf_many(items: list[dict], filters: str) -> bytes:
+    """Several regulations in one PDF: an index page, then each regulation's summary from a new page."""
+    from reportlab.platypus import PageBreak, Spacer
 
     from regtrack.api.pdfkit import Kit
 
     k = Kit()
     mm, w = k.mm, k.width
-    story = [k.P(s["canonical_id"], "title"), k.P(s["title"], "sub")]
+    head = [
+        k.P(f"Regulation summaries ({len(items)})", "title"),
+        k.P(
+            f"{items[0]['country']} · generated {items[0]['generated']}"
+            + (f" · selected with filters: {filters}" if filters else ""),
+            "sub",
+        ),
+        Spacer(1, 8),
+        k.P("Index", "h"),
+        k.table(
+            ["#", "Regulation", "Title", "Published"],
+            [
+                [i + 1, s["canonical_id"], s["title"], dict(s["facts"]).get("Published") or "—"]
+                for i, s in enumerate(items)
+            ],
+            [10 * mm, 42 * mm, w - 82 * mm, 30 * mm],
+            bold_first=False,
+        ),
+    ]
+    body = []
+    for s in items:
+        body += [PageBreak(), *story(k, s)]
+    return k.build(
+        head + body, f"Regulation summaries ({len(items)})", f"RegTrack · regulation summaries ({len(items)})"
+    )
+
+
+def story(k, s: dict) -> list:
+    """One regulation's summary as PDF flowables."""
+    from reportlab.platypus import Spacer
+
+    mm, w = k.mm, k.width
+    flow = [k.P(s["canonical_id"], "title"), k.P(s["title"], "sub")]
     if s.get("subtitle"):
-        story.append(k.P(s["subtitle"], "sub"))
-    story += [
+        flow.append(k.P(s["subtitle"], "sub"))
+    flow += [
         Spacer(1, 4),
         k.P(f"Regulation summary · {s['country']} · generated {s['generated']}", "note"),
         Spacer(1, 6),
@@ -205,17 +247,17 @@ def pdf(s: dict) -> bytes:
     ]
     dg = s.get("digest")
     if dg and dg["sections"]:
-        story.append(k.P("Detailed summary", "h"))
+        flow.append(k.P("Detailed summary", "h"))
         for sec in dg["sections"]:
-            story.append(k.P(sec["title"], "sub2"))
+            flow.append(k.P(sec["title"], "sub2"))
             if sec.get("text"):
-                story.append(k.P(sec["text"]))
+                flow.append(k.P(sec["text"]))
             for it in sec.get("items", []):
-                story.append(k.P("•  " + it, "bullet"))
-        story.append(k.P(dg["source"] + ".", "note"))
-    story += [k.P("Detected change", "h"), k.P(s["change"]), k.P("Recommended follow-up", "h"), k.P(s["action"])]
+                flow.append(k.P("•  " + it, "bullet"))
+        flow.append(k.P(dg["source"] + ".", "note"))
+    flow += [k.P("Detected change", "h"), k.P(s["change"]), k.P("Recommended follow-up", "h"), k.P(s["action"])]
     im = s["impact"]
-    story += [
+    flow += [
         k.P("Impact assessment", "h"),
         k.P(
             f"Rule-based impact: {im['level']} ({im['basis']}) · workflow status: {im['workflow']} · "
@@ -223,7 +265,7 @@ def pdf(s: dict) -> bytes:
         ),
     ]
     if im["kpi"]:
-        story.append(
+        flow.append(
             k.table(
                 ["Criterion", "Weight", "Score", "Points", "Basis and reason"],
                 [
@@ -237,10 +279,10 @@ def pdf(s: dict) -> bytes:
         ("Obligations set by this regulation", "obligations"),
         ("Obligations citing this regulation as a standard", "cited_by"),
     ):
-        story.append(k.P(title, "h"))
-        story.append(obligations_table(k, s[key]) if s[key] else k.P("None recorded.", "note"))
-    story.append(k.P("Related documents", "h"))
-    story.append(
+        flow.append(k.P(title, "h"))
+        flow.append(obligations_table(k, s[key]) if s[key] else k.P("None recorded.", "note"))
+    flow.append(k.P("Related documents", "h"))
+    flow.append(
         k.table(
             ["Relation", "Document"], [[r["relation"], r["document"]] for r in s["related"]], [50 * mm, w - 50 * mm]
         )
@@ -248,7 +290,7 @@ def pdf(s: dict) -> bytes:
         else k.P("None recorded.", "note")
     )
     if s["versions"]:
-        story += [
+        flow += [
             k.P("Version history", "h"),
             k.table(
                 ["Version", "Type", "Date", "Current"],
@@ -256,7 +298,7 @@ def pdf(s: dict) -> bytes:
                 [60 * mm, 55 * mm, 30 * mm, w - 145 * mm],
             ),
         ]
-    story += [
+    flow += [
         k.P("Source document", "h"),
         k.P(
             "Original official document stored unchanged (SHA-256 " + s["file"]["sha256"][:16] + "…); open "
@@ -267,9 +309,7 @@ def pdf(s: dict) -> bytes:
         Spacer(1, 10),
         k.P("Disclaimer: " + s["disclaimer"], "note"),
     ]
-    return k.build(
-        story, f"{s['canonical_id']} – regulation summary", f"RegTrack · {s['canonical_id']} · regulation summary"
-    )
+    return flow
 
 
 def obligations_table(k, rows: list[dict]):

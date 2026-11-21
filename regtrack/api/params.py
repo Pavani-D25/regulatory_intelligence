@@ -23,30 +23,37 @@ def resolve_country(value: str | None) -> str:
         raise HTTPException(400, str(e)) from e
 
 
-# ?year=2024 on any request (the portal's year selector): the publication year the list views show. Set per request by
-# the middleware in app.py; read where a view lists regulations (sql.docs(yearly=True), year_sql). Lookups of one
-# regulation (detail, versions, files) ignore it.
-YEAR: ContextVar[int | None] = ContextVar("regtrack_year", default=None)
+# ?year=2024 or ?year=2020-2024 on any request (the portal's year selector, single year or range): the publication
+# years the list views show, as (first, last). Set per request by the middleware in app.py; read where a view lists
+# regulations (sql.docs(filtered=True), year_sql). Lookups of one regulation (detail, versions, files) ignore it.
+YEAR: ContextVar[tuple[int, int] | None] = ContextVar("regtrack_year", default=None)
 
 
-def parse_year(raw: str | None) -> int | None:
+def parse_year(raw: str | None) -> tuple[int, int] | None:
     if not raw:
         return None
+    parts = raw.replace("–", "-").replace("..", "-").split("-")
     try:
-        y = int(raw)
+        ys = [int(p) for p in parts if p.strip()]
     except ValueError:
-        y = 0
-    if not 1900 <= y <= 2100:
-        raise ValueError("year must be a year such as 2024")
-    return y
+        ys = []
+    if len(ys) not in (1, 2) or not all(1900 <= y <= 2100 for y in ys):
+        raise ValueError("year is a year such as 2024 or a range such as 2020-2024")
+    return min(ys), max(ys)
+
+
+def year_text(y: tuple[int, int] | None) -> str:
+    """'2024' or '2020–2024'; empty without a year."""
+    return "" if not y else str(y[0]) if y[0] == y[1] else f"{y[0]}–{y[1]}"
 
 
 def year_sql(alias: str, column: str = "published_date", keep_null: bool = False) -> str:
-    """' AND <alias>.<column> in the selected year' (empty without one); keep_null keeps rows without that table."""
+    """' AND <alias>.<column> in the selected year(s)' (empty without); keep_null keeps rows without that table."""
     y = YEAR.get()
     if not y:
         return ""
-    cond = f"extract(year FROM {alias}.{column}) = {int(y)}"
+    e = f"extract(year FROM {alias}.{column})"
+    cond = f"{e} = {int(y[0])}" if y[0] == y[1] else f"{e} BETWEEN {int(y[0])} AND {int(y[1])}"
     return f" AND ({alias}.id IS NULL OR {cond})" if keep_null else f" AND {cond}"
 
 
@@ -90,7 +97,7 @@ def view_sql(alias: str, keep_null: bool = False) -> str:
 
 def view_label() -> str:
     """'published in 2024, EV' for report headings; empty without filters."""
-    parts = ([f"published in {YEAR.get()}"] if YEAR.get() else []) + (
-        [VARIANTS[VARIANT.get()][0]] if VARIANT.get() else []
-    )
+    parts = (
+        [f"published {'in ' if YEAR.get()[0] == YEAR.get()[1] else ''}{year_text(YEAR.get())}"] if YEAR.get() else []
+    ) + ([VARIANTS[VARIANT.get()][0]] if VARIANT.get() else [])
     return ", ".join(parts)

@@ -25,7 +25,7 @@ import re
 import threading
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import Response
 
 from regtrack import country, kpi, segments
@@ -419,8 +419,9 @@ def summary(
         scope, usage = segment_filter(cc, segment) or (vocab["scope"], "")
         m_usage = usage.replace("d.usage", "m.usage")
         regs = regulations(conn, cc=cc, segment=segment)
-        if YEAR.get():  # one year chosen in the portal: its months
-            trend_view, trend_from, trend_to = "month", YEAR.get(), YEAR.get()
+        if YEAR.get():  # one year chosen in the portal: its months; a range: its years
+            a, b = YEAR.get()
+            trend_view, trend_from, trend_to = ("month" if a == b else "year"), a, b
         tr = trend_series(conn, cc, scope, trend_view, trend_from, trend_to, usage + variant_sql("d"))
         months = tr.pop("trend")
         changes = _rows(
@@ -672,6 +673,36 @@ def _group_summary(kind: str, code: str, fmt: str, inline: bool, cc: str | None)
 def disposition(filename: str, inline: bool) -> str:
     """inline: the PDF shows in the portal's preview (an iframe); otherwise it downloads."""
     return f'{"inline" if inline else "attachment"}; filename="{filename}"'
+
+
+MAX_SUMMARIES = 25
+
+
+@router.get("/regulation-summaries")
+def regulation_summaries(
+    ids: list[str] = Query(default=[]), fmt: str = "json", inline: bool = False, cc: CountryParam = None
+):
+    """Several regulations' summaries (Reports › Report builder, multiple regulations chosen): JSON, or one PDF with an
+    index page and each regulation from a new page. ?ids=A&ids=B, up to MAX_SUMMARIES."""
+    from regtrack.api import regsummary
+    from regtrack.api.params import view_label
+
+    cc = resolve_country(cc)
+    ids = list(dict.fromkeys(i for i in ids if i))
+    if not ids:
+        raise HTTPException(400, "choose at least one regulation (?ids=)")
+    if len(ids) > MAX_SUMMARIES:
+        raise HTTPException(400, f"at most {MAX_SUMMARIES} regulations per report")
+    if fmt not in ("json", "pdf"):
+        raise HTTPException(400, "fmt is json or pdf")
+    items = [regsummary.build(i, cc) for i in ids]  # 404 for an unknown one
+    if fmt == "pdf":
+        name = (
+            f"RegTrack_{cc}_{len(items)}_regulation_summaries.pdf" if len(items) > 1 else regsummary.safe_name(ids[0])
+        )
+        body = regsummary.pdf_many(items, view_label()) if len(items) > 1 else regsummary.pdf(items[0])
+        return Response(body, media_type="application/pdf", headers={"Content-Disposition": disposition(name, inline)})
+    return {"count": len(items), "items": items}
 
 
 @router.get("/regulations/{canonical_id:path}/summary")

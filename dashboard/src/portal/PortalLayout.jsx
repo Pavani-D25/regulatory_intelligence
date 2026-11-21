@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api, auth, docPath, familyPath, fileUrl, portal, regSummaryPdfUrl, setApiCountry, setApiVariant, setApiYear } from "../api";
 import "./portal.css";
 import { Digest } from "./RegSummary";
-import { ago, Badge, fmt, fmtTime } from "./ui";
+import { ago, Badge, fmt, fmtTime, YearFilter } from "./ui";
 
 export const COUNTRIES = [["IN", "India"], ["TH", "Thailand"], ["MY", "Malaysia"]];
 
@@ -429,12 +429,7 @@ export default function PortalLayout() {
               <select className="select" value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Country">
                 {COUNTRIES.map(([c, name]) => <option key={c} value={c}>{name}</option>)}
               </select>
-              <select className="select" value={year} onChange={(e) => setYear(e.target.value)} aria-label="Year"
-                title="Show regulations published in this year on every page">
-                <option value="">All years</option>
-                {year && !(meta?.years || []).includes(Number(year)) && <option value={year}>{year}</option>}
-                {(meta?.years || []).map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
+              <YearFilter value={year} years={meta?.years || []} onChange={setYear} />
               <select className="select" value={variant} onChange={(e) => setVariant(e.target.value)} aria-label="Powertrain"
                 title="Show regulations specific to this powertrain on every page (general rules for all vehicles are not listed)">
                 {VARIANTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}

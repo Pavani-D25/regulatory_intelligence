@@ -476,6 +476,15 @@ def test_year_filter_on_every_list_view(client):
     other = next(r for r in every if not str(r["doc_date"]).startswith(str(y)))
     assert client.get(f"/portal/regulations/{other['canonical_id']}/detail", params={"year": y}).status_code == 200
     assert client.get("/portal/regulations", params={"year": "abc"}).status_code == 400
+    # a range: the regulations published in any of its years, and the dashboard trend by year
+    years = sorted({r["doc_date"][:4] for r in client.get("/portal/regulations").json()["rows"] if r["doc_date"]})
+    lo, hi = years[-3], years[-1]
+    span = client.get("/portal/regulations", params={"year": f"{lo}-{hi}"}).json()["rows"]
+    assert span and all(lo <= r["doc_date"][:4] <= hi for r in span)
+    each = sum(len(client.get("/portal/regulations", params={"year": y}).json()["rows"]) for y in years[-3:])
+    assert len(span) == each
+    assert client.get("/portal/summary", params={"year": f"{lo}-{hi}"}).json()["trend_view"] == "year"
+    assert client.get("/portal/regulations", params={"year": "2024-abc"}).status_code == 400
     assert len(client.get("/portal/regulations").json()["rows"]) == len(every)
 
 
@@ -516,6 +525,19 @@ def test_regulation_summary_json_and_pdf(client):
     assert "attachment" in r.headers["content-disposition"]
     assert client.get("/portal/regulations/NOPE-1/summary").status_code == 404
     assert client.get(f"/portal/regulations/{cid}/summary", params={"fmt": "docx"}).status_code == 400
+
+
+def test_several_regulation_summaries(client):
+    """Report builder with several regulations: their summaries together, one PDF with an index."""
+    ids = [r["canonical_id"] for r in client.get("/portal/regulations").json()["rows"][:3]]
+    j = client.get("/portal/regulation-summaries", params={"ids": ids}).json()
+    assert j["count"] == 3 and [s["canonical_id"] for s in j["items"]] == ids
+    r = client.get("/portal/regulation-summaries", params={"ids": ids, "fmt": "pdf", "inline": "true"})
+    assert r.status_code == 200 and r.content[:4] == b"%PDF" and r.headers["content-disposition"].startswith("inline")
+    assert "3_regulation_summaries" in r.headers["content-disposition"]
+    assert client.get("/portal/regulation-summaries").status_code == 400
+    assert client.get("/portal/regulation-summaries", params={"ids": ["NOPE-1"]}).status_code == 404
+    assert client.get("/portal/regulation-summaries", params={"ids": [f"X{i}" for i in range(26)]}).status_code == 400
 
 
 def test_category_summary_json_and_pdf(client):

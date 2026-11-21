@@ -1,4 +1,5 @@
 // Small building blocks in the approved design's vocabulary (pill, kpi, card, metric row, donut, ring).
+import { useEffect, useRef, useState } from "react";
 
 const TONE = {
   High: "red", "Action Required": "red", Medium: "amber", "Under Review": "amber", "Impact Analysis": "purple",
@@ -143,3 +144,77 @@ export const segmentLabel = (path) => {
   const k = (path || "").split("/").filter(Boolean);
   return k.length ? [k.slice(0, 2).join("-"), ...k.slice(2)].join(" · ") : "";
 };
+
+// The year filter: "" (all years), "2024" (one year) or "2020-2024" (a range), as the API's ?year= takes it
+export const yearRange = (v) => {
+  if (!v) return null;
+  const [a, b = a] = String(v).split("-").map(Number);
+  return [Math.min(a, b), Math.max(a, b)];
+};
+export const yearLabel = (v) => {
+  const r = yearRange(v);
+  return !r ? "All years" : r[0] === r[1] ? String(r[0]) : `${r[0]}–${r[1]}`;
+};
+
+export function YearFilter({ value, years = [], onChange, label = "Year", disabled = false }) {
+  const [open, setOpen] = useState(false);
+  const r = yearRange(value);
+  const modeOf = (x) => (!x ? "all" : x[0] === x[1] ? "single" : "range");
+  const [mode, setMode] = useState(modeOf(r));
+  const box = useRef(null);
+  const sorted = [...years].sort((x, y) => y - x);
+  const newest = sorted[0] || new Date().getFullYear();
+  const oldest = sorted[sorted.length - 1] || newest;
+  useEffect(() => { setMode(modeOf(yearRange(value))); }, [value]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const range = (a, b) => onChange(`${Math.min(a, b)}-${Math.max(a, b)}`);
+  const pick = (m) => {
+    setMode(m);
+    if (m === "all") onChange("");
+    else if (m === "single") onChange(String(r ? r[1] : newest));
+    else {
+      const to = r ? r[1] : newest;
+      range(Math.max(r && r[0] !== r[1] ? r[0] : to - 4, oldest), to);
+    }
+  };
+  const opts = sorted.map((y) => <option key={y} value={y}>{y}</option>);
+  return (
+    <div className="yearfilter" ref={box}>
+      <button type="button" className="select yf-btn" aria-label={label} aria-expanded={open} disabled={disabled}
+        onClick={() => setOpen(!open)} title="Show regulations published in one year or a range of years">
+        <span>{yearLabel(value)}</span><span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="yf-pop" role="dialog" aria-label={`${label} filter`}>
+          <div className="yf-tabs">
+            {[["all", "All years"], ["single", "Single year"], ["range", "Range"]].map(([m, l]) => (
+              <button key={m} type="button" className={mode === m ? "on" : ""} onClick={() => pick(m)}>{l}</button>))}
+          </div>
+          {mode === "single" && r && (
+            <label className="yf-row yf-col">Year
+              <select className="select" value={r[0]} onChange={(e) => onChange(e.target.value)}>{opts}</select>
+            </label>)}
+          {mode === "range" && r && (
+            <div className="yf-row">
+              <label className="yf-col">From
+                <select className="select" value={r[0]} onChange={(e) => range(Number(e.target.value), r[1])}>{opts}</select>
+              </label>
+              <label className="yf-col">To
+                <select className="select" value={r[1]} onChange={(e) => range(r[0], Number(e.target.value))}>{opts}</select>
+              </label>
+            </div>)}
+          <div className="yf-foot">
+            <span className="sub">{mode === "all" ? "Every publication year" : `Published ${yearLabel(value)}`}</span>
+            <button type="button" className="btn primary" onClick={() => setOpen(false)}>Done</button>
+          </div>
+        </div>)}
+    </div>
+  );
+}
