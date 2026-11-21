@@ -1,5 +1,24 @@
 import { Badge } from "./ui";
 
+// A regulation's detailed summary from its own text (regtrack/pipeline/digest.py): sections of sentences and facts
+export function Digest({ digest, compact = false }) {
+  const size = compact ? 12 : 13;
+  return (
+    <div className="digest" style={{ fontSize: size }}>
+      {digest.sections.map((sec) => (
+        <div key={sec.title} style={{ marginBottom: compact ? 10 : 14 }}>
+          <div style={{ fontWeight: 650, marginBottom: 4, color: "var(--ink, #0f172a)" }}>{sec.title}</div>
+          {sec.text && <p className="note" style={{ fontSize: size, margin: 0 }}>{sec.text}</p>}
+          {sec.items?.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {sec.items.map((it, i) => <li key={i} className="note" style={{ fontSize: size, marginBottom: 3 }}>{it}</li>)}
+            </ul>)}
+        </div>))}
+      <p className="note" style={{ fontSize: 11, margin: 0, fontStyle: "italic" }}>{digest.source}.</p>
+    </div>
+  );
+}
+
 const BASIS = { data: "from data", estimate: "estimate", team: "team" };
 
 export function Obligations({ rows, empty }) {
@@ -34,10 +53,13 @@ export function RegSummaryView({ s }) {
 
           <div className="grid3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
             <div><h3 style={{ fontSize: 14, margin: "0 0 6px" }}>Summary</h3><p className="note" style={{ fontSize: 13 }}>{s.summary}
-              {s.ai_pending && <span className="aitag"> · ✦ AI summary pending</span>}</p></div>
+</p></div>
             <div><h3 style={{ fontSize: 14, margin: "0 0 6px" }}>Detected change</h3><p className="note" style={{ fontSize: 13 }}>{s.change || "—"}</p></div>
             <div><h3 style={{ fontSize: 14, margin: "0 0 6px" }}>Recommended follow-up</h3><p className="note" style={{ fontSize: 13 }}>{s.action || "—"}</p></div>
           </div>
+
+          {s.digest?.sections?.length > 0 && (
+            <div><h3 style={{ fontSize: 15, margin: "0 0 8px" }}>Detailed summary</h3><Digest digest={s.digest} /></div>)}
 
           <div>
             <h3 style={{ fontSize: 15, margin: "0 0 4px" }}>Impact assessment</h3>

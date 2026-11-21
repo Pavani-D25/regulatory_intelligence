@@ -50,6 +50,19 @@ class Kit:
             "cellb": ParagraphStyle("cb", fontName=b, fontSize=8.5, leading=11.5, textColor=self.navy),
             "head": ParagraphStyle("hd", fontName=b, fontSize=8.5, leading=11.5, textColor=colors.white),
             "note": ParagraphStyle("n", fontName=r, fontSize=8, leading=11, textColor=self.muted),
+            "sub2": ParagraphStyle(
+                "s2", fontName=b, fontSize=10, leading=14, textColor=self.navy, spaceBefore=6, spaceAfter=2
+            ),
+            "bullet": ParagraphStyle(
+                "bl",
+                fontName=r,
+                fontSize=9,
+                leading=12.5,
+                textColor=self.body,
+                leftIndent=10,
+                firstLineIndent=-8,
+                spaceAfter=2.5,
+            ),
         }
         self.width = A4[0] - 36 * mm
 

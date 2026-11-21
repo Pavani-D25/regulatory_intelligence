@@ -100,7 +100,7 @@ export default function Regulations() {
           {f.month && <span className="sub" style={{ margin: 0 }}>{f.month.length === 4 ? "Year" : "Month"} {f.month} · <button className="btn ghost" style={{ padding: 0 }} onClick={() => set("month", "")}>remove</button></span>}
         </div>
       </Card>
-      {pending > 0 && <div className="banner">✦ <span>AI summaries and impact review are pending for <b>{pending}</b> of {data.rows.length} regulations. They fill in automatically once LM Studio is connected; until then impact is rule-based.</span></div>}
+      {pending > 0 && <div className="banner">✦ <span>Every regulation has a detailed summary generated from its document text. The AI review adds a written summary and impact review for <b>{pending}</b> of {data.rows.length} regulations once LM Studio is connected; until then impact is rule-based.</span></div>}
       <Card title="Regulation Register" sub={`${rows.length} matching records · click a column to sort · click a row for detail`}>
         <ErrorBox error={error} />
         <div className="tablewrap"><table>

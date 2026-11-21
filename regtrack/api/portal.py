@@ -583,6 +583,12 @@ def regulation_list(
     }
 
 
+def _real_summary(r: dict) -> bool:
+    """The stored summary is a written one (Qwen's), not a pending placeholder, the ID or a bare title line."""
+    s = (r.get("subject") or "").strip()
+    return not r.get("ai_pending") and len(s) >= 60 and s != r["canonical_id"] and s != (r.get("official_title") or "")
+
+
 @router.get("/regulations/{canonical_id:path}/detail")
 def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
     cc = resolve_country(cc)
@@ -609,9 +615,14 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
                                WHERE p.regulation_id=%s ORDER BY p.is_best_copy DESC LIMIT 1""",
             (r["id"],),
         )
+        from regtrack.api.regsummary import digest_for
+
         out = _reg_out(r)
+        dg = digest_for(conn, r["id"], cc, vocab)  # every regulation: a detailed summary from its own text
         out.update(
-            summary=r["subject"] or r["official_title"] or "No summary yet (AI pending).",
+            # the AI summary once Qwen has written it, else the overview of the text-based summary
+            summary=r["subject"] if _real_summary(r) else dg["overview"],
+            digest=dg,
             change=r["last_event_summary"]
             and f"{r['last_event'].replace('_', ' ')}: {r['last_event_summary']}"
             or detected_change(conn, r["id"]),

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api, auth, docPath, familyPath, fileUrl, portal, regSummaryPdfUrl, setApiCountry, setApiVariant, setApiYear } from "../api";
 import "./portal.css";
+import { Digest } from "./RegSummary";
 import { ago, Badge, fmt, fmtTime } from "./ui";
 
 export const COUNTRIES = [["IN", "India"], ["TH", "Thailand"], ["MY", "Malaysia"]];
@@ -174,8 +175,10 @@ function Drawer({ id, onClose, toast, openReg, teams }) {
                 <div className="detail"><small>Status</small><Badge v={d.status} />{d.doc_status === "superseded" && <> <Badge v="Superseded" tone="blue" /></>}</div>
               </div>
               <DrawerSection title="Summary">
-                <p className="note" style={{ fontSize: 12 }}>{d.summary}{d.ai_pending && <span className="aitag"> · ✦ AI summary pending</span>}</p>
+                <p className="note" style={{ fontSize: 12 }}>{d.summary}</p>
               </DrawerSection>
+              {d.digest?.sections?.length > 0 && (
+                <DrawerSection title="Detailed Summary"><Digest digest={d.digest} compact /></DrawerSection>)}
               <KpiSection d={d} onChange={async (criterion, score) => {
                 try { setD(await portal.setKpi(d.canonical_id, { criterion, score, owner: form.owner || undefined })); toast(score === null ? "KPI back to computed score" : "KPI score saved"); }
                 catch (e) { toast(`Could not save: ${e.message}`); }

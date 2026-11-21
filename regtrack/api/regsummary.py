@@ -33,8 +33,14 @@ SCOPES = {
 
 
 def conditions_text(cond: dict | None) -> str:
+    if isinstance(cond, str):  # some client registers (MY) keep the condition as text
+        return cond
+    if not isinstance(cond, dict):
+        return ""
     parts = []
-    for key, ops in (cond or {}).items():
+    for key, ops in cond.items():
+        if not isinstance(ops, dict):
+            continue
         label, unit = UNITS.get(key, (key, ""))
         for op, v in ops.items():
             parts.append(f"{label} {OPS.get(op, op)} {v:g} {unit}".strip())
@@ -45,6 +51,28 @@ def _d(v) -> str | None:
     if isinstance(v, (date, datetime)):
         return v.strftime("%d %b %Y")
     return v
+
+
+def digest_for(conn, regulation_id: int, cc: str, vocab: dict) -> dict:
+    """The detailed summary of one regulation from its own text (regtrack/pipeline/digest.py), with its in-force
+    obligations and its relations."""
+    from regtrack.pipeline import digest
+
+    r = conn.execute(f"SELECT * FROM {S.docs(cc)} d WHERE d.id = %s", (regulation_id,)).fetchone()
+    ms = conn.execute(
+        f"""SELECT m.subject, m.implementation_date, m.vehicle_categories, m.model_scope, m.conditions
+            FROM {S.mandates(cc)} m WHERE m.source_doc_id = %s AND (m.valid_to IS NULL OR m.valid_to > current_date)
+            ORDER BY m.implementation_date NULLS LAST, m.mandate_key""",
+        (regulation_id,),
+    ).fetchall()
+    rel = conn.execute(
+        """SELECT r.type, coalesce(t.external_code, r.to_ref) AS target FROM regulation_relations r
+           LEFT JOIN regulations t ON t.id = r.to_regulation_id WHERE r.from_regulation_id = %s ORDER BY r.type, r.id""",
+        (regulation_id,),
+    ).fetchall()
+    mandates = [{**m, "applies_to": conditions_text(m["conditions"])} for m in ms]
+    labels = {"cat": vocab["cat_label"], "domain": vocab["domain_label"]}
+    return digest.digest(dict(r), digest.load_text(conn, regulation_id), mandates, [dict(x) for x in rel], labels)
 
 
 def build(canonical_id: str, cc: str) -> dict:
@@ -124,6 +152,7 @@ def build(canonical_id: str, cc: str) -> dict:
             ("Next obligation", _d(detail.get("next_obligation")) or "none"),
         ],
         "summary": detail.get("summary"),
+        "digest": detail.get("digest"),
         "ai_pending": bool(detail.get("ai_pending")),
         "change": detail.get("change"),
         "action": detail.get("action"),
@@ -174,14 +203,16 @@ def pdf(s: dict) -> bytes:
         k.P("Summary", "h"),
         k.P(s["summary"]),
     ]
-    if s["ai_pending"]:
-        story.append(
-            k.P(
-                "The AI-written summary for this regulation is pending; the text above comes from "
-                "rule-based extraction.",
-                "note",
-            )
-        )
+    dg = s.get("digest")
+    if dg and dg["sections"]:
+        story.append(k.P("Detailed summary", "h"))
+        for sec in dg["sections"]:
+            story.append(k.P(sec["title"], "sub2"))
+            if sec.get("text"):
+                story.append(k.P(sec["text"]))
+            for it in sec.get("items", []):
+                story.append(k.P("•  " + it, "bullet"))
+        story.append(k.P(dg["source"] + ".", "note"))
     story += [k.P("Detected change", "h"), k.P(s["change"]), k.P("Recommended follow-up", "h"), k.P(s["action"])]
     im = s["impact"]
     story += [

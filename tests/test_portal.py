@@ -544,3 +544,10 @@ def test_topic_summary_json_and_pdf(client):
     assert client.get("/portal/topics/no_such_topic/summary").status_code == 404
     shown = client.get("/portal/topics/braking/summary", params={"fmt": "pdf", "inline": "true"})
     assert shown.headers["content-disposition"].startswith("inline")  # the portal's preview before download
+
+
+def test_detail_has_digest_and_a_real_summary(client):
+    cid = client.get("/portal/regulations").json()["rows"][0]["canonical_id"]
+    d = client.get(f"/portal/regulations/{cid}/detail").json()
+    assert d["digest"]["overview"].startswith(cid) and isinstance(d["digest"]["sections"], list)
+    assert len(d["summary"]) >= 40  # the AI summary or the overview, never a bare title line

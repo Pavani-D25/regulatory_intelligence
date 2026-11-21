@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { AiNote, Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring, SegmentPicker } from "../ui";
+import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring, SegmentPicker } from "../ui";
 
 const TYPE_LABEL = {
   new_document: "New document", draft_published: "Draft published", draft_finalised: "Draft finalised",
@@ -82,7 +82,6 @@ export default function ChangeMonitor() {
                         : <button className="chip" title="Mark this change as reviewed" onClick={(ev) => { ev.stopPropagation(); mark([e.id]); }}>✓ Review</button>}</span>
                   </div>
                   <p>{e.summary}</p>
-                  {e.ai_summary_pending && <AiNote>✦ AI summary pending</AiNote>}
                 </div>
               </div>
             ))}
