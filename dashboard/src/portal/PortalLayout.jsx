@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { api, docPath, familyPath, fileUrl, portal, setApiCountry, setApiVariant, setApiYear } from "../api";
+import { api, auth, docPath, familyPath, fileUrl, portal, setApiCountry, setApiVariant, setApiYear } from "../api";
 import "./portal.css";
 import { ago, Badge, fmt, fmtTime } from "./ui";
 
@@ -297,8 +297,41 @@ function Bell({ version, openReg }) {
   );
 }
 
+// the signed-in user's initials, with a menu to change the password and sign out
+function UserMenu({ user, toast }) {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState(null);
+  if (!user) return <div className="avatar">…</div>;
+  const initials = (user.name || user.email).split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const signOut = async () => { try { await auth.logout(); } finally { window.location.assign("/login"); } };
+  const change = async () => {
+    try { await auth.changePassword(pw.current, pw.next); toast("Password changed: sign in again"); setTimeout(signOut, 900); }
+    catch (e) { toast(e.message); }
+  };
+  return (
+    <div style={{ position: "relative" }}>
+      <button className="avatar" title={`${user.name} (${user.role})`} onClick={() => setOpen(!open)} style={{ border: 0, cursor: "pointer" }}>{initials}</button>
+      {open && (
+        <div className="usermenu">
+          <div><strong>{user.name}</strong><br /><small>{user.email} · {user.role}</small></div>
+          {pw ? (
+            <>
+              <input className="input" type="password" placeholder="Current password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
+              <input className="input" type="password" placeholder="New password (10+ characters)" autoComplete="new-password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
+              <button className="btn primary" disabled={!pw.current || (pw.next || "").length < 10} onClick={change}>Change password</button>
+            </>
+          ) : <button className="btn secondary" onClick={() => setPw({ current: "", next: "" })}>Change password</button>}
+          <button className="btn secondary" onClick={signOut}>Sign out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PortalLayout() {
   const nav = useNavigate();
+  const [user, setUser] = useState(null);
+  useEffect(() => { auth.me().then((m) => setUser(m.user)).catch(() => window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`)); }, []);
   const loc = useLocation();
   const [meta, setMeta] = useState(null);
   const [version, setVersion] = useState(0);
@@ -360,7 +393,7 @@ export default function PortalLayout() {
   const sch = meta?.scheduler;
 
   return (
-    <Ctx.Provider value={{ openReg: setDrawer, toast, meta, version, country, countryName, year, variant }}>
+    <Ctx.Provider value={{ openReg: setDrawer, toast, meta, version, country, countryName, year, variant, user }}>
       <div className="app portal">
         <aside className="sidebar">
           <div className="brand"><div className="brandmark">RI</div><div><strong>Regulatory Intelligence</strong><small>{countryName} · Automotive</small></div></div>
@@ -403,7 +436,7 @@ export default function PortalLayout() {
                 {VARIANTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
               </select>
               <select className="select" defaultValue="en" aria-label="Language"><option value="en">English</option></select>
-              <div className="avatar" title="Regulatory Affairs">RA</div>
+              <UserMenu user={user} toast={toast} />
             </div>
           </header>
           <div className="content"><Outlet /></div>

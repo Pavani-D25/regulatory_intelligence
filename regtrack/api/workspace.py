@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Body, HTTPException
 
-from regtrack import country, segments
+from regtrack import auth, country, segments
 from regtrack.config import ROOT
 from regtrack.db import Jsonb, connect
 
@@ -53,7 +53,8 @@ def team_directory() -> dict:
         )
         users = _rows(
             conn,
-            """SELECT u.id, u.email, u.name, u.team_id, t.name AS team, u.role, u.is_active, u.created_at
+            """SELECT u.id, u.email, u.name, u.team_id, t.name AS team, u.role, u.is_active, u.created_at,
+                      u.password_hash IS NOT NULL AS has_password, u.last_login_at
                                FROM users u LEFT JOIN teams t ON t.id=u.team_id ORDER BY u.is_active DESC, u.name""",
         )
     return {"teams": teams, "users": users, "roles": ROLES}
@@ -80,15 +81,31 @@ def add_user(body: dict = Body(...)) -> dict:
         raise HTTPException(400, "a name and a valid e-mail address are required")
     if role not in ROLES:
         raise HTTPException(400, "unknown role")
+    password = body.get("password") or ""
+    if password and (problem := auth.password_problem(password)):
+        raise HTTPException(400, problem)
     with connect() as conn:
         if conn.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
             raise HTTPException(409, "a user with this e-mail address exists")
         uid = conn.execute(
-            "INSERT INTO users (email, name, team_id, role) VALUES (%s,%s,%s,%s) RETURNING id",
-            (email, name, body.get("team_id") or None, role),
+            "INSERT INTO users (email, name, team_id, role, password_hash) VALUES (%s,%s,%s,%s,%s) RETURNING id",
+            (email, name, body.get("team_id") or None, role, auth.hash_password(password) if password else None),
         ).fetchone()["id"]
         conn.commit()
     return {"id": uid}
+
+
+@router.post("/users/{user_id}/password")
+def reset_password(user_id: int, body: dict = Body(...)) -> dict:
+    """An admin sets a user's password (signs that user out everywhere)."""
+    password = body.get("password") or ""
+    if problem := auth.password_problem(password):
+        raise HTTPException(400, problem)
+    with connect() as conn:
+        if not conn.execute("SELECT 1 FROM users WHERE id=%s", (user_id,)).fetchone():
+            raise HTTPException(404, "unknown user")
+    auth.set_password(user_id, password)
+    return {"ok": True}
 
 
 @router.patch("/users/{user_id}")
@@ -107,10 +124,15 @@ def update_user(user_id: int, body: dict = Body(...)) -> dict:
         args.append(bool(body["is_active"]))
     if not sets:
         raise HTTPException(400, "nothing to change")
+    me = auth.USER.get() or {}
+    if me.get("id") == user_id and (body.get("is_active") is False or body.get("role", "admin") != "admin"):
+        raise HTTPException(400, "you cannot deactivate yourself or remove your own admin role")
     with connect() as conn:
         if not conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id=%s", (*args, user_id)).rowcount:
             raise HTTPException(404, "unknown user")
         conn.commit()
+    if body.get("is_active") is False:
+        auth.end_sessions(user_id)
     return {"ok": True}
 
 

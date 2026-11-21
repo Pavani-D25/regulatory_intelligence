@@ -1,5 +1,15 @@
 // Thin client for the RegTrack read API (regtrack/api/app.py).
-export const API = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+// /api = the API through the dev / preview server's proxy (vite.config.js): same origin as the page, so the
+// sign-in cookie (HttpOnly, set by POST /auth/login) goes with every request, downloads included.
+export const API = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+
+// 401 = not signed in (or the session ended): to the sign-in page, back here afterwards
+function toLogin() {
+  if (window.location.pathname !== "/login") {
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.assign(`/login?next=${next}`);
+  }
+}
 
 // The selected country, injected into every request below so a page author never has to pass it explicitly.
 // PortalLayout is the only writer (setApiCountry), and persists it under the same key it reads on load.
@@ -40,7 +50,8 @@ function qs(params = {}) {
 }
 
 async function get(path, params) {
-  const r = await fetch(`${API}${path}${qs(params)}`);
+  const r = await fetch(`${API}${path}${qs(params)}`, { credentials: "include" });
+  if (r.status === 401) toLogin();
   if (!r.ok) {
     let detail = r.statusText;
     try { detail = (await r.json()).detail || detail; } catch { /* not json */ }
@@ -71,8 +82,9 @@ export const familyPath = (key) => `/versions/${enc(key)}`;
 async function send(method, path, body) {
   const payload = { country: currentCountry, ...(body || {}) };
   const r = await fetch(`${API}${path}${qs()}`, {
-    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), credentials: "include",
   });
+  if (r.status === 401) toLogin();
   if (!r.ok) {
     let detail = r.statusText;
     try { detail = (await r.json()).detail || detail; } catch { /* not json */ }
@@ -100,6 +112,7 @@ export const portal = {
   team: () => get("/portal/team"),
   addTeam: (name) => send("POST", "/portal/teams", { name }),
   addUser: (body) => send("POST", "/portal/users", body),
+  setUserPassword: (id, password) => send("POST", `/portal/users/${id}/password`, { password }),
   updateUser: (id, body) => send("PATCH", `/portal/users/${id}`, body),
   watches: (canonical_id) => get("/portal/watches", { canonical_id }),
   addWatch: (body) => send("POST", "/portal/watches", body),
@@ -120,3 +133,22 @@ export const portal = {
   requirements: (segment) => get("/portal/requirements", { segment }),
 };
 export const reportUrl = (kind, fmt = "html", segment = "") => `${API}/portal/reports/${kind}${qs({ fmt, segment })}`;
+
+// ---- sign-in (regtrack/auth.py) ------------------------------------------------------------
+async function authCall(path, body) {
+  const r = await fetch(`${API}${path}`, {
+    method: body ? "POST" : "GET", credentials: "include",
+    headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try { data = await r.json(); } catch { /* not json */ }
+  if (!r.ok) throw Object.assign(new Error(data.detail || r.statusText), { status: r.status });
+  return data;
+}
+
+export const auth = {
+  login: (email, password) => authCall("/auth/login", { email, password }),
+  logout: () => authCall("/auth/logout", {}),
+  me: () => authCall("/auth/me"),
+  changePassword: (current, next) => authCall("/auth/password", { current, new: next }),
+};

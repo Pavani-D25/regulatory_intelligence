@@ -8,6 +8,7 @@ run [--stage S] [--limit N]   run pipeline stages on pending files (resumable)
 crawl [SOURCE]        run the current country's live crawlers once (India: MORTH_API, ARAI_AIS, EGAZETTE, INDIACODE)
 schedule              start the 6-hour scheduler (blocking)
 rederive-mandates [--doc ID] [--apply]   after a mandate-parser fix: correct open mandate versions (dry run first)
+user add EMAIL --name N [--role R] | user passwd EMAIL | user list | user disable EMAIL   portal sign-in accounts
 report                write reports/VALIDATION_REPORT.md
 api                   start the read-only FastAPI server
 db start|stop|status  the PostgreSQL server on this machine (PG_BIN / PG_DATA in .env)
@@ -101,6 +102,68 @@ def cmd_run(args) -> int:
     from regtrack.pipeline.runner import run_pipeline
 
     print(run_pipeline(stages=args.stage, limit=args.limit, workers=args.workers))
+    return 0
+
+
+def _ask_password() -> str:
+    """The new password, typed twice and never echoed (REGTRACK_NEW_PASSWORD for scripted use)."""
+    import getpass
+    import os
+
+    from regtrack import auth
+
+    pw = os.getenv("REGTRACK_NEW_PASSWORD")
+    if not pw:
+        pw = getpass.getpass("New password: ")
+        if getpass.getpass("Repeat it: ") != pw:
+            raise SystemExit("the passwords differ")
+    if problem := auth.password_problem(pw):
+        raise SystemExit(problem)
+    return pw
+
+
+def cmd_user(args) -> int:
+    from regtrack import auth
+    from regtrack.db import connect
+
+    email = (args.email or "").strip().lower()
+    with connect() as conn:
+        if args.action == "list":
+            for u in conn.execute(
+                "SELECT email, name, role, is_active, password_hash IS NOT NULL AS pw, last_login_at "
+                "FROM users ORDER BY email"
+            ):
+                print(
+                    f"{u['email']:<36} {u['name']:<24} {u['role']:<7} {'active' if u['is_active'] else 'disabled':<9}"
+                    f" {'password set' if u['pw'] else 'no password':<13} last sign-in: {u['last_login_at'] or '-'}"
+                )
+            return 0
+        if not email:
+            raise SystemExit("an e-mail address is required")
+        u = conn.execute("SELECT id FROM users WHERE email=%s", (email,)).fetchone()
+        if args.action == "add":
+            if u:
+                raise SystemExit("a user with this e-mail address exists (use: user passwd)")
+            if args.role not in auth.ROLES:
+                raise SystemExit("role is one of " + ", ".join(auth.ROLES))
+            pw = _ask_password()
+            conn.execute(
+                "INSERT INTO users (email, name, role, password_hash) VALUES (%s,%s,%s,%s)",
+                (email, args.name or email.split("@")[0], args.role, auth.hash_password(pw)),
+            )
+            conn.commit()
+            print(f"created {email} ({args.role})")
+            return 0
+        if not u:
+            raise SystemExit("no such user")
+        if args.action == "passwd":
+            auth.set_password(u["id"], _ask_password())
+            print(f"password changed for {email}; their sessions were signed out")
+        elif args.action == "disable":
+            conn.execute("UPDATE users SET is_active=false WHERE id=%s", (u["id"],))
+            conn.commit()
+            auth.end_sessions(u["id"])
+            print(f"disabled {email}")
     return 0
 
 
@@ -230,6 +293,12 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--limit", type=int)
     sp.add_argument("--workers", type=int, default=2)
     sp.set_defaults(fn=cmd_run)
+    sp = sub.add_parser("user", help="portal sign-in accounts")
+    sp.add_argument("action", choices=["add", "passwd", "list", "disable"])
+    sp.add_argument("email", nargs="?")
+    sp.add_argument("--name")
+    sp.add_argument("--role", default="viewer")
+    sp.set_defaults(fn=cmd_user)
     sp = sub.add_parser("rederive-mandates")
     sp.add_argument("--doc", action="append", help="limit the rule-obligation pass to this notification (repeatable)")
     sp.add_argument("--apply", action="store_true")

@@ -15,8 +15,9 @@ from datetime import date, datetime
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
-from regtrack import country, segments
+from regtrack import auth, country, segments
 from regtrack.api import sql as S
 from regtrack.api.params import VARIANT, YEAR, CountryParam, parse_variant, parse_year, resolve_country
 from regtrack.db import connect
@@ -29,14 +30,27 @@ app = FastAPI(
     version="0.1.0",
     description="Indian vehicle regulations (ARAI AIS, MoRTH Gazette, e-Gazette, India Code) - read only",
 )
-# the dashboard (Vite dev server / preview) calls this API from the browser
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173", "http://127.0.0.1:4173"],
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
-)
+
+
+@app.middleware("http")
+async def require_sign_in(request: Request, call_next):
+    """Every request except PUBLIC ones needs a signed-in user with the role it calls for (regtrack/auth.py)."""
+    need = auth.needed_role(request.method, request.url.path)
+    if need is None or not auth.required():
+        token = auth.USER.set(auth.ANONYMOUS_ADMIN if not auth.required() else None)
+    else:
+        user = await run_in_threadpool(auth.user_for, request.cookies.get(auth.COOKIE))
+        if not user:
+            return JSONResponse({"detail": "sign in required"}, status_code=401)
+        if not auth.allows(user, need):
+            return JSONResponse(
+                {"detail": f"your role ({user['role']}) cannot do this; it needs {need}"}, status_code=403
+            )
+        token = auth.USER.set(user)
+    try:
+        return await call_next(request)
+    finally:
+        auth.USER.reset(token)
 
 
 @app.middleware("http")
@@ -620,3 +634,63 @@ from regtrack.api.workspace import router as workspace_router  # noqa: E402
 
 app.include_router(portal_router)
 app.include_router(workspace_router)  # teams and users, watches, Ask-AI history, report schedules
+
+
+# ---------------------------------------------------------------- sign-in (regtrack/auth.py)
+def _cookie(response: JSONResponse, request: Request, value: str, max_age: int) -> None:
+    secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+    response.set_cookie(auth.COOKIE, value, max_age=max_age, httponly=True, samesite="lax", secure=secure, path="/")
+
+
+@app.post("/auth/login")
+async def login(request: Request) -> JSONResponse:
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    if auth.locked(email):
+        return JSONResponse({"detail": "too many failed attempts; try again in 15 minutes"}, status_code=429)
+    result = await run_in_threadpool(auth.sign_in, email, body.get("password") or "")
+    if not result:
+        return JSONResponse({"detail": "wrong email or password"}, status_code=401)
+    user, token = result
+    resp = JSONResponse({"user": user})
+    _cookie(resp, request, token, auth.SESSION_HOURS * 3600)
+    return resp
+
+
+@app.post("/auth/logout")
+async def logout(request: Request) -> JSONResponse:
+    await run_in_threadpool(auth.sign_out, request.cookies.get(auth.COOKIE))
+    resp = JSONResponse({"ok": True})
+    _cookie(resp, request, "", 0)
+    return resp
+
+
+@app.post("/auth/password")
+async def change_password(request: Request) -> JSONResponse:
+    """The signed-in user changes their own password: {current, new}. Other sessions are signed out."""
+    body, user = await request.json(), auth.USER.get()
+    if not user or not user.get("id"):
+        return JSONResponse({"detail": "sign in required"}, status_code=401)
+    if not await run_in_threadpool(auth.sign_in, user["email"], body.get("current") or ""):
+        return JSONResponse({"detail": "the current password is wrong"}, status_code=400)
+    if problem := auth.password_problem(body.get("new") or ""):
+        return JSONResponse({"detail": problem}, status_code=400)
+    await run_in_threadpool(auth.set_password, user["id"], body["new"])
+    return JSONResponse({"ok": True, "detail": "password changed; sign in again"})
+
+
+@app.get("/auth/me")
+def me() -> dict:
+    return {"user": auth.USER.get(), "required": auth.required()}
+
+
+# the dashboard (Vite dev server / preview) calls this API from the browser. Added last, so it wraps every other
+# middleware and a 401 from the sign-in check still carries the CORS headers.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173", "http://127.0.0.1:4173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
+)

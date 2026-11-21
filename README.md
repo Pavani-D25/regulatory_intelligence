@@ -264,6 +264,28 @@ drawer. It covers India, Thailand and Malaysia (one country at a time), in-scope
 L1 / L2 / M1 / N1, plus rules for all vehicles). In the design, "Region" is the vehicle category, "Authority" is the
 issuer and "Domain" is the topic.
 
+**Sign-in is mandatory** (`regtrack/auth.py`, migration 0026). Every page and API call needs a signed-in user; only
+`/health` and `/auth/login` are open. A session is an HttpOnly cookie valid for 12 hours; passwords are stored only as
+salted scrypt hashes (10 characters minimum); five wrong passwords for one e-mail lock it for 15 minutes.
+
+| Role | Can |
+|---|---|
+| viewer | see everything, ask questions, keep a personal watch list |
+| editor | also change data: reviews, compliance matrix, KPI scores, alerts, report schedules |
+| admin | also manage users and teams, settings and source syncs |
+
+Create the first administrator on the server (the password is asked twice and never shown):
+
+```powershell
+.venv\Scripts\python -m regtrack.cli user add you@company.com --name "Your Name" --role admin
+.venv\Scripts\python -m regtrack.cli user list            # accounts, roles, last sign-in
+.venv\Scripts\python -m regtrack.cli user passwd EMAIL    # reset a password (signs that user out)
+.venv\Scripts\python -m regtrack.cli user disable EMAIL
+```
+
+After that, admins add users with an initial password on the **Teams** page; everyone can change their own password
+from the menu behind their initials (top right). `AUTH_REQUIRED=false` in `.env` turns sign-in off (tests only).
+
 **Filters in the header, applied on every page** (remembered in the browser, sent with every API request):
 
 | Filter | Values | API parameter |

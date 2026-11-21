@@ -16,6 +16,7 @@ export default function Team() {
   const { data, error, loading } = useLoad(() => Promise.all([portal.team(), portal.watches()]), [tick, version]);
   const [teamName, setTeamName] = useState("");
   const [user, setUser] = useState(null);
+  const [pwFor, setPwFor] = useState(null);  // {id, value}: a password being set
   const [busy, setBusy] = useState(false);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -30,7 +31,7 @@ export default function Team() {
     <section className="view">
       <div className="pagehead">
         <div><h1>Teams &amp; Users</h1><p>Who owns regulations and requirements, and which regulations each team watches.</p></div>
-        <div className="actions"><button className="btn primary" onClick={() => setUser({ name: "", email: "", team_id: dir.teams[0]?.id || "", role: "viewer" })}>Add User</button></div>
+        <div className="actions"><button className="btn primary" onClick={() => setUser({ name: "", email: "", team_id: dir.teams[0]?.id || "", role: "viewer", password: "" })}>Add User</button></div>
       </div>
       <div className="kpis">
         <Kpi label="Teams" value={dir.teams.length} small="Owners of reviews and requirements" corner="◍" />
@@ -47,9 +48,10 @@ export default function Team() {
               <option value="">No team</option>{dir.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
             <label className="formlabel">Role<select className="select" value={user.role} onChange={(e) => setUser({ ...user, role: e.target.value })}>
               {dir.roles.map((r) => <option key={r}>{r}</option>)}</select></label>
+            <label className="formlabel">Initial password<input className="input" type="password" autoComplete="new-password" placeholder="10+ characters" value={user.password} onChange={(e) => setUser({ ...user, password: e.target.value })} /></label>
           </div>
           <div className="actions">
-            <button className="btn primary" disabled={busy || !user.name.trim() || !user.email.trim()}
+            <button className="btn primary" disabled={busy || !user.name.trim() || !user.email.trim() || user.password.length < 10}
               onClick={() => run(() => portal.addUser(user), "User added").then((ok) => ok && setUser(null))}>Add</button>
             <button className="btn secondary" onClick={() => setUser(null)}>Cancel</button>
           </div>
@@ -85,19 +87,29 @@ export default function Team() {
           </div>
         </Card>
       </div>
-      <Card title="Users" sub="A directory of the people on each team (sign-in comes later)">
+      <Card title="Users" sub="People who can sign in: viewers read, editors also make changes, admins also manage users and settings">
         <div className="tablewrap"><table>
-          <thead><tr><th>Name</th><th>E-mail</th><th>Team</th><th>Role</th><th>Added</th><th>Status</th></tr></thead>
+          <thead><tr><th>Name</th><th>E-mail</th><th>Team</th><th>Role</th><th>Last sign-in</th><th>Password</th><th>Status</th></tr></thead>
           <tbody>{dir.users.map((u) => (
             <tr key={u.id}><td><strong>{u.name}</strong></td><td>{u.email}</td>
               <td><select className="select" value={u.team_id || ""} onChange={(e) => run(() => portal.updateUser(u.id, { team_id: Number(e.target.value) || null }), "Team changed")}>
                 <option value="">No team</option>{dir.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></td>
               <td><select className="select" value={u.role} onChange={(e) => run(() => portal.updateUser(u.id, { role: e.target.value }), "Role changed")}>
                 {dir.roles.map((r) => <option key={r}>{r}</option>)}</select></td>
-              <td>{fmt(u.created_at)}</td>
+              <td>{u.last_login_at ? fmt(u.last_login_at) : "never"}</td>
+              <td>{pwFor?.id === u.id ? (
+                <span style={{ display: "flex", gap: 6 }}>
+                  <input className="input" type="password" autoComplete="new-password" placeholder="10+ characters" style={{ width: 150 }}
+                    value={pwFor.value} onChange={(e) => setPwFor({ id: u.id, value: e.target.value })} />
+                  <button className="btn primary" disabled={busy || pwFor.value.length < 10}
+                    onClick={() => run(() => portal.setUserPassword(u.id, pwFor.value), "Password set").then((ok) => ok && setPwFor(null))}>Save</button>
+                  <button className="btn secondary" onClick={() => setPwFor(null)}>Cancel</button>
+                </span>
+              ) : <button className="btn ghost" style={{ padding: 0 }} onClick={() => setPwFor({ id: u.id, value: "" })}>
+                {u.has_password ? "Reset password" : "Set password"}</button>}</td>
               <td><button className="btn ghost" style={{ padding: 0 }} onClick={() => run(() => portal.updateUser(u.id, { is_active: !u.is_active }), u.is_active ? "User deactivated" : "User activated")}>
                 <Badge v={u.is_active ? "Active" : "Inactive"} tone={u.is_active ? "green" : "blue"} /></button></td></tr>))}
-            {!dir.users.length && <tr><td colSpan={6} className="empty">No users yet — add the people on each team.</td></tr>}
+            {!dir.users.length && <tr><td colSpan={7} className="empty">No users yet — add the people on each team.</td></tr>}
           </tbody>
         </table></div>
       </Card>

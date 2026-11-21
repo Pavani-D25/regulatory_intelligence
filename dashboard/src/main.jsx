@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import "./index.css";
 import PortalLayout from "./portal/PortalLayout";
+import Login from "./portal/Login";
 import Dashboard from "./portal/pages/Dashboard";
 import Regulations from "./portal/pages/Regulations";
 import ChangeMonitor from "./portal/pages/ChangeMonitor";
@@ -25,6 +26,7 @@ createRoot(document.getElementById("root")).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
+        <Route path="login" element={<Login />} />
         <Route element={<PortalLayout />}>
           {/* approved portal design (v2) */}
           <Route index element={<Dashboard />} />

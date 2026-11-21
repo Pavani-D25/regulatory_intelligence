@@ -3,7 +3,12 @@ when PostgreSQL is not reachable."""
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# the API tests call it without signing in; tests/test_auth.py turns sign-in on for itself
+os.environ.setdefault("AUTH_REQUIRED", "false")
 
 from regtrack.config import get_settings
 

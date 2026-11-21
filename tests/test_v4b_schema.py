@@ -49,6 +49,7 @@ V4B_TABLES = {
     "client_requirements",
     "client_requirement_regulations",
     "regulation_kpi_scores",  # 0025: team scores of the impact KPIs
+    "user_sessions",  # 0026: portal sign-in sessions
 }
 
 
