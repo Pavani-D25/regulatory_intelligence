@@ -219,3 +219,20 @@
 .rb-many details[open] { padding-bottom: 14px; }
 .rb-many summary { cursor: pointer; padding: 12px 0; display: flex; gap: 12px; font-weight: 600; }
 .rb-many summary span:last-child { font-weight: 400; color: #475569; }
+
+/* compact multi-select (regulation code filter) */
+.multiselect { position: relative; display: block; }
+.multiselect .yf-btn { width: 100%; }
+.ms-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; text-align: left; }
+.ms-pop { position: absolute; left: 0; top: calc(100% + 6px); z-index: 60; width: 320px; max-width: calc(100vw - 32px); background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 23, 42, .16); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.ms-pop > .input { width: 100%; }
+.ms-list { max-height: 260px; overflow-y: auto; border: 1px solid #f1f5f9; border-radius: 8px; }
+.ms-group { display: flex; gap: 8px; align-items: center; padding: 7px 10px; background: #f8fafc; font-weight: 650; font-size: 12.5px; position: sticky; top: 0; cursor: pointer; border-bottom: 1px solid #eef2f7; }
+.ms-item { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; padding: 6px 10px 6px 22px; font-size: 13px; cursor: pointer; }
+.ms-item:hover { background: #f8fafc; }
+.ms-pop .yf-foot .btn { padding: 6px 12px; }
+.rp-codes { flex: 0 1 230px; min-width: 180px; }
+.rp { overflow: visible; }
+.rp-top { border-radius: 10px 10px 0 0; }
+.rp-list { border-radius: 0 0 10px 10px; }
+.rp-top .ms-pop > .input, .ms-pop > .input { flex: none; height: auto; }

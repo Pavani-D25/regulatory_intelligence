@@ -3,7 +3,7 @@ import { fileUrl, groupSummaryPdfUrl, portal, regSummariesPdfUrl, regSummaryPdfU
 import GroupSummaryView from "./CatSummary";
 import { RegSummaryView } from "./RegSummary";
 import { usePortal } from "./PortalLayout";
-import { Card, fmt, yearLabel, YearFilter } from "./ui";
+import { Card, fmt, MultiSelect, yearLabel, YearFilter } from "./ui";
 
 const TYPES = [
   ["regulation", "Regulations", "One or several regulations in detail: facts, impact and KPI, obligations, related documents, versions"],
@@ -14,19 +14,55 @@ const POWERTRAINS = [["", "All powertrains"], ["ev", "EV"], ["hybrid", "Hybrid"]
 const MAX = 25; // regulations per report (the API's MAX_SUMMARIES)
 const LIST = 200; // rows the picker shows before asking to narrow the search
 
-// Choose regulations from a list narrowed by the year / powertrain filters and a search: tick one or several
+// The code series a regulation belongs to, for the code filter: an AIS series (AIS-038, with its revisions, amendments
+// and drafts), G.S.R. / S.O. notifications by year, a TIS number, else the ID's prefix
+const PREFIX = {
+  DOC: "Other MoRTH documents", NOTIF: "Notifications without a G.S.R. / S.O. number", TAP: "TAP-115/116",
+  MY: "Malaysia documents", PUA: "P.U.(A) regulations",
+};
+function codeOf(id) {
+  let m = id.match(/^AIS-\d{3}/);
+  if (m) return { value: m[0], label: m[0], group: "AIS standards" };
+  m = id.match(/^(GSR|SO)-.*-(\d{4})$/);
+  if (m) return { value: `${m[1]}-${m[2]}`, label: `${m[1] === "GSR" ? "G.S.R." : "S.O."} ${m[2]}`, group: m[1] === "GSR" ? "G.S.R. notifications" : "S.O. notifications" };
+  m = id.match(/^TIS-\d+/);
+  if (m) return { value: m[0], label: m[0], group: "TIS standards" };
+  const pre = (id.match(/^[A-Z]+/) || ["Other"])[0];
+  return { value: pre, label: PREFIX[pre] || pre, group: "Other" };
+}
+const GROUP_ORDER = ["AIS standards", "G.S.R. notifications", "S.O. notifications", "TIS standards", "Other"];
+
+// Choose regulations from a list narrowed by the year / powertrain filters, the code filter and a search: tick one or several
 function RegPicker({ regs, loading, selected, setSelected }) {
   const [q, setQ] = useState("");
+  const [codes, setCodes] = useState([]);
+  const codeOptions = useMemo(() => {
+    const m = new Map();
+    regs.forEach((r) => {
+      const c = codeOf(r.canonical_id);
+      m.set(c.value, { ...c, n: (m.get(c.value)?.n || 0) + 1 });
+    });
+    const g = (o) => GROUP_ORDER.indexOf(o.group);
+    // AIS by number, notifications newest year first
+    return [...m.values()].sort((a, b) => g(a) - g(b) || (a.group.includes("notifications") ? b.value.localeCompare(a.value) : a.value.localeCompare(b.value)));
+  }, [regs]);
+  useEffect(() => { setCodes((cs) => cs.filter((c) => codeOptions.some((o) => o.value === c))); }, [codeOptions]);
   const shown = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    return ql ? regs.filter((r) => `${r.canonical_id} ${r.name || ""} ${r.subtitle || ""} ${r.domain || ""}`.toLowerCase().includes(ql)) : regs;
-  }, [regs, q]);
+    const cs = new Set(codes);
+    return regs.filter((r) => (!cs.size || cs.has(codeOf(r.canonical_id).value))
+      && (!ql || `${r.canonical_id} ${r.name || ""} ${r.subtitle || ""} ${r.domain || ""}`.toLowerCase().includes(ql)));
+  }, [regs, q, codes]);
   const sel = new Set(selected);
   const toggle = (id) => setSelected(sel.has(id) ? selected.filter((x) => x !== id) : selected.length < MAX ? [...selected, id] : selected);
   const addShown = () => setSelected([...selected, ...shown.map((r) => r.canonical_id).filter((id) => !sel.has(id))].slice(0, MAX));
   return (
     <div className="rp">
       <div className="rp-top">
+        <div className="rp-codes" title="Show only regulations of these code series">
+          <MultiSelect options={codeOptions} value={codes} onChange={setCodes} allLabel="All codes" noun="codes"
+            label="Regulation code" searchHint="Search a code, e.g. AIS-038, G.S.R. 2022" />
+        </div>
         <input className="input" placeholder="Search by ID, title or topic, e.g. ABS, GSR-310, emission" value={q} onChange={(e) => setQ(e.target.value)} />
         <span className="sub">{loading ? "Loading…" : `${shown.length} of ${regs.length} regulations`}</span>
         <button type="button" className="btn ghost" disabled={!shown.length || selected.length >= MAX} onClick={addShown}

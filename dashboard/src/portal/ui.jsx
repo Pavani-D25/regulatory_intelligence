@@ -218,3 +218,64 @@ export function YearFilter({ value, years = [], onChange, label = "Year", disabl
     </div>
   );
 }
+
+// A compact multi-select: a button ("All codes" / "3 selected") opening a panel with a search, grouped tick boxes and
+// "all" per group, in a short scrolling list. options: [{ value, label, group, n }]; value: the chosen values.
+export function MultiSelect({ options, value, onChange, allLabel = "All", noun = "selected", label = "Filter", searchHint = "Search…" }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const sel = new Set(value);
+  const ql = q.trim().toLowerCase();
+  const shown = ql ? options.filter((o) => `${o.value} ${o.label}`.toLowerCase().includes(ql)) : options;
+  const groups = [];
+  shown.forEach((o) => {
+    let g = groups.find((x) => x.name === o.group);
+    if (!g) groups.push((g = { name: o.group, items: [] }));
+    g.items.push(o);
+  });
+  const toggle = (v) => onChange(sel.has(v) ? value.filter((x) => x !== v) : [...value, v]);
+  const setGroup = (items, on) => {
+    const vs = items.map((o) => o.value);
+    onChange(on ? [...value, ...vs.filter((v) => !sel.has(v))] : value.filter((v) => !vs.includes(v)));
+  };
+  const text = !value.length ? allLabel : value.length === 1 ? (options.find((o) => o.value === value[0])?.label || value[0]) : `${value.length} ${noun}`;
+  return (
+    <div className="multiselect" ref={box}>
+      <button type="button" className="select yf-btn" aria-label={label} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="ms-text">{text}</span><span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="ms-pop" role="dialog" aria-label={label}>
+          <input className="input" autoFocus placeholder={searchHint} value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="ms-list">
+            {groups.map((g) => {
+              const on = g.items.every((o) => sel.has(o.value));
+              return (
+                <div key={g.name}>
+                  <label className="ms-group"><input type="checkbox" checked={on} onChange={() => setGroup(g.items, !on)} />
+                    {g.name} <span className="sub">({g.items.length})</span></label>
+                  {g.items.map((o) => (
+                    <label key={o.value} className="ms-item"><input type="checkbox" checked={sel.has(o.value)} onChange={() => toggle(o.value)} />
+                      <span>{o.label}</span>{o.n != null && <span className="sub">{o.n}</span>}</label>))}
+                </div>);
+            })}
+            {!groups.length && <div className="sub" style={{ padding: 10 }}>Nothing matches.</div>}
+          </div>
+          <div className="yf-foot">
+            <button type="button" className="btn ghost" disabled={!value.length} onClick={() => onChange([])}>Clear</button>
+            <span className="sub">{value.length ? `${value.length} ${noun}` : allLabel}</span>
+            <button type="button" className="btn primary" onClick={() => setOpen(false)}>Done</button>
+          </div>
+        </div>)}
+    </div>
+  );
+}
