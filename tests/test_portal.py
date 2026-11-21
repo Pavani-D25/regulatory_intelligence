@@ -527,6 +527,16 @@ def test_regulation_summary_json_and_pdf(client):
     assert client.get(f"/portal/regulations/{cid}/summary", params={"fmt": "docx"}).status_code == 400
 
 
+def test_regulations_domain_filter(client):
+    """Regulations › Domain filter: one topic or several (comma-separated), any of them."""
+    allrows = client.get("/portal/regulations").json()["rows"]
+    em = client.get("/portal/regulations", params={"domain": "emission"}).json()["rows"]
+    assert em and all("emission" in r["domains"] for r in em)
+    assert len(em) == sum(1 for r in allrows if "emission" in (r["domains"] or []))
+    both = client.get("/portal/regulations", params={"domain": "emission,braking"}).json()["rows"]
+    assert len(both) == sum(1 for r in allrows if {"emission", "braking"} & set(r["domains"] or []))
+
+
 def test_several_regulation_summaries(client):
     """Report builder with several regulations: their summaries together, one PDF with an index."""
     ids = [r["canonical_id"] for r in client.get("/portal/regulations").json()["rows"][:3]]

@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
-import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId, SegmentPicker } from "../ui";
+import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, MultiSelect, OfficialId, SegmentPicker } from "../ui";
 
 const PAGE = 50;
 const IMPACT_RANK = { High: 0, Medium: 1, Low: 2 };
@@ -35,13 +35,15 @@ export default function Regulations() {
   const [sp, setSp] = useSearchParams();
   const f = {
     q: sp.get("q") || "", category: sp.get("category") || "", impact: sp.get("impact") || "", status: sp.get("status") || "",
-    month: sp.get("month") || "", segment: sp.get("segment") || "", history: sp.get("history") === "1", reference: sp.get("reference") === "1",
+    month: sp.get("month") || "", segment: sp.get("segment") || "", domain: sp.get("domain") || "", history: sp.get("history") === "1", reference: sp.get("reference") === "1",
   };
   const set = (k, v) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); setSp(n, { replace: true }); };
   const { openReg, meta, version, country, countryName } = usePortal();
   const { data, error, loading } = useLoad(
-    () => portal.regulations({ q: f.q, category: f.category, impact: f.impact, status: f.status, history: f.history, reference: f.reference, segment: f.segment }),
-    [f.q, f.category, f.impact, f.status, f.history, f.reference, f.segment, version]);
+    () => portal.regulations({ q: f.q, category: f.category, impact: f.impact, status: f.status, history: f.history, reference: f.reference, segment: f.segment, domain: f.domain }),
+    [f.q, f.category, f.impact, f.status, f.history, f.reference, f.segment, f.domain, version]);
+  const domains = [...(meta?.domains || [])].sort((a, b) => a.label.localeCompare(b.label))
+    .map((d) => ({ value: d.code, label: d.label, group: "Domains" }));
   const [sort, setSort] = useState({ key: "effective", dir: -1 });
   const [page, setPage] = useState(0);
   const cats = [["", "All categories"], ...(meta?.categories || []).map((c) => [c.code, c.label])];
@@ -82,6 +84,10 @@ export default function Regulations() {
             onKeyDown={(e) => { if (e.key === "Enter") set("q", e.target.value.trim()); }} onBlur={(e) => set("q", e.target.value.trim())} />
           <select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>
             {cats.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          <div className="fb-domain" title="Show regulations on these domains (topics)">
+            <MultiSelect options={domains} value={f.domain ? f.domain.split(",") : []} onChange={(v) => set("domain", v.join(","))}
+              allLabel="All domains" noun="domains" label="Domain" searchHint="Search a domain, e.g. emission, braking" />
+          </div>
           <select className="select" value={f.impact} onChange={(e) => set("impact", e.target.value)}>
             <option value="">All impact</option><option>High</option><option>Medium</option><option>Low</option></select>
           <select className="select" value={f.status} onChange={(e) => set("status", e.target.value)}>

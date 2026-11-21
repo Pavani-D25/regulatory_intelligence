@@ -236,3 +236,7 @@
 .rp-top { border-radius: 10px 10px 0 0; }
 .rp-list { border-radius: 0 0 10px 10px; }
 .rp-top .ms-pop > .input, .ms-pop > .input { flex: none; height: auto; }
+.fb-domain { min-width: 170px; }
+.fb-domain .ms-pop { width: 300px; }
+.filterbar{grid-template-columns:1.8fr repeat(4,1fr) auto}
+@media(max-width:1150px){.filterbar{grid-template-columns:1fr 1fr}}

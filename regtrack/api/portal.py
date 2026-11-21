@@ -531,8 +531,10 @@ def regulation_list(
     history: bool = False,
     reference: bool = False,
     segment: str | None = None,
+    domain: str | None = None,
     cc: CountryParam = None,
 ) -> dict:
+    """domain: one topic code or several, comma-separated (emission,braking): regulations tagged with any of them."""
     today = date.today()
     cc = resolve_country(cc)
     with connect() as conn:
@@ -564,6 +566,9 @@ def regulation_list(
                 str(r.get(k) or "") for k in ("canonical_id", "name", "subtitle", "authority", "domain")
             ).lower()
         ]
+    domains = {d.strip().lower() for d in (domain or "").split(",") if d.strip()}
+    if domains:
+        rows = [r for r in rows if domains & set(r["domains"] or [])]
     if impact in ("High", "Medium", "Low"):
         rows = [r for r in rows if r["impact"] == impact]
     if status in STATUSES:
