@@ -631,15 +631,25 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
 @router.get("/categories/{category}/summary")
 def category_summary(category: str, fmt: str = "json", cc: CountryParam = None):
     """The summary of one vehicle category (regtrack/api/catsummary.py): JSON for the portal, ?fmt=pdf to download."""
+    return _group_summary("category", category, fmt, cc)
+
+
+@router.get("/topics/{topic}/summary")
+def topic_summary(topic: str, fmt: str = "json", cc: CountryParam = None):
+    """The summary of one topic (domain, e.g. emissions): the same report as a category summary, by topic."""
+    return _group_summary("topic", topic, fmt, cc)
+
+
+def _group_summary(kind: str, code: str, fmt: str, cc: str | None):
     from regtrack.api import catsummary
     from regtrack.api.pdfkit import safe_name
 
     cc = resolve_country(cc)
     if fmt not in ("json", "pdf"):
         raise HTTPException(400, "fmt is json or pdf")
-    s = catsummary.build(category.upper(), cc)
+    s = catsummary.build(kind, code, cc)
     if fmt == "pdf":
-        name = safe_name(cc, s["category"], "category_summary")
+        name = safe_name(cc, s["code"], f"{kind}_summary")
         return Response(
             catsummary.pdf(s),
             media_type="application/pdf",

@@ -1,14 +1,17 @@
 import { useState } from "react";
-import { catSummaryPdfUrl, portal } from "../api";
+import { catSummaryPdfUrl, portal, topicSummaryPdfUrl } from "../api";
 import { Obligations } from "./RegSummary";
 import { Badge, Card } from "./ui";
 
 const SHOWN = 25;  // register rows before "Show all"
 
-// Reports › Category summary: pick a vehicle category, read its summary, download it as a PDF
+// Reports › Category summary: pick a vehicle category or a topic (emission, braking...), read its summary, download a PDF
 export default function CatSummary({ meta, openReg }) {
-  const cats = meta?.categories || [];
+  const [kind, setKind] = useState("category");
+  const cats = kind === "category" ? (meta?.categories || [])
+    : [...(meta?.domains || [])].sort((a, b) => a.label.localeCompare(b.label));
   const [cat, setCat] = useState("");
+  const pdfUrl = (k, code) => (k === "topic" ? topicSummaryPdfUrl(code) : catSummaryPdfUrl(code));
   const [s, setS] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -17,21 +20,28 @@ export default function CatSummary({ meta, openReg }) {
   const view = async () => {
     if (!cat) return;
     setBusy(true); setErr(""); setAll(false);
-    try { setS(await portal.catSummary(cat)); } catch (e) { setErr(e.message); setS(null); } finally { setBusy(false); }
+    try { setS(await (kind === "topic" ? portal.topicSummary(cat) : portal.catSummary(cat))); } catch (e) { setErr(e.message); setS(null); } finally { setBusy(false); }
   };
   const Id = ({ id }) => <button className="btn ghost mono" style={{ padding: 0 }} onClick={() => openReg(id)}>{id}</button>;
 
   return (
-    <Card title="Category Summary" sub="Choose a vehicle category to see its regulatory summary and download it as a PDF; follows the year and powertrain filters">
+    <Card title="Category Summary" sub="Summarise one vehicle category or one topic (emission, braking, lighting…) and download it as a PDF; follows the year and powertrain filters">
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label className="formlabel" style={{ flex: "0 1 360px" }}>Vehicle category
+        <label className="formlabel">Summary by
+          <div className="seg" style={{ display: "flex", gap: 4 }}>
+            {[["category", "Vehicle category"], ["topic", "Topic"]].map(([k, l]) => (
+              <button key={k} className={`btn ${kind === k ? "primary" : "secondary"}`}
+                onClick={() => { setKind(k); setCat(""); setS(null); setErr(""); }}>{l}</button>))}
+          </div>
+        </label>
+        <label className="formlabel" style={{ flex: "0 1 360px" }}>{kind === "topic" ? "Topic" : "Vehicle category"}
           <select className="select" value={cat} onChange={(e) => { setCat(e.target.value); setS(null); }}>
-            <option value="">Choose a category…</option>
+            <option value="">{kind === "topic" ? "Choose a topic…" : "Choose a category…"}</option>
             {cats.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </label>
         <button className="btn primary" disabled={!cat || busy} onClick={view}>{busy ? "Loading…" : "View summary"}</button>
-        {cat && <a className="btn secondary" href={catSummaryPdfUrl(cat)}>⤓ Download PDF</a>}
+        {cat && <a className="btn secondary" href={pdfUrl(kind, cat)}>⤓ Download PDF</a>}
       </div>
       {err && <p className="note" style={{ color: "var(--red)" }}>{err}</p>}
 
@@ -40,9 +50,9 @@ export default function CatSummary({ meta, openReg }) {
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div>
               <h2 style={{ margin: 0, fontSize: 22 }}>{s.label}</h2>
-              <div className="sub" style={{ marginTop: 4 }}>{s.country_name} · filters: {s.filters} · {s.note}</div>
+              <div className="sub" style={{ marginTop: 4 }}>{s.kind_label} · {s.country_name} · filters: {s.filters} · {s.note}</div>
             </div>
-            <a className="btn primary" href={catSummaryPdfUrl(s.category)}>⤓ Download PDF</a>
+            <a className="btn primary" href={pdfUrl(s.kind, s.code)}>⤓ Download PDF</a>
           </div>
 
           <div className="kpis" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
@@ -54,9 +64,9 @@ export default function CatSummary({ meta, openReg }) {
           </div>
 
           <div className="grid3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", alignItems: "start" }}>
-            <div><h3 style={{ fontSize: 15, margin: "0 0 8px" }}>Regulations by topic</h3>
-              <div className="tablewrap"><table><thead><tr><th>Topic</th><th>Regulations</th><th>High impact</th></tr></thead>
-                <tbody>{s.topics.map((t) => <tr key={t.topic}><td>{t.topic}</td><td>{t.regulations}</td><td>{t.high}</td></tr>)}</tbody>
+            <div><h3 style={{ fontSize: 15, margin: "0 0 8px" }}>{s.breakdown.title}</h3>
+              <div className="tablewrap"><table><thead><tr><th>{s.breakdown.label}</th><th>Regulations</th><th>High impact</th></tr></thead>
+                <tbody>{s.breakdown.rows.map((g) => <tr key={g.name}><td>{g.name}</td><td>{g.regulations}</td><td>{g.high}</td></tr>)}</tbody>
               </table></div></div>
             <div><h3 style={{ fontSize: 15, margin: "0 0 8px" }}>Highest impact regulations (KPI score)</h3>
               <div className="tablewrap"><table><thead><tr><th>Regulation</th><th>Title</th><th>KPI</th></tr></thead>

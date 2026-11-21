@@ -521,13 +521,24 @@ def test_regulation_summary_json_and_pdf(client):
 def test_category_summary_json_and_pdf(client):
     """Reports › Category summary: one vehicle category's figures, topics, obligations, changes and register."""
     s = client.get("/portal/categories/L2/summary").json()
-    assert s["category"] == "L2" and s["figures"][0][1] == len(s["register"]) > 0
+    assert s["code"] == "L2" and s["kind"] == "category" and s["figures"][0][1] == len(s["register"]) > 0
     rows = client.get("/portal/regulations", params={"category": "L2"}).json()["rows"]
     assert len(s["register"]) == len(rows)  # the same regulations as the Regulations page for L2
-    for key in ("topics", "upcoming", "top_impact", "changes"):
+    for key in ("upcoming", "top_impact", "changes"):
         assert isinstance(s[key], list)
     r = client.get("/portal/categories/m1/summary", params={"fmt": "pdf"})
     assert r.status_code == 200 and r.content[:4] == b"%PDF" and "attachment" in r.headers["content-disposition"]
     assert client.get("/portal/categories/ZZ/summary").status_code == 404
     y = client.get("/portal/meta").json()["years"][0]
     assert len(client.get("/portal/categories/L2/summary", params={"year": y}).json()["register"]) <= len(rows)
+
+
+def test_topic_summary_json_and_pdf(client):
+    """Reports › Category summary by topic (e.g. emissions): the regulations tagged with it, by vehicle category."""
+    s = client.get("/portal/topics/EMISSION/summary").json()
+    assert s["kind"] == "topic" and s["code"] == "emission" and s["breakdown"]["label"] == "Vehicle category"
+    rows = [r for r in client.get("/portal/regulations").json()["rows"] if "emission" in (r["domains"] or [])]
+    assert len(s["register"]) == len(rows) > 0
+    r = client.get("/portal/topics/braking/summary", params={"fmt": "pdf"})
+    assert r.status_code == 200 and r.content[:4] == b"%PDF"
+    assert client.get("/portal/topics/no_such_topic/summary").status_code == 404
