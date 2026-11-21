@@ -95,14 +95,66 @@
 .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .segpick{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.segpick .select{min-width:0;max-width:100%}
 
-/* sign-in page */
-.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #13233f; padding: 16px; }
-.login-card { width: 100%; max-width: 400px; background: #fff; border-radius: 14px; padding: 32px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
-.login-card h1 { font-size: 22px; margin: 6px 0 0; }
-.login-brand { padding: 0; }
-.login-brand strong { color: #13233f; }
-.login-sub, .login-foot { color: #6b7280; font-size: 13px; margin: 0; }
-.login-error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; font-size: 13px; margin: 0; }
-.login-btn { justify-content: center; padding: 10px; }
+/* sign-in page: brand panel + form */
+.lg-page { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); background: var(--bg); }
+.lg-hero { position: relative; overflow: hidden; color: #e5ecf6; display: flex; align-items: center; padding: 56px;
+  background: radial-gradient(1200px 600px at -10% -10%, #1e3a8a 0%, transparent 55%),
+              radial-gradient(900px 500px at 110% 110%, #0f766e 0%, transparent 50%), #0f172a; }
+.lg-hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .07;
+  background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px);
+  background-size: 44px 44px; }
+.lg-hero-inner { position: relative; z-index: 1; max-width: 520px; }
+.lg-logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 16px; color: #fff; }
+.lg-mark { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-weight: 800;
+  font-size: 15px; letter-spacing: .5px; color: #fff; background: linear-gradient(135deg, var(--blue), #7c3aed);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, .35); }
+.lg-title { font-size: 40px; line-height: 1.12; font-weight: 750; letter-spacing: -.5px; color: #fff; margin: 40px 0 14px; }
+.lg-lead { font-size: 17px; line-height: 1.55; color: #b8c4d6; margin: 0 0 34px; }
+.lg-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.lg-points li { display: flex; gap: 14px; align-items: flex-start; }
+.lg-points strong { display: block; color: #fff; font-size: 15px; margin-bottom: 2px; }
+.lg-points span { color: #b8c4d6; font-size: 14px; line-height: 1.5; }
+.lg-check { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px;
+  font-weight: 800; color: #0f172a; background: #5eead4; margin-top: 1px; }
+.lg-countries { margin: 38px 0 0; padding-top: 22px; border-top: 1px solid rgba(255, 255, 255, .12); color: #94a3b8;
+  font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; }
+
+.lg-main { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; gap: 18px; }
+.lg-card { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+  padding: 38px 36px; box-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 18px 40px -12px rgba(16, 24, 40, .14);
+  display: flex; flex-direction: column; }
+.lg-logo-dark { display: none; color: var(--text); margin-bottom: 26px; }
+.lg-card h2 { font-size: 26px; font-weight: 750; letter-spacing: -.3px; margin: 0 0 6px; color: var(--text); }
+.lg-sub { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 26px; }
+.lg-label { font-size: 13px; font-weight: 650; color: var(--text); margin: 0 0 7px; }
+.lg-input { width: 100%; height: 46px; border: 1px solid #cfd7e3; border-radius: 10px; padding: 0 14px; font-size: 15px;
+  color: var(--text); background: #fff; outline: none; transition: border-color .15s, box-shadow .15s; margin-bottom: 18px; }
+.lg-input::placeholder { color: #a0aabb; }
+.lg-input:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(37, 99, 235, .14); }
+.lg-pw { position: relative; }
+.lg-pw .lg-input { padding-right: 72px; }
+.lg-toggle { position: absolute; right: 6px; top: 6px; height: 34px; padding: 0 12px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--blue); font-weight: 650; font-size: 13px; cursor: pointer; }
+.lg-toggle:hover { background: #eef3fe; }
+.lg-hint { margin: -10px 0 14px; font-size: 12.5px; color: var(--amber); }
+.lg-error { margin: 0 0 16px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; color: var(--red);
+  background: #fef2f2; border: 1px solid #fecaca; }
+.lg-submit { height: 48px; border: 0; border-radius: 10px; font-size: 15px; font-weight: 700; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, var(--blue), var(--blue2)); box-shadow: 0 8px 20px -6px rgba(37, 99, 235, .55);
+  display: flex; align-items: center; justify-content: center; gap: 10px; transition: filter .15s, transform .05s; }
+.lg-submit:hover:not(:disabled) { filter: brightness(1.06); }
+.lg-submit:active:not(:disabled) { transform: translateY(1px); }
+.lg-submit:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+.lg-spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .45); border-top-color: #fff;
+  animation: lg-spin .7s linear infinite; }
+@keyframes lg-spin { to { transform: rotate(360deg); } }
+.lg-foot { margin: 20px 0 0; text-align: center; color: var(--muted); font-size: 13px; }
+.lg-legal { max-width: 420px; text-align: center; color: #94a3b8; font-size: 12px; line-height: 1.5; margin: 0; }
+@media (max-width: 900px) {
+  .lg-page { grid-template-columns: 1fr; }
+  .lg-hero { display: none; }
+  .lg-logo-dark { display: flex; }
+  .lg-card { padding: 30px 22px; }
+}
 .usermenu { position: absolute; right: 0; top: 44px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.12); padding: 12px; min-width: 240px; z-index: 50; display: flex; flex-direction: column; gap: 8px; }
 .usermenu small { color: #6b7280; }
