@@ -10,12 +10,23 @@ export const COUNTRIES = [["IN", "India"], ["TH", "Thailand"], ["MY", "Malaysia"
 // views of the approved design, in its order; "Tools" are the earlier RegTrack pages kept reachable
 const NAV = [
   ["/", "▦", "Dashboard"], ["/regulations", "≡", "Regulations"], ["/changes", "↻", "Change Monitor"],
-  ["/compliance", "✓", "Compliance Matrix"], ["/requirements", "▥", "Requirements Register"], ["/impact", "⌁", "Impact View"], ["/ai", "✦", "Ask Regulatory AI"],
-  ["/reports", "▤", "Reports"], ["/alerts", "◉", "Alerts"], ["/team", "◍", "Teams"], ["/admin", "⚙", "Admin"],
+  // ["/compliance", "✓", "Compliance Matrix"], ["/requirements", "▥", "Requirements Register"], ["/impact", "⌁", "Impact View"],
+  ["/ai", "✦", "Ask Regulatory AI"],
+  ["/reports", "▤", "Reports"],
+  // ["/alerts", "◉", "Alerts"], ["/team", "◍", "Teams"],
+  ["/admin", "⚙", "Admin"],
 ];
 const VARIANTS = [["", "All powertrains"], ["ev", "EV"], ["hybrid", "Hybrid"], ["ice", "ICE"]];
-const TOOLS = [["/vehicle", "◎", "Vehicle Check"], ["/versions", "⇄", "Versions"]];
-const TITLES = Object.fromEntries([...NAV, ...TOOLS, ["/search", "", "Search"], ["/doc", "", "Document"]].map(([p, , t]) => [p, t]));
+const TOOLS = [
+  // ["/vehicle", "◎", "Vehicle Check"],
+  ["/versions", "⇄", "Versions"],
+];
+// pages left out of the menu above for now: still reachable by their address, so they keep their titles
+const HIDDEN = [
+  ["/compliance", "", "Compliance Matrix"], ["/requirements", "", "Requirements Register"], ["/impact", "", "Impact View"],
+  ["/alerts", "", "Alerts"], ["/team", "", "Teams"], ["/vehicle", "", "Vehicle Check"],
+];
+const TITLES = Object.fromEntries([...NAV, ...TOOLS, ...HIDDEN, ["/search", "", "Search"], ["/doc", "", "Document"]].map(([p, , t]) => [p, t]));
 const REL_LABEL = {
   amends: "Amends", supersedes: "Supersedes", finalises: "Finalises draft", extends_date: "Extends dates in",
   substitutes_row: "Substitutes rows in", inserts_row: "Inserts rows in", omits_row: "Omits rows in", corrects: "Corrects",
