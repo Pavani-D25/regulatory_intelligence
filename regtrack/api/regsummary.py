@@ -7,9 +7,7 @@ versions, the latest detected change and the original file. `pdf` renders that s
 
 from __future__ import annotations
 
-import io
 from datetime import date, datetime
-from pathlib import Path
 
 from regtrack.api import sql as S
 from regtrack.db import connect
@@ -157,203 +155,115 @@ def build(canonical_id: str, cc: str) -> dict:
 
 
 # ---------------------------------------------------------------- PDF
-def _fonts() -> tuple[str, str]:
-    """A Unicode face for ≤ and the like (Segoe UI / DejaVu when present), else Helvetica."""
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-
-    for regular, bold in (
-        (r"C:\Windows\Fonts\segoeui.ttf", r"C:\Windows\Fonts\segoeuib.ttf"),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-    ):
-        if Path(regular).exists() and Path(bold).exists():
-            if "RT" not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont("RT", regular))
-                pdfmetrics.registerFont(TTFont("RTB", bold))
-            return "RT", "RTB"
-    return "Helvetica", "Helvetica-Bold"
-
-
 def pdf(s: dict) -> bytes:
-    from xml.sax.saxutils import escape
+    from reportlab.platypus import Spacer
 
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from regtrack.api.pdfkit import Kit
 
-    reg, bold = _fonts()
-    if reg == "Helvetica":  # no Unicode face: plain ASCII comparisons
-        tr = str.maketrans({"≤": "<=", "≥": ">=", "–": "-", "·": "-", "’": "'"})
-    else:
-        tr = None
-    navy, accent, body, muted, rule, band = (
-        colors.HexColor(c) for c in ("#13233F", "#A84E14", "#2D3748", "#5A6578", "#D9D4C7", "#F3F1EB")
-    )
-    st = {
-        "title": ParagraphStyle("t", fontName=bold, fontSize=17, leading=22, textColor=navy),
-        "sub": ParagraphStyle("s", fontName=reg, fontSize=10, leading=14, textColor=muted),
-        "h": ParagraphStyle(
-            "h", fontName=bold, fontSize=12, leading=16, textColor=accent, spaceBefore=12, spaceAfter=5
-        ),
-        "p": ParagraphStyle("p", fontName=reg, fontSize=9.5, leading=14, textColor=body, spaceAfter=4),
-        "cell": ParagraphStyle("c", fontName=reg, fontSize=8.5, leading=11.5, textColor=body),
-        "cellb": ParagraphStyle("cb", fontName=bold, fontSize=8.5, leading=11.5, textColor=navy),
-        "head": ParagraphStyle("hd", fontName=bold, fontSize=8.5, leading=11.5, textColor=colors.white),
-        "note": ParagraphStyle("n", fontName=reg, fontSize=8, leading=11, textColor=muted),
-    }
-
-    def t(v) -> str:
-        text = "—" if v in (None, "", []) else str(v)
-        return escape(text.translate(tr) if tr else text)
-
-    def P(v, style="p"):
-        return Paragraph(t(v), st[style])
-
-    width = A4[0] - 36 * mm
-
-    def table(head, rows, widths, bold_first=True):
-        data = [[Paragraph(t(h), st["head"]) for h in head]]
-        data += [
-            [Paragraph(t(c), st["cellb" if i == 0 and bold_first else "cell"]) for i, c in enumerate(r)] for r in rows
-        ]
-        tb = Table(data, colWidths=widths, repeatRows=1)
-        tb.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), navy),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, band]),
-                    ("LINEBELOW", (0, 0), (-1, -1), 0.4, rule),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        return tb
-
-    story = [P(s["canonical_id"], "title"), P(s["title"], "sub")]
+    k = Kit()
+    mm, w = k.mm, k.width
+    story = [k.P(s["canonical_id"], "title"), k.P(s["title"], "sub")]
     if s.get("subtitle"):
-        story.append(P(s["subtitle"], "sub"))
+        story.append(k.P(s["subtitle"], "sub"))
     story += [
         Spacer(1, 4),
-        P(f"Regulation summary · {s['country']} · generated {s['generated']}", "note"),
+        k.P(f"Regulation summary · {s['country']} · generated {s['generated']}", "note"),
         Spacer(1, 6),
-        P("Key facts", "h"),
-        table(["Field", "Value"], s["facts"], [45 * mm, width - 45 * mm]),
-        P("Summary", "h"),
-        P(s["summary"]),
+        k.P("Key facts", "h"),
+        k.table(["Field", "Value"], s["facts"], [45 * mm, w - 45 * mm]),
+        k.P("Summary", "h"),
+        k.P(s["summary"]),
     ]
     if s["ai_pending"]:
         story.append(
-            P(
-                "The AI-written summary for this regulation is pending; the text above comes from rule-based "
-                "extraction.",
+            k.P(
+                "The AI-written summary for this regulation is pending; the text above comes from "
+                "rule-based extraction.",
                 "note",
             )
         )
-    story += [P("Detected change", "h"), P(s["change"]), P("Recommended follow-up", "h"), P(s["action"])]
+    story += [k.P("Detected change", "h"), k.P(s["change"]), k.P("Recommended follow-up", "h"), k.P(s["action"])]
     im = s["impact"]
     story += [
-        P("Impact assessment", "h"),
-        P(
+        k.P("Impact assessment", "h"),
+        k.P(
             f"Rule-based impact: {im['level']} ({im['basis']}) · workflow status: {im['workflow']} · "
             f"impact KPI score: {im['kpi_score']} / 100 ({im['kpi_band']})"
         ),
     ]
     if im["kpi"]:
         story.append(
-            table(
+            k.table(
                 ["Criterion", "Weight", "Score", "Points", "Basis and reason"],
                 [
-                    [k["label"], f"{k['weight']}%", f"{k['score']} / 5", k["points"], f"{k['basis']}: {k['reason']}"]
-                    for k in im["kpi"]
+                    [c["label"], f"{c['weight']}%", f"{c['score']} / 5", c["points"], f"{c['basis']}: {c['reason']}"]
+                    for c in im["kpi"]
                 ],
-                [48 * mm, 15 * mm, 15 * mm, 14 * mm, width - 92 * mm],
+                [48 * mm, 15 * mm, 15 * mm, 14 * mm, w - 92 * mm],
             )
         )
     for title, key in (
         ("Obligations set by this regulation", "obligations"),
         ("Obligations citing this regulation as a standard", "cited_by"),
     ):
-        rows = s[key]
-        story.append(P(title, "h"))
-        if rows:
-            story.append(
-                table(
-                    ["Applies from", "Requirement", "Applies to", "Categories", "Standards / basis"],
-                    [
-                        [
-                            r["date"] or "—",
-                            r["requirement"],
-                            r["applies_to"],
-                            ", ".join(r["categories"]),
-                            ", ".join(r["standards"])
-                            + (f" ({r['legal_basis']})" if r["legal_basis"] else "")
-                            + (" [draft]" if r["draft"] else ""),
-                        ]
-                        for r in rows
-                    ],
-                    [22 * mm, width - 112 * mm, 32 * mm, 22 * mm, 36 * mm],
-                    bold_first=False,
-                )
-            )
-        else:
-            story.append(P("None recorded.", "note"))
-    story.append(P("Related documents", "h"))
+        story.append(k.P(title, "h"))
+        story.append(obligations_table(k, s[key]) if s[key] else k.P("None recorded.", "note"))
+    story.append(k.P("Related documents", "h"))
     story.append(
-        table(
-            ["Relation", "Document"], [[r["relation"], r["document"]] for r in s["related"]], [50 * mm, width - 50 * mm]
+        k.table(
+            ["Relation", "Document"], [[r["relation"], r["document"]] for r in s["related"]], [50 * mm, w - 50 * mm]
         )
         if s["related"]
-        else P("None recorded.", "note")
+        else k.P("None recorded.", "note")
     )
     if s["versions"]:
         story += [
-            P("Version history", "h"),
-            table(
+            k.P("Version history", "h"),
+            k.table(
                 ["Version", "Type", "Date", "Current"],
                 [[v["id"], v["type"], v["date"] or "—", "current" if v["current"] else ""] for v in s["versions"]],
-                [60 * mm, 55 * mm, 30 * mm, width - 145 * mm],
+                [60 * mm, 55 * mm, 30 * mm, w - 145 * mm],
             ),
         ]
     story += [
-        P("Source document", "h"),
-        P(
-            "Original official document stored unchanged (SHA-256 " + s["file"]["sha256"][:16] + "…); open it "
-            "from the regulation panel in the portal."
+        k.P("Source document", "h"),
+        k.P(
+            "Original official document stored unchanged (SHA-256 " + s["file"]["sha256"][:16] + "…); open "
+            "it from the regulation panel in the portal."
             if s["file"]
             else "No original file stored."
         ),
         Spacer(1, 10),
-        P("Disclaimer: " + s["disclaimer"], "note"),
+        k.P("Disclaimer: " + s["disclaimer"], "note"),
     ]
-
-    def footer(c, d):
-        c.saveState()
-        c.setFont(reg, 7.5)
-        c.setFillColor(muted)
-        label = f"RegTrack · {s['canonical_id']} · regulation summary"
-        c.drawString(18 * mm, 10 * mm, label.translate(tr) if tr else label)
-        c.drawRightString(A4[0] - 18 * mm, 10 * mm, f"Page {d.page}")
-        c.restoreState()
-
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=16 * mm,
-        bottomMargin=18 * mm,
-        title=f"{s['canonical_id']} – regulation summary",
-        author="RegTrack",
+    return k.build(
+        story, f"{s['canonical_id']} – regulation summary", f"RegTrack · {s['canonical_id']} · regulation summary"
     )
-    doc.build(story, onFirstPage=footer, onLaterPages=footer)
-    return buf.getvalue()
+
+
+def obligations_table(k, rows: list[dict]):
+    """Obligations as a table (also used by the category summary)."""
+    mm, w = k.mm, k.width
+    return k.table(
+        ["Applies from", "Requirement", "Applies to", "Categories", "Standards / basis"],
+        [
+            [
+                r["date"] or "—",
+                r["requirement"],
+                r["applies_to"],
+                ", ".join(r["categories"]),
+                ", ".join(r["standards"])
+                + (f" ({r['legal_basis']})" if r["legal_basis"] else "")
+                + (" [draft]" if r["draft"] else ""),
+            ]
+            for r in rows
+        ],
+        [22 * mm, w - 112 * mm, 32 * mm, 22 * mm, 36 * mm],
+        bold_first=False,
+    )
 
 
 def safe_name(canonical_id: str) -> str:
-    keep = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in canonical_id)
-    return f"RegTrack_{keep}_summary.pdf"
+    from regtrack.api.pdfkit import safe_name as name
+
+    return name(canonical_id, "summary")

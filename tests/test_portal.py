@@ -516,3 +516,18 @@ def test_regulation_summary_json_and_pdf(client):
     assert "attachment" in r.headers["content-disposition"]
     assert client.get("/portal/regulations/NOPE-1/summary").status_code == 404
     assert client.get(f"/portal/regulations/{cid}/summary", params={"fmt": "docx"}).status_code == 400
+
+
+def test_category_summary_json_and_pdf(client):
+    """Reports › Category summary: one vehicle category's figures, topics, obligations, changes and register."""
+    s = client.get("/portal/categories/L2/summary").json()
+    assert s["category"] == "L2" and s["figures"][0][1] == len(s["register"]) > 0
+    rows = client.get("/portal/regulations", params={"category": "L2"}).json()["rows"]
+    assert len(s["register"]) == len(rows)  # the same regulations as the Regulations page for L2
+    for key in ("topics", "upcoming", "top_impact", "changes"):
+        assert isinstance(s[key], list)
+    r = client.get("/portal/categories/m1/summary", params={"fmt": "pdf"})
+    assert r.status_code == 200 and r.content[:4] == b"%PDF" and "attachment" in r.headers["content-disposition"]
+    assert client.get("/portal/categories/ZZ/summary").status_code == 404
+    y = client.get("/portal/meta").json()["years"][0]
+    assert len(client.get("/portal/categories/L2/summary", params={"year": y}).json()["register"]) <= len(rows)

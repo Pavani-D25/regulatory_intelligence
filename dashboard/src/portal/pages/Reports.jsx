@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { portal, reportUrl } from "../../api";
 import useLoad from "../../useLoad";
+import CatSummary from "../CatSummary";
 import RegSummary from "../RegSummary";
 import { usePortal } from "../PortalLayout";
 import { ago, Badge, Card, ErrorBox, fmt, fmtTime, Kpi, Loading, SegmentPicker } from "../ui";
@@ -13,7 +14,7 @@ const CARDS = {
 
 export default function Reports() {
   const [tick, setTick] = useState(0);
-  const { version, toast, meta, countryName, country } = usePortal();
+  const { version, toast, meta, countryName, country, openReg } = usePortal();
   // vehicle segment the generated reports cover, e.g. "2W/PV" (regtrack/segments.py); "" = every in-scope category
   const [segment, setSegment] = useState("");
   useEffect(() => setSegment(""), [country]);
@@ -64,6 +65,7 @@ export default function Reports() {
         ))}
       </div>
       <RegSummary version={version} />
+      <CatSummary meta={meta} openReg={openReg} />
       <Card title="Scheduled Reports" sub="Generated automatically and kept as files; listed below when they run"
         right={<button className="btn secondary" onClick={() => setPlan({ kind: "executive", frequency: "weekly", team: meta?.teams?.[0]?.id || "", segment })}>New Schedule</button>}>
         {plan && (

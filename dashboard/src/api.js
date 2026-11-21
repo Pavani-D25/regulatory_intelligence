@@ -99,6 +99,7 @@ export const portal = {
   regulations: (p) => get("/portal/regulations", p),
   detail: (id) => get(`/portal/regulations/${enc(id)}/detail`),
   regSummary: (id) => get(`/portal/regulations/${enc(id)}/summary`),
+  catSummary: (code) => get(`/portal/categories/${enc(code)}/summary`),
   review: (id, body) => send("PUT", `/portal/regulations/${enc(id)}/review`, body),
   setKpi: (id, body) => send("POST", `/portal/regulations/${enc(id)}/kpi`, body),
   changes: (days, segment) => get("/portal/changes", { days, segment }),
@@ -133,6 +134,7 @@ export const portal = {
   sync: (source) => send("POST", "/portal/admin/sync", { source }),
   requirements: (segment) => get("/portal/requirements", { segment }),
 };
+export const catSummaryPdfUrl = (code) => `${API}/portal/categories/${enc(code)}/summary${qs({ fmt: "pdf" })}`;
 export const regSummaryPdfUrl = (id) => `${API}/portal/regulations/${enc(id)}/summary${qs({ fmt: "pdf" })}`;
 export const reportUrl = (kind, fmt = "html", segment = "") => `${API}/portal/reports/${kind}${qs({ fmt, segment })}`;
 

@@ -4,7 +4,7 @@ import { Badge, Card } from "./ui";
 
 const BASIS = { data: "from data", estimate: "estimate", team: "team" };
 
-function Obligations({ rows, empty }) {
+export function Obligations({ rows, empty }) {
   if (!rows.length) return <p className="note">{empty}</p>;
   return (
     <div className="tablewrap"><table>
