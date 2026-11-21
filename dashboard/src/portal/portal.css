@@ -240,3 +240,5 @@
 .fb-domain .ms-pop { width: 300px; }
 .filterbar{grid-template-columns:1.8fr repeat(4,1fr) auto}
 @media(max-width:1150px){.filterbar{grid-template-columns:1fr 1fr}}
+.rb-auto { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: #334155; cursor: pointer; }
+.rb-updating { margin: 12px 0 0; padding: 8px 12px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-size: 13px; }

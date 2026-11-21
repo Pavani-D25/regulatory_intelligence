@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fileUrl, groupSummaryPdfUrl, portal, regSummariesPdfUrl, regSummaryPdfUrl } from "../api";
 import GroupSummaryView from "./CatSummary";
 import { RegSummaryView } from "./RegSummary";
@@ -105,6 +105,8 @@ export default function ReportBuilder() {
   const [preview, setPreview] = useState(null); // { type, codes, filters, s }
   const [tab, setTab] = useState("screen");
   const [busy, setBusy] = useState(false);
+  const [auto, setAuto] = useState(true); // refresh the preview by itself when a choice changes
+  const req = useRef(0); // the latest preview request: an older answer arriving late is dropped
   const [err, setErr] = useState("");
 
   useEffect(() => { setYear(headerYear || ""); }, [headerYear]);
@@ -127,16 +129,30 @@ export default function ReportBuilder() {
   const filterText = (f) => [yearLabel(f.year), POWERTRAINS.find(([v]) => v === f.variant)?.[1] || "All powertrains"].join(" · ");
 
   const choose = (t) => { setType(t); setItem(""); setErr(""); };
-  const show = async () => {
+  // manual: the Preview button (also scrolls to the preview); else the automatic refresh
+  const show = async (manual = true) => {
     if (!codes.length) return;
+    const id = ++req.current;
     setBusy(true); setErr("");
     try {
       const s = type !== "regulation" ? await portal.groupSummary(type, codes[0], filters)
         : codes.length === 1 ? await portal.regSummary(codes[0]) : await portal.regSummaries(codes);
-      setPreview({ type, codes, filters, s }); setTab("screen");
-      setTimeout(() => document.getElementById("report-preview")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-    } catch (e) { setErr(e.message); setPreview(null); } finally { setBusy(false); }
+      if (id !== req.current) return;
+      setPreview({ type, codes, filters, s });
+      if (manual) {
+        setTab("screen");
+        setTimeout(() => document.getElementById("report-preview")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+      }
+    } catch (e) { if (id === req.current) { setErr(e.message); setPreview(null); } } finally { if (id === req.current) setBusy(false); }
   };
+  const codesKey = codes.join("|");
+  useEffect(() => {
+    if (!auto) return undefined;
+    if (!codes.length) { req.current += 1; setPreview(null); setBusy(false); return undefined; }
+    const t = setTimeout(() => show(false), 600); // wait for the choices to settle
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, type, codesKey, year, variant]);
   const many = preview?.type === "regulation" && preview.codes.length > 1;
   const pdf = (inline) => (preview.type !== "regulation" ? groupSummaryPdfUrl(preview.type, preview.codes[0], preview.filters, inline)
     : many ? regSummariesPdfUrl(preview.codes, inline) : regSummaryPdfUrl(preview.codes[0], inline));
@@ -183,10 +199,12 @@ export default function ReportBuilder() {
 
         <div className="rb-step"><span className="rb-num">3</span><strong>Preview</strong></div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="btn primary" disabled={!codes.length || busy} onClick={show}>
+          <button className="btn primary" disabled={!codes.length || busy} onClick={() => show(true)}>
             {busy ? "Preparing preview…" : type === "regulation" && codes.length > 1 ? `Preview ${codes.length} regulations` : "Preview report"}
           </button>
-          <span className="sub">{type === "regulation" && !codes.length ? "Tick at least one regulation above." : "The PDF can be downloaded from the preview."}</span>
+          <label className="rb-auto"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Update preview automatically</label>
+          <span className="sub">{type === "regulation" && !codes.length ? "Tick at least one regulation above."
+            : auto ? "The preview below follows your choices; download the PDF from it." : "The PDF can be downloaded from the preview."}</span>
         </div>
         {err && <p className="note" style={{ color: "var(--red)" }}>{err}</p>}
       </Card>
@@ -209,7 +227,8 @@ export default function ReportBuilder() {
               <button className="btn ghost" title="Close preview" onClick={() => setPreview(null)}>✕</button>
             </div>
           </div>
-          {stale && <p className="rb-stale">The choices above have changed since this preview. Click <b>Preview</b> to update it before downloading.</p>}
+          {busy && auto && <p className="rb-updating">Updating preview…</p>}
+          {stale && !auto && <p className="rb-stale">The choices above have changed since this preview. Click <b>Preview</b> to update it before downloading.</p>}
           {tab === "pdf" ? (
             <div className="rb-pdf">
               <iframe key={pdf(true)} src={pdf(true)} title={`${title} PDF preview`} />
