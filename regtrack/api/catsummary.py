@@ -221,14 +221,20 @@ def pdf(s: dict) -> bytes:
         if s["changes"]
         else k.P("No changes detected.", "note"),
         k.P("Disclaimer: " + s["disclaimer"], "note"),
-        PageBreak(),
-        k.P(f"Appendix: regulation register ({len(s['register'])})", "h"),
-        k.table(
-            ["Regulation", "Title", "Published", "Impact", "KPI", "Status"],
-            [[r["id"], r["title"], r["date"] or "—", r["impact"], r["kpi_score"], r["status"]] for r in s["register"]],
-            [36 * mm, w - 120 * mm, 22 * mm, 18 * mm, 12 * mm, 32 * mm],
-        ),
     ]
+    if s["register"]:  # no appendix page when nothing matches the filters
+        story += [
+            PageBreak(),
+            k.P(f"Appendix: regulation register ({len(s['register'])})", "h"),
+            k.table(
+                ["Regulation", "Title", "Published", "Impact", "KPI", "Status"],
+                [
+                    [r["id"], r["title"], r["date"] or "—", r["impact"], r["kpi_score"], r["status"]]
+                    for r in s["register"]
+                ],
+                [36 * mm, w - 120 * mm, 22 * mm, 18 * mm, 12 * mm, 32 * mm],
+            ),
+        ]
     return k.build(
         story,
         f"{s['label']} – {s['kind_label'].lower()}",

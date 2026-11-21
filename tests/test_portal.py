@@ -542,3 +542,5 @@ def test_topic_summary_json_and_pdf(client):
     r = client.get("/portal/topics/braking/summary", params={"fmt": "pdf"})
     assert r.status_code == 200 and r.content[:4] == b"%PDF"
     assert client.get("/portal/topics/no_such_topic/summary").status_code == 404
+    shown = client.get("/portal/topics/braking/summary", params={"fmt": "pdf", "inline": "true"})
+    assert shown.headers["content-disposition"].startswith("inline")  # the portal's preview before download

@@ -629,18 +629,18 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
 
 
 @router.get("/categories/{category}/summary")
-def category_summary(category: str, fmt: str = "json", cc: CountryParam = None):
+def category_summary(category: str, fmt: str = "json", inline: bool = False, cc: CountryParam = None):
     """The summary of one vehicle category (regtrack/api/catsummary.py): JSON for the portal, ?fmt=pdf to download."""
-    return _group_summary("category", category, fmt, cc)
+    return _group_summary("category", category, fmt, inline, cc)
 
 
 @router.get("/topics/{topic}/summary")
-def topic_summary(topic: str, fmt: str = "json", cc: CountryParam = None):
+def topic_summary(topic: str, fmt: str = "json", inline: bool = False, cc: CountryParam = None):
     """The summary of one topic (domain, e.g. emissions): the same report as a category summary, by topic."""
-    return _group_summary("topic", topic, fmt, cc)
+    return _group_summary("topic", topic, fmt, inline, cc)
 
 
-def _group_summary(kind: str, code: str, fmt: str, cc: str | None):
+def _group_summary(kind: str, code: str, fmt: str, inline: bool, cc: str | None):
     from regtrack.api import catsummary
     from regtrack.api.pdfkit import safe_name
 
@@ -653,13 +653,18 @@ def _group_summary(kind: str, code: str, fmt: str, cc: str | None):
         return Response(
             catsummary.pdf(s),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+            headers={"Content-Disposition": disposition(name, inline)},
         )
     return s
 
 
+def disposition(filename: str, inline: bool) -> str:
+    """inline: the PDF shows in the portal's preview (an iframe); otherwise it downloads."""
+    return f'{"inline" if inline else "attachment"}; filename="{filename}"'
+
+
 @router.get("/regulations/{canonical_id:path}/summary")
-def regulation_summary(canonical_id: str, fmt: str = "json", cc: CountryParam = None):
+def regulation_summary(canonical_id: str, fmt: str = "json", inline: bool = False, cc: CountryParam = None):
     """The detailed summary of one regulation (regtrack/api/regsummary.py): JSON for the portal, ?fmt=pdf to download."""
     from regtrack.api import regsummary
 
@@ -669,7 +674,7 @@ def regulation_summary(canonical_id: str, fmt: str = "json", cc: CountryParam = 
         return Response(
             regsummary.pdf(s),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{regsummary.safe_name(canonical_id)}"'},
+            headers={"Content-Disposition": disposition(regsummary.safe_name(canonical_id), inline)},
         )
     if fmt != "json":
         raise HTTPException(400, "fmt is json or pdf")

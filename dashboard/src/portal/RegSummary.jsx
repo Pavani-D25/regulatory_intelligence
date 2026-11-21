@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { fileUrl, portal, regSummaryPdfUrl } from "../api";
-import { Badge, Card } from "./ui";
+import { Badge } from "./ui";
 
 const BASIS = { data: "from data", estimate: "estimate", team: "team" };
 
@@ -19,50 +17,14 @@ export function Obligations({ rows, empty }) {
   );
 }
 
-// Reports › Regulation summary: pick one regulation, read its detailed summary, download it as a PDF
-export default function RegSummary({ version }) {
-  const [regs, setRegs] = useState([]);
-  const [query, setQuery] = useState("");
-  const [s, setS] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  useEffect(() => { portal.regulations({ history: true }).then((r) => setRegs(r.rows)).catch(() => setRegs([])); }, [version]);
-  const byId = useMemo(() => new Map(regs.map((r) => [r.canonical_id, r])), [regs]);
-  // the typed text may be "ID — name" (picked from the list) or just the ID
-  const chosen = byId.get(query.split(" — ")[0].trim()) ? query.split(" — ")[0].trim() : null;
-
-  const view = async () => {
-    if (!chosen) return;
-    setBusy(true); setErr("");
-    try { setS(await portal.regSummary(chosen)); } catch (e) { setErr(e.message); setS(null); } finally { setBusy(false); }
-  };
-
+// One regulation's detailed summary (Reports › Report builder preview)
+export function RegSummaryView({ s }) {
   return (
-    <Card title="Regulation Summary" sub="Choose one regulation to see its detailed summary and download it as a PDF">
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label className="formlabel" style={{ flex: "1 1 360px", maxWidth: 640 }}>Regulation
-          <input className="input" list="reg-summary-list" placeholder="Type an ID or a title, e.g. GSR-310(E)-2016"
-            value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && view()} />
-          <datalist id="reg-summary-list">
-            {regs.map((r) => <option key={r.canonical_id} value={`${r.canonical_id} — ${r.name || ""}`.slice(0, 140)} />)}
-          </datalist>
-        </label>
-        <button className="btn primary" disabled={!chosen || busy} onClick={view}>{busy ? "Loading…" : "View summary"}</button>
-        {chosen && <a className="btn secondary" href={regSummaryPdfUrl(chosen)}>⤓ Download PDF</a>}
-      </div>
-      {query && !chosen && <p className="note" style={{ marginTop: 8 }}>Pick a regulation from the list.</p>}
-      {err && <p className="note" style={{ color: "var(--red)" }}>{err}</p>}
-
-      {s && (
         <div className="regsum" style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div>
               <h2 style={{ margin: 0, fontSize: 22 }}>{s.canonical_id}</h2>
               <div className="sub" style={{ marginTop: 4 }}>{s.title}{s.subtitle ? ` · ${s.subtitle}` : ""}</div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {s.file && <a className="btn secondary" href={fileUrl(s.file.sha256)} target="_blank" rel="noreferrer">Open original ↗</a>}
-              <a className="btn primary" href={regSummaryPdfUrl(s.canonical_id)}>⤓ Download PDF</a>
             </div>
           </div>
 
@@ -109,7 +71,5 @@ export default function RegSummary({ version }) {
 
           <p className="note" style={{ fontSize: 12 }}><b>Disclaimer:</b> {s.disclaimer}</p>
         </div>
-      )}
-    </Card>
   );
 }

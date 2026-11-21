@@ -99,8 +99,8 @@ export const portal = {
   regulations: (p) => get("/portal/regulations", p),
   detail: (id) => get(`/portal/regulations/${enc(id)}/detail`),
   regSummary: (id) => get(`/portal/regulations/${enc(id)}/summary`),
-  catSummary: (code) => get(`/portal/categories/${enc(code)}/summary`),
-  topicSummary: (code) => get(`/portal/topics/${enc(code)}/summary`),
+  // f = { year, variant }: the report builder's own filters, over the header's ("" = all)
+  groupSummary: (kind, code, f = {}) => get(`/portal/${kind === "topic" ? "topics" : "categories"}/${enc(code)}/summary`, f),
   review: (id, body) => send("PUT", `/portal/regulations/${enc(id)}/review`, body),
   setKpi: (id, body) => send("POST", `/portal/regulations/${enc(id)}/kpi`, body),
   changes: (days, segment) => get("/portal/changes", { days, segment }),
@@ -135,9 +135,10 @@ export const portal = {
   sync: (source) => send("POST", "/portal/admin/sync", { source }),
   requirements: (segment) => get("/portal/requirements", { segment }),
 };
-export const topicSummaryPdfUrl = (code) => `${API}/portal/topics/${enc(code)}/summary${qs({ fmt: "pdf" })}`;
-export const catSummaryPdfUrl = (code) => `${API}/portal/categories/${enc(code)}/summary${qs({ fmt: "pdf" })}`;
-export const regSummaryPdfUrl = (id) => `${API}/portal/regulations/${enc(id)}/summary${qs({ fmt: "pdf" })}`;
+// summary PDFs: inline = shown in the Reports preview, otherwise downloaded; f = { year, variant } as groupSummary
+export const groupSummaryPdfUrl = (kind, code, f = {}, inline = false) =>
+  `${API}/portal/${kind === "topic" ? "topics" : "categories"}/${enc(code)}/summary${qs({ ...f, fmt: "pdf", inline })}`;
+export const regSummaryPdfUrl = (id, inline = false) => `${API}/portal/regulations/${enc(id)}/summary${qs({ fmt: "pdf", inline })}`;
 export const reportUrl = (kind, fmt = "html", segment = "") => `${API}/portal/reports/${kind}${qs({ fmt, segment })}`;
 
 // ---- sign-in (regtrack/auth.py) ------------------------------------------------------------
