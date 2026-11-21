@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { portal, reportUrl } from "../../api";
 import useLoad from "../../useLoad";
+import RegSummary from "../RegSummary";
 import { usePortal } from "../PortalLayout";
 import { ago, Badge, Card, ErrorBox, fmt, fmtTime, Kpi, Loading, SegmentPicker } from "../ui";
 
@@ -62,6 +63,7 @@ export default function Reports() {
           </Card>
         ))}
       </div>
+      <RegSummary version={version} />
       <Card title="Scheduled Reports" sub="Generated automatically and kept as files; listed below when they run"
         right={<button className="btn secondary" onClick={() => setPlan({ kind: "executive", frequency: "weekly", team: meta?.teams?.[0]?.id || "", segment })}>New Schedule</button>}>
         {plan && (

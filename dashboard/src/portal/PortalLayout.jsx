@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { api, auth, docPath, familyPath, fileUrl, portal, setApiCountry, setApiVariant, setApiYear } from "../api";
+import { api, auth, docPath, familyPath, fileUrl, portal, regSummaryPdfUrl, setApiCountry, setApiVariant, setApiYear } from "../api";
 import "./portal.css";
 import { ago, Badge, fmt, fmtTime } from "./ui";
 
@@ -247,6 +247,7 @@ function Drawer({ id, onClose, toast, openReg, teams }) {
               </div>
               <div className="actions" style={{ marginTop: 10 }}>
                 {d.file && <a className="btn ghost" href={fileUrl(d.file.sha256)} target="_blank" rel="noreferrer">Open original PDF ↗</a>}
+                <a className="btn ghost" href={regSummaryPdfUrl(d.canonical_id)}>⤓ Summary PDF</a>
                 <button className="btn ghost" onClick={() => { onClose(); nav(docPath(d.canonical_id)); }}>Full record →</button>
               </div>
             </>

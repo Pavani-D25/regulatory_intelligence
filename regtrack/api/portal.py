@@ -628,6 +628,24 @@ def regulation_detail(canonical_id: str, cc: CountryParam = None) -> dict:
     return out
 
 
+@router.get("/regulations/{canonical_id:path}/summary")
+def regulation_summary(canonical_id: str, fmt: str = "json", cc: CountryParam = None):
+    """The detailed summary of one regulation (regtrack/api/regsummary.py): JSON for the portal, ?fmt=pdf to download."""
+    from regtrack.api import regsummary
+
+    cc = resolve_country(cc)
+    s = regsummary.build(canonical_id, cc)
+    if fmt == "pdf":
+        return Response(
+            regsummary.pdf(s),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{regsummary.safe_name(canonical_id)}"'},
+        )
+    if fmt != "json":
+        raise HTTPException(400, "fmt is json or pdf")
+    return s
+
+
 @router.post("/regulations/{canonical_id:path}/kpi")
 def set_kpi(canonical_id: str, body: dict = Body(...)) -> dict:
     """A team score for one impact KPI: {criterion, score 0-5, note}; score null returns it to the computed one."""

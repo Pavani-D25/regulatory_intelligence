@@ -502,3 +502,17 @@ def test_powertrain_variant_filter(client):
     both = client.get("/portal/regulations", params={"variant": "ev", "year": y}).json()["rows"]
     assert {r["canonical_id"] for r in both} <= ev_ids and all(str(r["doc_date"]).startswith(str(y)) for r in both)
     assert client.get("/portal/regulations", params={"variant": "diesel"}).status_code == 400
+
+
+def test_regulation_summary_json_and_pdf(client):
+    """Reports › Regulation summary: the detailed summary of one regulation, and the same as a PDF download."""
+    cid = client.get("/portal/regulations").json()["rows"][0]["canonical_id"]
+    s = client.get(f"/portal/regulations/{cid}/summary").json()
+    assert s["canonical_id"] == cid and len(s["impact"]["kpi"]) == 8 and s["facts"] and s["disclaimer"]
+    for key in ("obligations", "cited_by", "related", "versions"):
+        assert isinstance(s[key], list)
+    r = client.get(f"/portal/regulations/{cid}/summary", params={"fmt": "pdf"})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf" and r.content[:4] == b"%PDF"
+    assert "attachment" in r.headers["content-disposition"]
+    assert client.get("/portal/regulations/NOPE-1/summary").status_code == 404
+    assert client.get(f"/portal/regulations/{cid}/summary", params={"fmt": "docx"}).status_code == 400
