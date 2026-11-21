@@ -37,6 +37,7 @@ export default function Reports() {
         <div><h1>Reports</h1><p>Generate regulatory reports from live data · {countryName} · {data.scope}.</p></div>
       </div>
       <ReportBuilder />
+      {/* Standard reports and Scheduled Reports: hidden for now (uncomment to bring them back)
       <h2 className="rb-section">Standard reports</h2>
       <Card>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -96,6 +97,7 @@ export default function Reports() {
           </tbody>
         </table></div>
       </Card>
+      END hidden sections */}
       <Card title="Recent Reports" sub="Reports generated from this portal">
         <div className="tablewrap"><table>
           <thead><tr><th>Report</th><th>Scope</th><th>Generated</th><th>Owner</th><th>Rows</th></tr></thead>
