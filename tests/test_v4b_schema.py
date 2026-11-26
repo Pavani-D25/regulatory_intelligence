@@ -111,8 +111,8 @@ def test_reference_rows(conn):
     regions = {r["code"] for r in conn.execute("SELECT code FROM regions")}
     assert regions == {"IN", "TH", "MY", "UN", "EU"}
     assert (
-        conn.execute("SELECT count(*) AS n FROM sources").fetchone()["n"] == 23
-    )  # + 7 Malaysian (0017, 0019), + TH_LOCAL, MY_LOCAL (0020)
+        conn.execute("SELECT count(*) AS n FROM sources").fetchone()["n"] == 24
+    )  # + 7 Malaysian (0017, 0019), + TH_LOCAL, MY_LOCAL (0020), + TH_EPING_TBT (0027)
     assert (
         conn.execute("SELECT name FROM teams WHERE code='REG_AFFAIRS'").fetchone()["name"] == "Regulatory Affairs Team"
     )

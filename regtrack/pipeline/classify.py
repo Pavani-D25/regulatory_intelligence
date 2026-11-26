@@ -13,7 +13,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from regtrack.models.enums import INDIA_CLASSES, DocClass, Nature
-from regtrack.pipeline import malaysia, thai
+from regtrack.pipeline import malaysia, thai, wto
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline.text import PageText, english_text, full_text
 
@@ -314,6 +314,31 @@ def classify(ctx: FileCtx, notif_identity=None, ais_identity=None) -> ClassResul
             None,
             "rules",
             f"hand-saved Thai document ({k or 'kind not recognised'})",
+        )
+
+    # ---- Thailand: a WTO TBT notification from ePing (the crawler downloads the vehicle-related ones only)
+    if any(x.get("source") == wto.SOURCE for x in ctx.listings):
+        allt = full_text(ctx.pages)
+        sym = wto.symbol_of(allt) or {}
+        if sym.get("member") and sym["member"] != "THA":  # ePing linked another member's document (seen: JPN/544)
+            return ClassResult(
+                DocClass.OFF_TOPIC,
+                "final",
+                None,
+                rel,
+                None,
+                "rules",
+                f"WTO notification of another member ({sym['canonical_id']}), listed under Thailand",
+            )
+        f = wto.fields(allt)
+        return ClassResult(
+            DocClass.WTO_TBT_NOTIFICATION,
+            wto.status_of(f),
+            f.get("agency") or "WTO TBT notification (Thailand)",
+            rel,
+            None,
+            "rules",
+            f"WTO ePing TBT notification ({f.get('kind') or 'kind not read'})",
         )
 
     # ---- Thailand: a TISI mandatory-standard page (every product type; only the automotive ones are TIS_STANDARD)

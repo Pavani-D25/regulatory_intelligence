@@ -20,6 +20,7 @@ from regtrack.models.data import (
     NotificationData,
     TapDocumentData,
     TisStandardData,
+    WtoTbtNotificationData,
 )
 from regtrack.models.enums import DocClass
 
@@ -46,6 +47,7 @@ DATA_MODEL: dict[DocClass, type[BaseModel]] = {
     DocClass.FORM_TEMPLATE: FormTemplateData,
     DocClass.BIS_CATALOGUE: BisCatalogueData,
     DocClass.TIS_STANDARD: TisStandardData,
+    DocClass.WTO_TBT_NOTIFICATION: WtoTbtNotificationData,
 }
 
 

@@ -112,6 +112,7 @@ def team_id(conn, name: str | None) -> int | None:
 # ====================================================================== regulations (shared)
 REG_SQL = """
 SELECT d.id, d.canonical_id, d.doc_class, d.official_title, d.subject, d.issuer, d.status AS doc_status, d.doc_date,
+       d.effective_date,
        d.nature, d.vehicle_categories, d.domains, d.family_key, d.is_current, d.in_scope,
        coalesce((d.extraction->>'llm_pending')::boolean, false) AS ai_pending,
        (SELECT min(v.implementation_date) FROM requirement_versions v WHERE v.source_regulation_id=d.id
@@ -202,7 +203,10 @@ def classify_row(r: dict, vocab: dict, today: date | None = None) -> dict:
         categories=cats,
         authority=r["issuer"] or "—",
         domain=vocab["domain_label"].get((r["domains"] or [None])[0], "General") if r["domains"] else "General",
-        effective=r["next_obligation"] or r["doc_date"],
+        # a WTO notification states when the measure enters into force (its addendum); else the publication date
+        effective=r["next_obligation"]
+        or (r.get("effective_date") if r["doc_class"] == "WTO_TBT_NOTIFICATION" else None)
+        or r["doc_date"],
     )
     return r
 

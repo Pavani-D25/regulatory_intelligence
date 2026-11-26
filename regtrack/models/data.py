@@ -244,6 +244,31 @@ class GenericData(_Data):
     file_name: str | None = None
 
 
+class WtoTbtNotificationData(_Data):
+    """WTO_TBT_NOTIFICATION: a WTO TBT notification (ePing), read from the WTO's own English document
+    (regtrack/pipeline/wto.py). Dates are those the notification states; an addendum adds adoption, publication and
+    entry into force of the final measure."""
+
+    symbol: str | None = None  # G/TBT/N/THA/797/Add.1
+    kind: str | None = None  # regular | addendum | revision | corrigendum | supplement
+    distribution_date: str | None = Field(None, pattern=ISO_DATE)
+    title: str | None = None  # the notified measure
+    agency: str | None = None
+    products: str | None = None
+    ics_codes: list[str] = Field(default_factory=list)
+    description: str | None = None
+    objective: str | None = None
+    relevant_documents: list[str] = Field(default_factory=list)  # e.g. UN Regulation No. 124
+    proposed_adoption: str | None = None  # as notified (often "To be determined")
+    proposed_entry_into_force: str | None = None
+    comment_deadline: str | None = Field(None, pattern=ISO_DATE)
+    adopted_date: str | None = Field(None, pattern=ISO_DATE)  # addendum: notified measure adopted
+    published_date: str | None = Field(None, pattern=ISO_DATE)
+    entry_into_force_date: str | None = Field(None, pattern=ISO_DATE)
+    withdrawn_date: str | None = Field(None, pattern=ISO_DATE)
+    document_links: list[str] = Field(default_factory=list)  # notified draft / final measure texts
+
+
 class TisStandardData(_Data):
     """TIS_STANDARD: a Thai mandatory standard (มอก.) as its TISI page gives it (regtrack/pipeline/thai.py)."""
 

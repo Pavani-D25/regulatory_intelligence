@@ -47,6 +47,14 @@ def conditions_text(cond: dict | None) -> str:
     return "; ".join(parts)
 
 
+def class_label(doc_class: str | None) -> str:
+    """'WTO_TBT_NOTIFICATION' -> 'WTO TBT Notification' (abbreviations kept), else title case."""
+    words = (doc_class or "").split("_")
+    return " ".join(
+        w if w in ("WTO", "TBT", "AIS", "TAP", "TIS", "MY", "TH", "OM", "BIS") else w.title() for w in words
+    )
+
+
 def _d(v) -> str | None:
     if isinstance(v, (date, datetime)):
         return v.strftime("%d %b %Y")
@@ -140,7 +148,7 @@ def build(canonical_id: str, cc: str) -> dict:
         "generated": datetime.now().strftime("%d %b %Y %H:%M"),
         "facts": [
             ("Regulation ID", detail["canonical_id"]),
-            ("Type", (detail.get("doc_class") or "").replace("_", " ").title()),
+            ("Type", class_label(detail.get("doc_class"))),
             ("Issuing authority", detail.get("authority")),
             ("Published", _d(detail.get("doc_date"))),
             ("Effective / applies from", _d(detail.get("effective"))),
@@ -171,7 +179,7 @@ def build(canonical_id: str, cc: str) -> dict:
         "versions": [
             {
                 "id": v["canonical_id"],
-                "type": (v["doc_class"] or "").replace("_", " ").title(),
+                "type": class_label(v["doc_class"]),
                 "date": _d(v["doc_date"]),
                 "current": v["is_current"],
                 "status": v["status"],

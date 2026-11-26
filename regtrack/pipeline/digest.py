@@ -301,6 +301,44 @@ def _list(v) -> list[str]:
     return []
 
 
+def wto_sections(data: dict, sections: list[dict]) -> None:
+    """A WTO TBT notification: what was notified, its dates, the documents it relies on and where its texts are."""
+    kind = {"addendum": "Addendum", "revision": "Revision", "corrigendum": "Corrigendum", "supplement": "Supplement"}
+    facts = [
+        f"WTO notification {data['symbol']}"
+        + (f" ({kind[data['kind']]})" if data.get("kind") in kind else "")
+        + (f", circulated {_d(data['distribution_date'])}" if data.get("distribution_date") else "")
+        if data.get("symbol")
+        else None,
+        f"Agency responsible: {data['agency']}" if data.get("agency") else None,
+        f"Products covered: {data['products']}" if data.get("products") else None,
+        f"Objective: {data['objective']}" if data.get("objective") else None,
+    ]
+    if any(facts):
+        sections.append({"title": "Notification", "items": [x for x in facts if x]})
+    if data.get("description"):
+        sections.append({"title": "What it requires", "text": _short(data["description"], 1500)})
+    when = [
+        f"Proposed date of adoption: {data['proposed_adoption']}" if data.get("proposed_adoption") else None,
+        f"Proposed entry into force: {data['proposed_entry_into_force']}"
+        if data.get("proposed_entry_into_force")
+        else None,
+        f"Final date for comments: {_d(data['comment_deadline'])}" if data.get("comment_deadline") else None,
+        f"Adopted: {_d(data['adopted_date'])}" if data.get("adopted_date") else None,
+        f"Published: {_d(data['published_date'])}" if data.get("published_date") else None,
+        f"Enters into force: {_d(data['entry_into_force_date'])}" if data.get("entry_into_force_date") else None,
+        f"Withdrawn: {_d(data['withdrawn_date'])}" if data.get("withdrawn_date") else None,
+    ]
+    if any(when):
+        sections.append({"title": "Notified dates", "items": [x for x in when if x]})
+    if data.get("relevant_documents"):
+        sections.append(
+            {"title": "Relevant documents (UN Regulations, standards)", "items": data["relevant_documents"]}
+        )
+    if data.get("document_links"):
+        sections.append({"title": "Texts of the measure", "items": data["document_links"]})
+
+
 def _tidy(subject: str) -> str:
     """An obligation's subject is cut from the text: table markers and the amending phrase out."""
     s = WS.sub(" ", COLS.sub(" ", subject)).strip(' “”"-–—')
@@ -354,7 +392,9 @@ def digest(r: dict, text: str, mandates: list[dict], relations: list[dict], labe
         parts.append(f"It applies from {_d(r['effective_date'])}.")
 
     sections: list[dict] = []
-    p = purpose(text, cls) if text else None
+    if cls == "WTO_TBT_NOTIFICATION":  # the fields the WTO form states (regtrack/pipeline/wto.py)
+        wto_sections(data, sections)
+    p = purpose(text, cls) if text and cls != "WTO_TBT_NOTIFICATION" else None
     if p:
         sections.append({"title": "Purpose and scope", "text": p})
     ch = changes(text, cls) if text else []

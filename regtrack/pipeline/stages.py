@@ -325,6 +325,7 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
                 DocClass.MY_FORM,
                 DocClass.MY_ACT,
                 DocClass.MY_SUBSIDIARY_LEGISLATION,
+                DocClass.WTO_TBT_NOTIFICATION,
             )
             + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE)
             or (ident and ident.kind == "notification")
@@ -334,6 +335,8 @@ def write_documents(conn: psycopg.Connection, f: dict, ctx: FileCtx, fa: FileAna
             cid = synthetic_id("DOC", ctx.sha)
             if dc == DocClass.TIS_STANDARD:
                 flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "no มอก. number on the TISI page"}))
+            elif dc == DocClass.WTO_TBT_NOTIFICATION:
+                flags.append((FlagRule.IDENTITY_NOT_FOUND, {"reason": "no WTO symbol in the notification header"}))
             elif dc in (
                 DocClass.MINISTERIAL_REGULATION,
                 DocClass.DLT_NOTIFICATION,

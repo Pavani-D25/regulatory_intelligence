@@ -92,9 +92,29 @@ def read_pdf(path: Path) -> tuple[list[str], dict]:
 
 
 def read_docx(path: Path) -> list[str]:
-    """Text of word/document.xml; tables keep one row per line, cells separated by ' | '."""
+    """Text of word/document.xml; tables keep one row per line, cells separated by ' | '. The fullest page header
+    comes first (a WTO notification's symbol and date are printed only there)."""
     with zipfile.ZipFile(path) as z:
         x = z.read("word/document.xml").decode("utf-8", "ignore")
+        heads = [
+            re.sub(
+                r"\s+",
+                " ",
+                html.unescape(
+                    re.sub(
+                        r"<w:instrText[^>]*>.*?</w:instrText>|<[^>]+>",
+                        " ",
+                        z.read(n).decode("utf-8", "ignore"),
+                        flags=re.S,
+                    )
+                ),
+            ).strip()
+            for n in z.namelist()
+            if re.fullmatch(r"word/header\d*\.xml", n)
+        ]
+    head = max(heads, key=len, default="")
+    if len(re.findall(r"[A-Za-z]{3,}", head)) >= 3:
+        x = f"<w:p>{html.escape(head)}</w:p>" + x
     x = re.sub(r"<w:tab/>", "\t", x)
     x = re.sub(r"<w:br[^>]*w:type=\"page\"[^>]*/>", "\f", x)
     x = re.sub(r"<w:br[^>]*/>", "\n", x)
@@ -109,11 +129,17 @@ def read_docx(path: Path) -> list[str]:
 def read_doc(path: Path) -> list[str]:
     """Legacy .doc: Word stores text as UTF-16LE (or cp1252) runs; collect the readable runs."""
     raw = path.read_bytes()
-    runs = re.findall(rb"(?:[\x20-\x7e\r\n\t]\x00){8,}", raw)
-    txt = "\n".join(r.decode("utf-16le", "ignore") for r in runs)
-    if len(txt) < 200:
-        txt = "\n".join(r.decode("cp1252", "ignore") for r in re.findall(rb"[\x20-\x7e\r\n\t]{12,}", raw))
+    wide = "\n".join(r.decode("utf-16le", "ignore") for r in re.findall(rb"(?:[\x20-\x7e\r\n\t]\x00){8,}", raw))
+    narrow = "\n".join(r.decode("cp1252", "ignore") for r in re.findall(rb"[\x20-\x7e\r\n\t]{12,}", raw))
+    # the body is in one of the two; the other may hold only style names ("Heading 1", "Default Paragraph Font"):
+    # keep the one with more running words
+    txt = narrow if _running_words(narrow) > _running_words(wide) else wide
     return [txt.replace("\r", "\n")]
+
+
+def _running_words(t: str) -> int:
+    # English running text; style names ("Heading 1", "Corps de texte") rarely hold these words
+    return len(re.findall(r"\b(?:the|and|of|to|for|with|shall|is|are|by|on)\b", t, re.I))
 
 
 def read_xlsx(path: Path) -> list[str]:

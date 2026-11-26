@@ -7,6 +7,7 @@ const CLASS_LABEL = {
   AIS_STANDARD: "AIS standard", AIS_AMENDMENT: "AIS amendment", AIS_CORRIGENDUM: "AIS corrigendum", AIS_DRAFT: "AIS draft",
   AIS_FORM_TABLE: "AIS form table", AIS_INTERPRETATION: "AIS interpretation", TAP_DOCUMENT: "CMVR-TAP",
   CIRCULAR_OM: "Circular / OM", GUIDELINE_POLICY: "Guideline", FORM_TEMPLATE: "Form", OFF_TOPIC: "Off-topic",
+  WTO_TBT_NOTIFICATION: "WTO TBT notification",
 };
 export const classLabel = (c) => CLASS_LABEL[c] || (c || "").replaceAll("_", " ").toLowerCase().replace(/^\w/, (x) => x.toUpperCase());
 

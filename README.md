@@ -184,6 +184,14 @@ sources (MoRTH JSON API, ARAI page via Playwright, e-Gazette via Playwright, Ind
   -> chunk (clause level, English only, boilerplate flagged) -> embed (LM Studio embedding model)
 ```
 
+* Thailand also reads **WTO ePing**: the TBT notifications Thailand files with the WTO
+  (https://eping.wto.org/en/Search/Index, Area: TBT, Notifying Member: Thailand). `regtrack/sources/thailand_eping.py`
+  pages ePing's public JSON API (no login, no key), keeps the vehicle-related notifications (ICS 43, HS 87 / tyres /
+  batteries, vehicle words) and stores each one's official English WTO document write-once. `regtrack/pipeline/wto.py`
+  reads it by rule: the WTO symbol and date from the page header (`G/TBT/N/THA/797`, addenda and revisions are versions
+  of the notification), agency, products and ICS codes, title, description, objective, related UN Regulations,
+  proposed dates and comment deadline; an addendum's adoption, publication and entry-into-force dates make it `final`.
+  Class `WTO_TBT_NOTIFICATION` (migration 0027). `python -m regtrack.cli crawl TH_EPING_TBT` runs it once.
 * Identity never comes from listing titles; mismatches become `quality_flag(title_file_mismatch)`.
 * `canonical_id` formats: `GSR-659(E)-2022`, `SO-1365(E)-2004`, `AIS-038(Rev.2)`, `AIS-038(Rev.2)/Amd.4`,
   `AIS-007(Rev.5)/Table-1B`, `TAP-115/116(Issue.4)`, `FORM-20`. Files without a parsable identity get

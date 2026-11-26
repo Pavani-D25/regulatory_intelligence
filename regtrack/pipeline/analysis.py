@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from regtrack.models.enums import DocClass
-from regtrack.pipeline import malaysia, thai
+from regtrack.pipeline import malaysia, thai, wto
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline.classify import DRAFT_CITE, ClassResult, FileCtx, classify
 from regtrack.pipeline.identity import (
@@ -165,6 +165,20 @@ def identify(ctx: FileCtx) -> FileAnalysis:
                 evidence=n["title"],
                 doc_date=n["date"] or (date(n["year"], 1, 1) if n["year"] else None),
                 doc_date_precision="day" if n["date"] else ("year" if n["year"] else None),
+            )
+    elif dc == DocClass.WTO_TBT_NOTIFICATION:
+        n = wto.symbol_of(allt)
+        if n:
+            ident = Identity(
+                kind="wto-tbt",
+                canonical_id=n["canonical_id"],
+                series="G/TBT/N",
+                number=str(n["number"]),
+                year=n["date"].year if n["date"] else None,
+                family_key=n["family_key"],
+                evidence=n["canonical_id"],
+                doc_date=n["date"],
+                doc_date_precision="day" if n["date"] else None,
             )
     elif dc == DocClass.TIS_STANDARD:
         full = [x for x in ctx.listings if x.get("category") == thai.FULL_TEXT]

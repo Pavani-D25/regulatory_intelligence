@@ -24,7 +24,7 @@ _lock = threading.Lock()  # one pipeline run at a time
 # source code -> module in regtrack.sources, per country (Thai crawlers are added here when they exist)
 CRAWLERS_BY_COUNTRY: dict[str, dict[str, str]] = {
     "IN": {"MORTH_API": "morth", "ARAI_AIS": "arai", "EGAZETTE": "egazette", "INDIACODE": "indiacode"},
-    "TH": {"TH_TISI_MANDATORY": "thailand_tisi", "TH_LOCAL": "local_import"},
+    "TH": {"TH_TISI_MANDATORY": "thailand_tisi", "TH_EPING_TBT": "thailand_eping", "TH_LOCAL": "local_import"},
     # one module for the five JPJ / DOE pages: its crawl(code) takes the source code
     "MY": {
         c: "malaysia"

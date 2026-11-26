@@ -23,7 +23,7 @@ from regtrack.config import get_settings
 from regtrack.db import Jsonb
 from regtrack.models import model_for
 from regtrack.models.enums import DocClass, FlagRule, Status
-from regtrack.pipeline import malaysia, thai
+from regtrack.pipeline import malaysia, thai, wto
 from regtrack.pipeline import patterns as P
 from regtrack.pipeline import repo as R
 from regtrack.pipeline.dbutil import add_flag
@@ -528,6 +528,23 @@ def deterministic(
         if data.get("effective_date"):
             cols["effective_date"] = date.fromisoformat(data["effective_date"])  # วันที่มีผลบังคับใช้
         conf["subject"] = 0.9 if cols["subject"] else 0.0
+    elif dc == DocClass.WTO_TBT_NOTIFICATION:
+        # a WTO TBT notification (ePing): the WTO's English form, by rule (regtrack/pipeline/wto.py)
+        allt = full_text(pages, a, b)
+        f = wto.fields(allt)
+        data.update(f)
+        cols["official_title"] = f.get("title")
+        cols["subject"] = f.get("description") or f.get("title")
+        cols["status"] = wto.status_of(f)
+        eff = f.get("entry_into_force_date") or f.get("published_date")
+        if eff:
+            cols["effective_date"] = date.fromisoformat(eff)
+        about = " ".join(x for x in (f.get("title"), f.get("products"), f.get("description")) if x)
+        cats = wto.categories(about)
+        if not cats and re.search(r"\bmotor vehicles?\b|\bvehicles?\b", about, re.I):
+            cats = ["ALL"]  # names vehicles but no category: all motor vehicles (CLAUDE.md)
+        text_for_tags = about + " " + " ".join(f.get("relevant_documents") or [])
+        conf["subject"] = 0.9 if cols["subject"] else 0.0
     elif dc in (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE):
         # a Thai Act / ministerial regulation / DLT notification saved by hand: rules only (thai.law_identity); the
         # LLM is not asked (its category codes are India's)
@@ -904,6 +921,7 @@ def extract_document(
         DocClass.TIS_STANDARD,
         DocClass.MY_ACT,
         DocClass.MY_SUBSIDIARY_LEGISLATION,
+        DocClass.WTO_TBT_NOTIFICATION,
     ) + (DocClass.MINISTERIAL_REGULATION, DocClass.DLT_NOTIFICATION, DocClass.TH_ACT, DocClass.GAZETTE_NOTICE)
     if needs_llm and old.get("model") in (None, "rules"):
         ok = use_llm and llm.reachable()[0]

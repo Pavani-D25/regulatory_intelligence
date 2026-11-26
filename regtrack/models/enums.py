@@ -41,6 +41,7 @@ class DocClass(StrEnum):
     MINISTERIAL_REGULATION = "MINISTERIAL_REGULATION"
     NEWS = "NEWS"
     TH_ACT = "TH_ACT"  # พระราชบัญญัติ (migration 0020)
+    WTO_TBT_NOTIFICATION = "WTO_TBT_NOTIFICATION"  # WTO ePing TBT notification (migration 0027)
     # Malaysia (migration 0017)
     MY_GUIDELINE = "MY_GUIDELINE"
     MY_FORM = "MY_FORM"
@@ -66,6 +67,7 @@ THAI_CLASSES = frozenset(
         DocClass.MINISTERIAL_REGULATION,
         DocClass.NEWS,
         DocClass.TH_ACT,
+        DocClass.WTO_TBT_NOTIFICATION,
     }
 )
 MALAYSIA_CLASSES = frozenset(
