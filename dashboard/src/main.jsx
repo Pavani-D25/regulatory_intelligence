@@ -6,7 +6,7 @@ import PortalLayout from "./portal/PortalLayout";
 import Login from "./portal/Login";
 import Dashboard from "./portal/pages/Dashboard";
 import Regulations from "./portal/pages/Regulations";
-import ChangeMonitor from "./portal/pages/ChangeMonitor";
+// import ChangeMonitor from "./portal/pages/ChangeMonitor";  // Change Monitor: hidden for now
 import Compliance from "./portal/pages/Compliance";
 import Requirements from "./portal/pages/Requirements";
 import Impact from "./portal/pages/Impact";
@@ -31,7 +31,7 @@ createRoot(document.getElementById("root")).render(
           {/* approved portal design (v2) */}
           <Route index element={<Dashboard />} />
           <Route path="regulations" element={<Regulations />} />
-          <Route path="changes" element={<ChangeMonitor />} />
+          {/* <Route path="changes" element={<ChangeMonitor />} />  Change Monitor: hidden for now */}
           <Route path="compliance" element={<Compliance />} />
           <Route path="requirements" element={<Requirements />} />
           <Route path="impact" element={<Impact />} />

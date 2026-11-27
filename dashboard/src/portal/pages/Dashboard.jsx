@@ -30,8 +30,8 @@ export default function Dashboard() {
         <div><h1>Regulatory Overview</h1>
           <p>Live view of {countryName} vehicle regulations from {meta ? `${meta.sources_total} monitored sources` : "the monitored sources"} for {segment ? segmentLabel(segment) : (meta?.categories || []).map((c) => c.code).join(", ")}.</p></div>
         <div className="actions">
-          <button className="btn secondary" onClick={() => nav("/reports")}>Generate Report</button>
-          <button className="btn primary" onClick={() => nav("/changes")}>Review Changes</button>
+          <button className="btn primary" onClick={() => nav("/reports")}>Generate Report</button>
+          {/* <button className="btn primary" onClick={() => nav("/changes")}>Review Changes</button>  Change Monitor: hidden */}
         </div>
       </div>
       <Card>

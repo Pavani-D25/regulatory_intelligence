@@ -9,7 +9,8 @@ export const COUNTRIES = [["IN", "India"], ["TH", "Thailand"], ["MY", "Malaysia"
 
 // views of the approved design, in its order; "Tools" are the earlier RegTrack pages kept reachable
 const NAV = [
-  ["/", "▦", "Dashboard"], ["/regulations", "≡", "Regulations"], ["/changes", "↻", "Change Monitor"],
+  ["/", "▦", "Dashboard"], ["/regulations", "≡", "Regulations"],
+  // ["/changes", "↻", "Change Monitor"],
   // ["/compliance", "✓", "Compliance Matrix"], ["/requirements", "▥", "Requirements Register"], ["/impact", "⌁", "Impact View"],
   ["/ai", "✦", "Ask Regulatory AI"],
   ["/reports", "▤", "Reports"],
