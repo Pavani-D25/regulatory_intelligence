@@ -4,6 +4,7 @@ import { api, auth, docPath, familyPath, fileUrl, portal, regSummaryPdfUrl, setA
 import "./portal.css";
 import { Digest } from "./RegSummary";
 import { ago, Badge, fmt, fmtTime, YearFilter } from "./ui";
+import Select from "./Select";
 
 export const COUNTRIES = [["IN", "India"], ["TH", "Thailand"], ["MY", "Malaysia"]];
 
@@ -78,8 +79,8 @@ function Watchers({ id, teams, toast }) {
           </div>
           {free.length > 0 && (
             <div className="actions" style={{ marginTop: 8 }}>
-              <select className="select" value={team} onChange={(e) => setTeam(e.target.value)}>
-                <option value="">Choose a team…</option>{free.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+              <Select className="select" value={team} onChange={(e) => setTeam(e.target.value)}>
+                <option value="">Choose a team…</option>{free.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select>
               <button className="btn secondary" disabled={!team} onClick={add}>Watch</button>
             </div>
           )}
@@ -115,12 +116,12 @@ function KpiSection({ d, onChange }) {
               <div style={{ fontSize: 11, color: "#6b7280" }}>
                 <span style={{ color: BASIS[c.basis]?.[1] }}>{BASIS[c.basis]?.[0] || c.basis}</span> · {c.reason} · <b>{c.points}</b> pts</div></td>
             <td style={{ textAlign: "right", verticalAlign: "top", paddingTop: 5 }}>
-              <select className="select" style={{ padding: "2px 4px", width: 86 }} disabled={busy === c.key}
+              <Select className="select" style={{ padding: "2px 4px", width: 86 }} disabled={busy === c.key}
                 value={c.basis === "team" ? c.score : ""} onChange={(e) => set(c.key, e.target.value)}
                 aria-label={`${c.label} score`}>
                 <option value="">auto: {c.basis === "team" ? "reset" : c.score}</option>
                 {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select></td>
+              </Select></td>
           </tr>))}
         </tbody>
       </table>
@@ -249,9 +250,9 @@ function Drawer({ id, onClose, toast, openReg, teams }) {
 
               <div className="formrow" style={{ marginTop: 8 }}>
                 <label className="formlabel">Review status
-                  <select className="select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  <Select className="select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                     {["Action Required", "Under Review", "Impact Analysis", "Tracked"].map((s) => <option key={s}>{s}</option>)}
-                  </select></label>
+                  </Select></label>
                 <label className="formlabel">Owner
                   <input className="input" value={form.owner} placeholder="Team / person" onChange={(e) => setForm({ ...form, owner: e.target.value })} /></label>
               </div>
@@ -438,15 +439,15 @@ export default function PortalLayout() {
               <div className="search">⌕ <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search regulation, category, topic…  ( / )"
                 onKeyDown={(e) => { if (e.key === "Enter" && q.trim()) { nav(`/regulations?q=${encodeURIComponent(q.trim())}`); e.target.blur(); } }} /></div>
               <Bell version={version} openReg={setDrawer} />
-              <select className="select" value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Country">
+              <Select className="select" value={country} onChange={(e) => setCountry(e.target.value)} aria-label="Country">
                 {COUNTRIES.map(([c, name]) => <option key={c} value={c}>{name}</option>)}
-              </select>
+              </Select>
               <YearFilter value={year} years={meta?.years || []} onChange={setYear} />
-              <select className="select" value={variant} onChange={(e) => setVariant(e.target.value)} aria-label="Powertrain"
+              <Select className="select" value={variant} onChange={(e) => setVariant(e.target.value)} aria-label="Powertrain"
                 title="Show regulations specific to this powertrain on every page (general rules for all vehicles are not listed)">
                 {VARIANTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-              </select>
-              <select className="select" defaultValue="en" aria-label="Language"><option value="en">English</option></select>
+              </Select>
+              <Select className="select" defaultValue="en" aria-label="Language"><option value="en">English</option></Select>
               <UserMenu user={user} toast={toast} />
             </div>
           </header>

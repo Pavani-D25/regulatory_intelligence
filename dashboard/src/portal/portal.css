@@ -242,3 +242,16 @@
 @media(max-width:1150px){.filterbar{grid-template-columns:1fr 1fr}}
 .rb-auto { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: #334155; cursor: pointer; }
 .rb-updating { margin: 12px 0 0; padding: 8px 12px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-size: 13px; }
+
+/* Select: a <select> whose list is a short scrolling panel (portal/Select.jsx) */
+.sel-btn { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; font: inherit; min-width: 0; max-width: 100%; }
+.sel-btn:disabled { opacity: .55; cursor: not-allowed; }
+.sel-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-caret { color: #64748b; font-size: 11px; flex: none; }
+.sel-pop { position: fixed; z-index: 1000; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 12px 32px rgba(15, 23, 42, .18); padding: 4px; max-width: min(420px, calc(100vw - 16px)); }
+.sel-search { width: 100%; margin: 2px 0 4px; padding: 7px 9px; font-size: 13px; }
+.sel-list { overflow-y: auto; }
+.sel-opt { padding: 7px 10px; border-radius: 6px; font-size: 13px; line-height: 20px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #1e293b; }
+.sel-opt.hi { background: #f1f5f9; }
+.sel-opt.on { font-weight: 650; color: #1d4ed8; }
+.sel-opt.off { color: #94a3b8; cursor: default; }

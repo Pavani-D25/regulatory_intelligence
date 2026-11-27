@@ -4,6 +4,7 @@ import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { ago, Badge, Card, Donut, ErrorBox, fmt, Kpi, Loading, MetricRows, OfficialId, SegmentPicker, segmentLabel } from "../ui";
+import Select from "../Select";
 
 export default function Dashboard() {
   const { version, countryName, country } = usePortal();
@@ -52,22 +53,22 @@ export default function Dashboard() {
       <div className="grid2 wide">
         <Card title="Regulatory Change Trend" sub={s.trend_sub || "New regulations published per month · last 12 months"} right={meta?.last_sync && <Badge v={`synced ${ago(meta.last_sync)}`} tone={meta.scheduler?.alive ? "green" : "amber"} />}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-            <select className="select" aria-label="Trend view" value={range.view}
+            <Select className="select" aria-label="Trend view" value={range.view}
               onChange={(e) => setRange({ view: e.target.value, from: "", to: "" })}>
               <option value="auto">Auto</option><option value="month">Monthly</option><option value="year">Yearly</option>
-            </select>
+            </Select>
             {range.view !== "auto" && s.trend_years && (() => {
               const years = [];
               for (let y = s.trend_years.max; y >= s.trend_years.min; y--) years.push(y);
               return (<>
-                <select className="select" aria-label="From year" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })}>
+                <Select className="select" aria-label="From year" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })}>
                   <option value="">{range.view === "month" ? "From (last 12 months)" : `From ${s.trend_years.min}`}</option>
                   {years.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
-                <select className="select" aria-label="To year" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })}>
+                </Select>
+                <Select className="select" aria-label="To year" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })}>
                   <option value="">{`To ${s.trend_years.max}`}</option>
                   {years.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
+                </Select>
               </>);
             })()}
             {loading && <span className="sub">updating…</span>}

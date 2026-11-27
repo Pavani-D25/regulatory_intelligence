@@ -5,6 +5,7 @@ import { AiPending, Badge, Button, Card, Chips, DocLink, Empty, ErrorBox, Loadin
 import { usePortal } from "../portal/PortalLayout";
 import { SegmentPicker, segmentLabel } from "../portal/ui";
 import useLoad from "../useLoad";
+import Select from "../portal/Select";
 
 const POWERTRAINS = ["petrol", "diesel", "cng", "lpg", "ethanol_flex", "hybrid", "bev", "hydrogen"];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -116,10 +117,10 @@ export default function VehicleCheck() {
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="pt">Powertrain</label>
-            <select id="pt" value={form.powertrain} onChange={set("powertrain")} className="w-36">
+            <Select id="pt" value={form.powertrain} onChange={set("powertrain")} className="w-36">
               <option value="">Any</option>
               {POWERTRAINS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="on">On date</label>

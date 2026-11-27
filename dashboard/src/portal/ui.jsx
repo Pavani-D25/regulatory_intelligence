@@ -1,5 +1,6 @@
 // Small building blocks in the approved design's vocabulary (pill, kpi, card, metric row, donut, ring).
 import { useEffect, useRef, useState } from "react";
+import Select from "./Select";
 
 const TONE = {
   High: "red", "Action Required": "red", Medium: "amber", "Under Review": "amber", "Impact Analysis": "purple",
@@ -130,11 +131,11 @@ export function SegmentPicker({ tree, value, onChange }) {
   return (
     <div className="segpick">
       {levels.map((opts, i) => (
-        <select key={i} className="select" aria-label={["Vehicle class", "Vehicle category", "Vehicle type", "Use"][i]}
+        <Select key={i} className="select" aria-label={["Vehicle class", "Vehicle category", "Vehicle type", "Use"][i]}
           value={keys[i] || ""} onChange={(e) => pick(i, e.target.value)}>
           <option value="">{SEGMENT_LEVELS[i]}</option>
           {opts.map((n) => <option key={n.key} value={n.key}>{n.label}</option>)}
-        </select>
+        </Select>
       ))}
     </div>
   );
@@ -168,7 +169,8 @@ export function YearFilter({ value, years = [], onChange, label = "Year", disabl
   useEffect(() => { setMode(modeOf(yearRange(value))); }, [value]);
   useEffect(() => {
     if (!open) return undefined;
-    const close = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    // a click in a dropdown list (portal/Select.jsx, rendered at the page body) counts as inside
+    const close = (e) => { if (box.current && !box.current.contains(e.target) && !e.target.closest?.(".sel-pop")) setOpen(false); };
     const esc = (e) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", esc);
@@ -199,15 +201,15 @@ export function YearFilter({ value, years = [], onChange, label = "Year", disabl
           </div>
           {mode === "single" && r && (
             <label className="yf-row yf-col">Year
-              <select className="select" value={r[0]} onChange={(e) => onChange(e.target.value)}>{opts}</select>
+              <Select className="select" value={r[0]} onChange={(e) => onChange(e.target.value)}>{opts}</Select>
             </label>)}
           {mode === "range" && r && (
             <div className="yf-row">
               <label className="yf-col">From
-                <select className="select" value={r[0]} onChange={(e) => range(Number(e.target.value), r[1])}>{opts}</select>
+                <Select className="select" value={r[0]} onChange={(e) => range(Number(e.target.value), r[1])}>{opts}</Select>
               </label>
               <label className="yf-col">To
-                <select className="select" value={r[1]} onChange={(e) => range(r[0], Number(e.target.value))}>{opts}</select>
+                <Select className="select" value={r[1]} onChange={(e) => range(r[0], Number(e.target.value))}>{opts}</Select>
               </label>
             </div>)}
           <div className="yf-foot">
@@ -227,7 +229,8 @@ export function MultiSelect({ options, value, onChange, allLabel = "All", noun =
   const box = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
-    const close = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    // a click in a dropdown list (portal/Select.jsx, rendered at the page body) counts as inside
+    const close = (e) => { if (box.current && !box.current.contains(e.target) && !e.target.closest?.(".sel-pop")) setOpen(false); };
     const esc = (e) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", esc);

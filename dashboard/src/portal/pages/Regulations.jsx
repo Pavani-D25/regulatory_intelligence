@@ -4,6 +4,7 @@ import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, MultiSelect, OfficialId, SegmentPicker } from "../ui";
+import Select from "../Select";
 
 const PAGE = 50;
 const IMPACT_RANK = { High: 0, Medium: 1, Low: 2 };
@@ -82,16 +83,16 @@ export default function Regulations() {
         <div className="filterbar">
           <input className="input" placeholder="Search by ID, title, authority or topic" defaultValue={f.q} key={f.q}
             onKeyDown={(e) => { if (e.key === "Enter") set("q", e.target.value.trim()); }} onBlur={(e) => set("q", e.target.value.trim())} />
-          <select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>
-            {cats.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          <Select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>
+            {cats.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
           <div className="fb-domain" title="Show regulations on these domains (topics)">
             <MultiSelect options={domains} value={f.domain ? f.domain.split(",") : []} onChange={(v) => set("domain", v.join(","))}
               allLabel="All domains" noun="domains" label="Domain" searchHint="Search a domain, e.g. emission, braking" />
           </div>
-          <select className="select" value={f.impact} onChange={(e) => set("impact", e.target.value)}>
-            <option value="">All impact</option><option>High</option><option>Medium</option><option>Low</option></select>
-          <select className="select" value={f.status} onChange={(e) => set("status", e.target.value)}>
-            <option value="">All status</option><option>Action Required</option><option>Under Review</option><option>Impact Analysis</option><option>Tracked</option></select>
+          <Select className="select" value={f.impact} onChange={(e) => set("impact", e.target.value)}>
+            <option value="">All impact</option><option>High</option><option>Medium</option><option>Low</option></Select>
+          <Select className="select" value={f.status} onChange={(e) => set("status", e.target.value)}>
+            <option value="">All status</option><option>Action Required</option><option>Under Review</option><option>Impact Analysis</option><option>Tracked</option></Select>
           <button className="btn secondary" onClick={() => setSp({}, { replace: true })}>Clear</button>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>

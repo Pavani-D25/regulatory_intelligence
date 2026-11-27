@@ -3,6 +3,7 @@ import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { ago, Badge, Card, ErrorBox, fmt, Kpi, Loading } from "../ui";
+import Select from "../Select";
 
 const CHANGE = {
   new_document: "New document", new_amendment: "New amendment", new_revision: "New revision", corrigendum: "Corrigendum",
@@ -44,10 +45,10 @@ export default function Team() {
           <div className="formrow">
             <label className="formlabel">Name<input className="input" value={user.name} onChange={(e) => setUser({ ...user, name: e.target.value })} /></label>
             <label className="formlabel">E-mail<input className="input" type="email" value={user.email} onChange={(e) => setUser({ ...user, email: e.target.value })} /></label>
-            <label className="formlabel">Team<select className="select" value={user.team_id} onChange={(e) => setUser({ ...user, team_id: Number(e.target.value) || "" })}>
-              <option value="">No team</option>{dir.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-            <label className="formlabel">Role<select className="select" value={user.role} onChange={(e) => setUser({ ...user, role: e.target.value })}>
-              {dir.roles.map((r) => <option key={r}>{r}</option>)}</select></label>
+            <label className="formlabel">Team<Select className="select" value={user.team_id} onChange={(e) => setUser({ ...user, team_id: Number(e.target.value) || "" })}>
+              <option value="">No team</option>{dir.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></label>
+            <label className="formlabel">Role<Select className="select" value={user.role} onChange={(e) => setUser({ ...user, role: e.target.value })}>
+              {dir.roles.map((r) => <option key={r}>{r}</option>)}</Select></label>
             <label className="formlabel">Initial password<input className="input" type="password" autoComplete="new-password" placeholder="10+ characters" value={user.password} onChange={(e) => setUser({ ...user, password: e.target.value })} /></label>
           </div>
           <div className="actions">
@@ -92,10 +93,10 @@ export default function Team() {
           <thead><tr><th>Name</th><th>E-mail</th><th>Team</th><th>Role</th><th>Last sign-in</th><th>Password</th><th>Status</th></tr></thead>
           <tbody>{dir.users.map((u) => (
             <tr key={u.id}><td><strong>{u.name}</strong></td><td>{u.email}</td>
-              <td><select className="select" value={u.team_id || ""} onChange={(e) => run(() => portal.updateUser(u.id, { team_id: Number(e.target.value) || null }), "Team changed")}>
-                <option value="">No team</option>{dir.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></td>
-              <td><select className="select" value={u.role} onChange={(e) => run(() => portal.updateUser(u.id, { role: e.target.value }), "Role changed")}>
-                {dir.roles.map((r) => <option key={r}>{r}</option>)}</select></td>
+              <td><Select className="select" value={u.team_id || ""} onChange={(e) => run(() => portal.updateUser(u.id, { team_id: Number(e.target.value) || null }), "Team changed")}>
+                <option value="">No team</option>{dir.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></td>
+              <td><Select className="select" value={u.role} onChange={(e) => run(() => portal.updateUser(u.id, { role: e.target.value }), "Role changed")}>
+                {dir.roles.map((r) => <option key={r}>{r}</option>)}</Select></td>
               <td>{u.last_login_at ? fmt(u.last_login_at) : "never"}</td>
               <td>{pwFor?.id === u.id ? (
                 <span style={{ display: "flex", gap: 6 }}>

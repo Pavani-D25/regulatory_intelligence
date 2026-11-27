@@ -4,6 +4,7 @@ import GroupSummaryView from "./CatSummary";
 import { RegSummaryView } from "./RegSummary";
 import { usePortal } from "./PortalLayout";
 import { Card, fmt, MultiSelect, yearLabel, YearFilter } from "./ui";
+import Select from "./Select";
 
 const TYPES = [
   ["regulation", "Regulations", "One or several regulations in detail: facts, impact and KPI, obligations, related documents, versions"],
@@ -176,18 +177,18 @@ export default function ReportBuilder() {
         <div className="rb-filters">
           {type !== "regulation" && (
             <label className="formlabel" style={{ flex: "2 1 320px" }}>{type === "topic" ? "Topic" : "Vehicle category"}
-              <select className="select" value={item} onChange={(e) => setItem(e.target.value)}>
+              <Select className="select" value={item} onChange={(e) => setItem(e.target.value)}>
                 <option value="">{type === "topic" ? "Choose a topic…" : "Choose a category…"}</option>
                 {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
             </label>)}
           <div className="formlabel" style={{ flex: "1 1 170px" }}>Year (single or range)
             <YearFilter value={year} years={meta?.years || []} onChange={setYear} />
           </div>
           <label className="formlabel" style={{ flex: "1 1 170px" }}>Powertrain
-            <select className="select" value={variant} onChange={(e) => setVariant(e.target.value)}>
+            <Select className="select" value={variant} onChange={(e) => setVariant(e.target.value)}>
               {POWERTRAINS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
         <p className="note" style={{ margin: "6px 0 10px" }}>

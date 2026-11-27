@@ -4,6 +4,7 @@ import useLoad from "../../useLoad";
 import ReportBuilder from "../ReportBuilder";
 import { usePortal } from "../PortalLayout";
 import { ago, Badge, Card, ErrorBox, fmt, fmtTime, Kpi, Loading, SegmentPicker } from "../ui";
+import Select from "../Select";
 
 const CARDS = {
   executive: ["▤", "Management summary: tracked regulations, changes, high-impact items, category and topic breakdown, upcoming dates."],
@@ -70,12 +71,12 @@ export default function Reports() {
         right={<button className="btn secondary" onClick={() => setPlan({ kind: "executive", frequency: "weekly", team: meta?.teams?.[0]?.id || "", segment })}>New Schedule</button>}>
         {plan && (
           <div className="formrow" style={{ gridTemplateColumns: "1fr 1fr 1fr", alignItems: "end" }}>
-            <label className="formlabel">Report<select className="select" value={plan.kind} onChange={(e) => setPlan({ ...plan, kind: e.target.value })}>
-              {(sch?.templates || []).map((t) => <option key={t.kind} value={t.kind}>{t.name}</option>)}</select></label>
-            <label className="formlabel">Every<select className="select" value={plan.frequency} onChange={(e) => setPlan({ ...plan, frequency: e.target.value })}>
-              {(sch?.frequencies || []).map((f) => <option key={f}>{f}</option>)}</select></label>
-            <label className="formlabel">For team<select className="select" value={plan.team} onChange={(e) => setPlan({ ...plan, team: Number(e.target.value) || "" })}>
-              <option value="">Choose…</option>{(meta?.teams || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
+            <label className="formlabel">Report<Select className="select" value={plan.kind} onChange={(e) => setPlan({ ...plan, kind: e.target.value })}>
+              {(sch?.templates || []).map((t) => <option key={t.kind} value={t.kind}>{t.name}</option>)}</Select></label>
+            <label className="formlabel">Every<Select className="select" value={plan.frequency} onChange={(e) => setPlan({ ...plan, frequency: e.target.value })}>
+              {(sch?.frequencies || []).map((f) => <option key={f}>{f}</option>)}</Select></label>
+            <label className="formlabel">For team<Select className="select" value={plan.team} onChange={(e) => setPlan({ ...plan, team: Number(e.target.value) || "" })}>
+              <option value="">Choose…</option>{(meta?.teams || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></label>
             <div className="formlabel" style={{ gridColumn: "1 / -1" }}>Vehicle segment
               <SegmentPicker tree={meta?.segments} value={plan.segment} onChange={(v) => setPlan({ ...plan, segment: v })} /></div>
             <div className="actions" style={{ margin: "10px 0" }}>

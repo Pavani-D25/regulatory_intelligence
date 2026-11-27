@@ -3,6 +3,7 @@ import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { Badge, Card, ErrorBox, Kpi, Loading, SegmentPicker, segmentLabel } from "../ui";
+import Select from "../Select";
 
 const COVERAGE_TONE = { Covered: "green", Partial: "amber", Gap: "red" };
 const ROLE_TONE = { primary: "green", supporting: "blue", candidate: "amber" };
@@ -24,10 +25,10 @@ export default function Requirements() {
         <div><h1>Requirements Register</h1>
           <p>The client's regulatory register for {countryName}, each requirement linked to the official documents collected for it.</p></div>
         <div className="actions">
-          <select className="select" value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <Select className="select" value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">All requirements</option>
             {["Covered", "Partial", "Gap"].map((s) => <option key={s}>{s}</option>)}
-          </select>
+          </Select>
         </div>
       </div>
       {(data.rows.length > 0 || segment) && <Card>

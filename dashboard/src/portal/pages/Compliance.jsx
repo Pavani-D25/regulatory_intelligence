@@ -3,6 +3,7 @@ import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring, SegmentPicker } from "../ui";
+import Select from "../Select";
 
 const STATUSES = ["Open", "In Progress", "Compliant", "Not Applicable"];
 
@@ -42,8 +43,8 @@ export default function Compliance() {
       <div className="pagehead">
         <div><h1>Compliance Matrix</h1><p>Map each obligation in force (legal basis + standard + categories) to owner, evidence and status.</p></div>
         <div className="actions">
-          <select className="select" value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">All categories</option>{(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}</select>
+          <Select className="select" value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option value="">All categories</option>{(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}</Select>
           <button className="btn primary" disabled={!dirty.length || saving} onClick={save}>{saving ? "Saving…" : `Save Matrix${dirty.length ? ` (${dirty.length})` : ""}`}</button>
         </div>
       </div>
@@ -76,8 +77,8 @@ export default function Compliance() {
                 <td>{r.domain}</td>
                 <td><input className="input" style={{ width: 150 }} placeholder={data.default_owner} value={val(r, "owner")} onChange={(e) => edit(r, "owner", e.target.value)} /></td>
                 <td><input className="input" style={{ width: 160 }} placeholder="Test report / CoP ref." value={val(r, "evidence")} onChange={(e) => edit(r, "evidence", e.target.value)} /></td>
-                <td><select className="select" value={val(r, "status") || "Open"} onChange={(e) => edit(r, "status", e.target.value)}>
-                  {STATUSES.map((s) => <option key={s}>{s}</option>)}</select></td>
+                <td><Select className="select" value={val(r, "status") || "Open"} onChange={(e) => edit(r, "status", e.target.value)}>
+                  {STATUSES.map((s) => <option key={s}>{s}</option>)}</Select></td>
                 <td><input className="input" type="date" value={(val(r, "due_date") || "").slice(0, 10)} onChange={(e) => edit(r, "due_date", e.target.value)} />
                   <div className="sub">in force {fmt(r.implementation_date)}</div></td>
               </tr>))}

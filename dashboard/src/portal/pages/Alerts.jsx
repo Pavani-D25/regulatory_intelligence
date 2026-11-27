@@ -3,6 +3,7 @@ import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { Card, ErrorBox, Kpi, Loading, SegmentPicker } from "../ui";
+import Select from "../Select";
 
 const COND = {
   high_impact: "Change on a high-impact regulation", new_document: "New document published", draft_published: "Draft published",
@@ -45,11 +46,11 @@ export default function Alerts() {
             <label className="formlabel">Name<input className="input" value={form.name} placeholder="e.g. M1 lighting changes" onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
             <div className="formlabel">Vehicle segment
               <SegmentPicker tree={meta?.segments} value={form.segment} onChange={(v) => setForm({ ...form, segment: v })} /></div>
-            <label className="formlabel">Condition<select className="select" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value, param: e.target.value === "due_within" ? "60" : "" })}>
-              {data.conditions.map((c) => <option key={c} value={c}>{COND[c]}</option>)}</select></label>
+            <label className="formlabel">Condition<Select className="select" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value, param: e.target.value === "due_within" ? "60" : "" })}>
+              {data.conditions.map((c) => <option key={c} value={c}>{COND[c]}</option>)}</Select></label>
             {form.condition === "due_within" && <label className="formlabel">Days<input className="input" type="number" min="1" value={form.param} onChange={(e) => setForm({ ...form, param: e.target.value })} /></label>}
-            {form.condition === "domain" && <label className="formlabel">Topic<select className="select" value={form.param} onChange={(e) => setForm({ ...form, param: e.target.value })}>
-              <option value="">Choose…</option>{data.domains.map((d) => <option key={d.code} value={d.code}>{d.label}</option>)}</select></label>}
+            {form.condition === "domain" && <label className="formlabel">Topic<Select className="select" value={form.param} onChange={(e) => setForm({ ...form, param: e.target.value })}>
+              <option value="">Choose…</option>{data.domains.map((d) => <option key={d.code} value={d.code}>{d.label}</option>)}</Select></label>}
           </div>
           <div className="actions"><button className="btn primary" disabled={form.condition === "domain" && !form.param} onClick={create}>Create</button>
             <button className="btn secondary" onClick={() => setForm(null)}>Cancel</button></div>

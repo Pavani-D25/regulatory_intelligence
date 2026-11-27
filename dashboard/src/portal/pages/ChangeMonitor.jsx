@@ -3,6 +3,7 @@ import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { Badge, Card, ErrorBox, fmt, Kpi, Loading, MetricRows, Ring, SegmentPicker } from "../ui";
+import Select from "../Select";
 
 const TYPE_LABEL = {
   new_document: "New document", draft_published: "Draft published", draft_finalised: "Draft finalised",
@@ -42,8 +43,8 @@ export default function ChangeMonitor() {
       <div className="pagehead">
         <div><h1>Change Monitor</h1><p>Delta tracking across every monitored source: new documents, drafts, revisions and date changes.</p></div>
         <div className="actions">
-          <select className="select" value={days} onChange={(e) => setDays(Number(e.target.value))}>
-            <option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={365}>Last 12 months</option><option value={3650}>All</option></select>
+          <Select className="select" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            <option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={365}>Last 12 months</option><option value={3650}>All</option></Select>
           <button className="btn primary" disabled={!openIds.length} onClick={() => mark(openIds)}>Mark Visible as Reviewed{openIds.length ? ` (${openIds.length})` : ""}</button>
         </div>
       </div>

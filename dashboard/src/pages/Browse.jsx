@@ -4,6 +4,7 @@ import { api } from "../api";
 import { AiPending, Button, Card, Chips, DocLink, Empty, ErrorBox, Loading, StatusBadges, Table, Td, classLabel, fmtDate } from "../components/ui";
 import { usePortal } from "../portal/PortalLayout";
 import useLoad from "../useLoad";
+import Select from "../portal/Select";
 
 const PAGE = 50;
 
@@ -61,31 +62,31 @@ export default function Browse() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <label>Year</label>
-            <select value={f.year} onChange={(e) => update({ year: e.target.value })} className="w-28">
+            <Select value={f.year} onChange={(e) => update({ year: e.target.value })} className="w-28">
               <option value="">All</option>
               {years.map((y) => <option key={y.year} value={y.year}>{y.year} ({y.n})</option>)}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <label>Category</label>
-            <select value={f.category} onChange={(e) => update({ category: e.target.value })} className="w-40">
+            <Select value={f.category} onChange={(e) => update({ category: e.target.value })} className="w-40">
               <option value="">All</option>
               {(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.code}{c.in_scope ? " ★" : ""}</option>)}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <label>Topic</label>
-            <select value={f.domain} onChange={(e) => update({ domain: e.target.value })} className="w-48">
+            <Select value={f.domain} onChange={(e) => update({ domain: e.target.value })} className="w-48">
               <option value="">All</option>
               {(meta?.domains || []).map((d) => <option key={d.code} value={d.code}>{d.label} ({d.n})</option>)}
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <label>Type</label>
-            <select value={f.doc_class} onChange={(e) => update({ doc_class: e.target.value })} className="w-52">
+            <Select value={f.doc_class} onChange={(e) => update({ doc_class: e.target.value })} className="w-52">
               <option value="">All</option>
               {(meta?.doc_classes || []).map((c) => <option key={c.doc_class} value={c.doc_class}>{classLabel(c.doc_class)} ({c.n})</option>)}
-            </select>
+            </Select>
           </div>
           <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); update({ q: e.target.q.value }); }}>
             <label>ID or title</label>

@@ -4,6 +4,7 @@ import { api } from "../api";
 import { AiPending, Card, DocLink, Empty, ErrorBox, Loading, classLabel, fmtDate } from "../components/ui";
 import { usePortal } from "../portal/PortalLayout";
 import useLoad from "../useLoad";
+import Select from "../portal/Select";
 
 function highlight(text, q) {
   const words = q.split(/\s+/).filter((w) => w.length > 2).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
@@ -31,10 +32,10 @@ export default function Search() {
       </div>
       <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); setParams(Object.fromEntries(Object.entries({ q: text, category: cat }).filter(([, v]) => v))); }}>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. anti-lock braking for motorcycles" className="w-96 max-w-full" autoFocus />
-        <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Category">
+        <Select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Category">
           <option value="">Any category</option>
           {(meta?.categories || []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-        </select>
+        </Select>
         <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white">Search</button>
       </form>
       {textMode && (

@@ -3,6 +3,7 @@ import { portal } from "../../api";
 import useLoad from "../../useLoad";
 import { usePortal } from "../PortalLayout";
 import { ago, Badge, Card, ErrorBox, fmtTime, Kpi, Loading } from "../ui";
+import Select from "../Select";
 
 export default function Admin() {
   const [tick, setTick] = useState(0);
@@ -33,7 +34,7 @@ export default function Admin() {
       <div className="pagehead">
         <div><h1>Admin</h1><p>Sources and ingestion jobs.</p></div>
         <div className="actions">
-          <select className="select" value={src} onChange={(e) => setSrc(e.target.value)}>{data.syncable.map((c) => <option key={c} value={c}>{c === "ALL" ? "ALL sources" : c}</option>)}</select>
+          <Select className="select" value={src} onChange={(e) => setSrc(e.target.value)}>{data.syncable.map((c) => <option key={c} value={c}>{c === "ALL" ? "ALL sources" : c}</option>)}</Select>
           <button className="btn primary" disabled={!!data.sync.running} onClick={sync}>{!data.sync.running ? (src === "ALL" ? "Sync All Sources" : "Run Source Sync")
             : data.sync.step === "pipeline" ? "Processing new files…"
             : data.sync.running === "ALL" ? `Syncing ${data.sync.step || "…"} (${data.sync.done + 1}/${data.sync.total})…` : `Syncing ${data.sync.running}…`}</button>
