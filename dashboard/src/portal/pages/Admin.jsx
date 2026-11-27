@@ -31,9 +31,9 @@ export default function Admin() {
   return (
     <section className="view">
       <div className="pagehead">
-        <div><h1>Admin</h1><p>Sources, monitoring configuration and ingestion jobs.</p></div>
+        <div><h1>Admin</h1><p>Sources and ingestion jobs.</p></div>
         <div className="actions">
-          <select className="select" value={src} onChange={(e) => setSrc(e.target.value)}>{data.syncable.map((c) => <option key={c} value={c}>{c === "ALL" ? "ALL sources (one after another)" : c}</option>)}</select>
+          <select className="select" value={src} onChange={(e) => setSrc(e.target.value)}>{data.syncable.map((c) => <option key={c} value={c}>{c === "ALL" ? "ALL sources" : c}</option>)}</select>
           <button className="btn primary" disabled={!!data.sync.running} onClick={sync}>{!data.sync.running ? (src === "ALL" ? "Sync All Sources" : "Run Source Sync")
             : data.sync.step === "pipeline" ? "Processing new files…"
             : data.sync.running === "ALL" ? `Syncing ${data.sync.step || "…"} (${data.sync.done + 1}/${data.sync.total})…` : `Syncing ${data.sync.running}…`}</button>
@@ -46,7 +46,7 @@ export default function Admin() {
         <Kpi label="Auto-sync (every 6 h)" value={schLabel} tone={sch.alive && sch.auto_sync ? "green" : "red"} corner="⏱"
           small={`heartbeat ${sch.heartbeat ? ago(sch.heartbeat) : "never"} · last sync ${k.last_sync_min != null ? (k.last_sync_min < 120 ? `${k.last_sync_min} min` : `${Math.round(k.last_sync_min / 60)} h`) + " ago" : "—"}`} />
       </div>
-      <div className="grid2">
+      <div>{/* was className="grid2": two columns while Monitoring Configuration was shown */}
         <Card title="Regulatory Sources" sub="Public sources only · polite crawling (1–2 s, backoff)">
           <div className="stack">
             {data.sources.map((x) => (
@@ -68,6 +68,7 @@ export default function Admin() {
             </p>
           )}
         </Card>
+        {/* Monitoring Configuration: hidden for now (uncomment to bring it back)
         <Card title="Monitoring Configuration" sub="Saved and used by the portal">
           {s && (
             <>
@@ -91,6 +92,7 @@ export default function Admin() {
             </>
           )}
         </Card>
+        END Monitoring Configuration */}
       </div>
       <Card title="Recent Ingestion Jobs" sub="Crawl + pipeline runs">
         <div className="tablewrap"><table>
